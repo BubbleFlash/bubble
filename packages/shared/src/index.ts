@@ -478,7 +478,6 @@ export type MusicListQuery = z.infer<typeof musicListQuerySchema>;
 export interface MusicUploadTicket {
   uploadId: string;
   url: string;
-  fields: Record<string, string>;
 }
 
 export interface MusicTrackDTO {
