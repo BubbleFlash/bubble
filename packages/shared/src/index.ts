@@ -538,7 +538,7 @@ export const musicPickerQuerySchema = z.object({
 });
 
 export const musicSettingsSchema = z.object({
-  visibility: z.enum(["everyone", "private"]),
+  visibility: z.enum(["everyone", "friends", "private"]),
 }).strict();
 
 export const profileMusicQuerySchema = z.object({

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Types } from "mongoose";
 import { createApp } from "../app.js";
 import { User } from "../models/User.js";
+import { Follow } from "../models/Follow.js";
 import { UserMusic } from "../models/UserMusic.js";
 import { MusicTrack } from "../models/MusicTrack.js";
 import { signAccessToken } from "../utils/tokens.js";
@@ -35,7 +36,7 @@ describe("music library privacy", () => {
 
   it("rejects invalid settings before updating a user", async () => {
     const update = vi.spyOn(User, "findByIdAndUpdate");
-    const response = await request(app).patch("/api/users/me/music-settings").set("Authorization", token(viewerId)).send({ visibility: "friends" });
+    const response = await request(app).patch("/api/users/me/music-settings").set("Authorization", token(viewerId)).send({ visibility: "unknown" });
     expect(response.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
   });
@@ -46,12 +47,12 @@ describe("music library privacy", () => {
     expect(response.body).toEqual({ visibility: "everyone" });
   });
 
-  it("updates only the authenticated user's setting", async () => {
-    const update = vi.spyOn(User, "findByIdAndUpdate").mockImplementation((() => ({ lean: async () => ({ musicLibraryVisibility: "private" }) })) as never);
-    const response = await request(app).patch("/api/users/me/music-settings").set("Authorization", token(ownerId)).send({ visibility: "private" });
+  it.each(["friends", "private"])("updates only the authenticated user's setting to %s", async (visibility) => {
+    const update = vi.spyOn(User, "findByIdAndUpdate").mockImplementation((() => ({ lean: async () => ({ musicLibraryVisibility: visibility }) })) as never);
+    const response = await request(app).patch("/api/users/me/music-settings").set("Authorization", token(ownerId)).send({ visibility });
     expect(response.status).toBe(200);
-    expect(update.mock.calls[0]?.[0]).toBe(ownerId);
-    expect(response.body).toEqual({ visibility: "private" });
+    expect(update).toHaveBeenCalledWith(ownerId, { musicLibraryVisibility: visibility }, { new: true, runValidators: true });
+    expect(response.body).toEqual({ visibility });
     expect((await request(app).patch("/api/users/other/music-settings").set("Authorization", token(ownerId)).send({ visibility: "private" })).status).toBe(404);
   });
 
@@ -65,13 +66,35 @@ describe("music library privacy", () => {
     expect(find).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, "everyone", "private"])("lets the owner read a library with visibility %s", async (visibility) => {
+  it.each([undefined, "everyone", "friends", "private"])("lets the owner read a library with visibility %s", async (visibility) => {
     vi.spyOn(User, "findOne").mockImplementation((() => ({ collation: () => ({ lean: async () => ({ _id: new Types.ObjectId(ownerId), musicLibraryVisibility: visibility }) }) })) as never);
     vi.spyOn(UserMusic, "find").mockImplementation((() => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }), lean: async () => [] })) as never);
     vi.spyOn(MusicTrack, "find").mockImplementation((() => ({ lean: async () => [] })) as never);
     const response = await request(app).get("/api/users/owner/music").set("Authorization", token(ownerId));
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ status: "visible", tracks: [], nextCursor: null });
+  });
+
+  it.each([
+    [false, false, "hidden"],
+    [true, false, "hidden"],
+    [false, true, "hidden"],
+    [true, true, "visible"],
+  ] as const)("checks both follows (%s and %s) before returning a friends-only library", async (outgoing, incoming, status) => {
+    const owner = new Types.ObjectId(ownerId);
+    vi.spyOn(User, "findOne").mockImplementation((() => ({ collation: () => ({ lean: async () => ({ _id: owner, musicLibraryVisibility: "friends" }) }) })) as never);
+    const followId = new Types.ObjectId();
+    const follows = vi.spyOn(Follow, "exists")
+      .mockResolvedValueOnce(outgoing ? { _id: followId } : null)
+      .mockResolvedValueOnce(incoming ? { _id: followId } : null);
+    const library = vi.spyOn(UserMusic, "find").mockImplementation((() => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }), lean: async () => [] })) as never);
+    vi.spyOn(MusicTrack, "find").mockImplementation((() => ({ lean: async () => [] })) as never);
+    const response = await request(app).get("/api/users/owner/music").set("Authorization", token(viewerId));
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(status === "visible" ? { status, tracks: [], nextCursor: null } : { status });
+    expect(follows).toHaveBeenCalledWith({ follower: viewerId, following: owner });
+    expect(follows).toHaveBeenCalledWith({ follower: owner, following: viewerId });
+    if (status === "hidden") expect(library).not.toHaveBeenCalled();
   });
 
   it("paginates using timestamp and id and keeps viewer dates separate", async () => {

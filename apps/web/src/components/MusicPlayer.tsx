@@ -218,9 +218,9 @@ export default function MusicPlayer() {
           <span ref={titleTextRef}>{track.artist} — {track.title}</span>
         </div>
         <span className="aero-window-controls music-player__window-controls">
-        <span><button type="button" className="music-player__window-button" onClick={() => { prepareModeSwitch(); setCompact(!compact); setShowQueue(false); }} aria-label={compact ? "Развернуть плеер" : "Свернуть плеер"} title={compact ? "Развернуть" : "Свернуть"}><i className={compact ? "aero-control-maximize" : "aero-control-minimize"} aria-hidden="true" /></button></span>
-        <span><button type="button" className="music-player__window-button" onClick={() => { if (compact) { prepareModeSwitch(); setCompact(false); } setShowQueue(compact || !showQueue); }} aria-label={showQueue && !compact ? "Скрыть очередь" : "Показать очередь"} aria-pressed={showQueue && !compact} title={showQueue && !compact ? "Скрыть очередь" : "Показать очередь"}><svg className="music-player__queue-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M3 4h2v2H3zm0 7h2v2H3zm0 7h2v2H3zM7 4h14v2H7zm0 7h14v2H7zm0 7h14v2H7z" /></svg></button></span>
-        <span className="aero-window-close">
+        <span className="aero-window-control"><button type="button" className="music-player__window-button" onClick={() => { prepareModeSwitch(); setCompact(!compact); setShowQueue(false); }} aria-label={compact ? "Развернуть плеер" : "Свернуть плеер"} title={compact ? "Развернуть" : "Свернуть"}><i className={compact ? "aero-control-maximize" : "aero-control-minimize"} aria-hidden="true" /></button></span>
+        <span className="aero-window-control"><button type="button" className="music-player__window-button" onClick={() => { if (compact) { prepareModeSwitch(); setCompact(false); } setShowQueue(compact || !showQueue); }} aria-label={showQueue && !compact ? "Скрыть очередь" : "Показать очередь"} aria-pressed={showQueue && !compact} title={showQueue && !compact ? "Скрыть очередь" : "Показать очередь"}><svg className="music-player__queue-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M3 4h2v2H3zm0 7h2v2H3zm0 7h2v2H3zM7 4h14v2H7zm0 7h14v2H7zm0 7h14v2H7z" /></svg></button></span>
+        <span className="aero-window-control aero-window-close">
         <button
           type="button"
           className="music-player__close"

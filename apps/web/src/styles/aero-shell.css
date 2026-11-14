@@ -70,6 +70,7 @@
 /* Each mobile tab occupies one equal-width track. */
 .aero-app .bottom-nav { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; }
 .aero-app .bottom-nav .tab-link { min-width: 0; overflow-wrap: anywhere; }
+.aero-app .bottom-menu-toggle { border: 0; background: transparent; cursor: pointer; }
 .aero-home .profile .earnings { display: none; }
 .aero-app .bottom-nav > span { min-width: 0; }
 
@@ -137,7 +138,7 @@
 /* A thread stays in view while its history, rather than the whole thread, scrolls. */
 .aero-home .chat { height: auto; min-height: 0; align-items: start; }
 .aero-home .chat-list { overflow: visible; }
-.aero-home .chat-thread { position: sticky; top: 12px; height: max(220px, calc(100cqb - 24px)); min-height: 0; }
+.aero-home .chat-thread { position: sticky; top: calc(var(--aero-content-top) + 12px); height: max(220px, calc(var(--aero-content-height) - 24px)); min-height: 0; }
 .aero-home .chat-messages { min-height: 0; overflow-y: auto; }
 .aero-home .chat-messages::-webkit-scrollbar { width: 16px; }
 .aero-home .chat-messages::-webkit-scrollbar-track { background: var(--aero-color-scrollbar-track); border-left: 1px solid var(--aero-color-border); }
@@ -145,7 +146,7 @@
 .aero-home .chat-messages::-webkit-scrollbar-thumb:hover { border-color: var(--aero-color-border-strong); background: var(--aero-gradient-scrollbar-hover); }
 @media (max-width: 767px) {
   .aero-home .chat.chat-open { height: auto; }
-  .aero-home .chat:not(.chat-open) .chat-list { min-height: calc(100cqb - 24px); }
+  .aero-home .chat:not(.chat-open) .chat-list { min-height: calc(var(--aero-content-height) - 24px); }
 }
 
 .aero-app .side-link .side-label, .aero-app .drawer-links .nav-link { white-space: nowrap; }

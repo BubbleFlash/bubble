@@ -13,6 +13,7 @@ import type {
 } from "@commune/shared";
 import FriendsPrivacySettings from "../components/FriendsPrivacySettings";
 import ProfileAppearancePrivacy from "../components/ProfileAppearancePrivacy";
+import MusicPrivacySettings from "../components/MusicPrivacySettings";
 import UnsavedAppearanceDialog from "../components/UnsavedAppearanceDialog";
 import PushSettings from "../components/PushSettings";
 import SoundSettings from "../components/SoundSettings";
@@ -131,6 +132,7 @@ function SettingsSections({ user, onWallpaperPreview }: { user: AccountUser } & 
             <>
               <ProfileAppearancePrivacy user={user} />
               <FriendsPrivacySettings username={user.username} />
+              <MusicPrivacySettings userId={user.id} />
             </>
           )}
           {id === "notifications" && tab === id && (

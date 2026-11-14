@@ -4,7 +4,8 @@
  * supply the full semantic palette, not copies of component rules.
  * Nesting theme hosts is supported through inherited tokens.
  */
-[data-theme="aero-blue"] {
+[data-theme="aero-blue"],
+html:has(.aero-home) {
   --aero-chosen-primary: initial;
   --aero-chosen-accent: initial;
   --aero-chosen-accent-ink: initial;
@@ -83,7 +84,8 @@
 }
 
 /* Build readable ink and pale surfaces from the chosen color, including extreme swatches. */
-[data-theme="aero-blue"][data-custom-primary] {
+[data-theme="aero-blue"][data-custom-primary],
+html:has(.aero-home[data-custom-primary]) {
   --aero-color-primary: var(--aero-chosen-primary);
   --aero-primary-light: color-mix(in srgb, var(--aero-color-primary) 12%, white);
   --aero-primary-tint: color-mix(in srgb, var(--aero-color-primary) 27%, white);

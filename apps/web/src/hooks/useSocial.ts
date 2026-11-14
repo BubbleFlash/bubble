@@ -52,6 +52,7 @@ export function useToggleFollow(username: string) {
       void qc.invalidateQueries({ queryKey: ["friends-access"] });
       void qc.invalidateQueries({ queryKey: ["friends-list"] });
       void qc.invalidateQueries({ queryKey: ["relationships"] });
+      void qc.invalidateQueries({ queryKey: ["profile-music"] });
     },
     onError: () => {
       void qc.invalidateQueries({ queryKey: ["profile", username.toLowerCase()] });

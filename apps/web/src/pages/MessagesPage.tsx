@@ -150,7 +150,6 @@ function Thread({ id }: { id: string }) {
   const [older, setOlder] = useState<MessageDTO[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -175,7 +174,8 @@ function Thread({ id }: { id: string }) {
 
   // Stay at the bottom for new messages, unless the person scrolled up to read.
   useLayoutEffect(() => {
-    if (stick.current) bottomRef.current?.scrollIntoView({ block: "end" });
+    const list = listRef.current;
+    if (stick.current && list) list.scrollTop = list.scrollHeight;
   }, [messages.length, typing]);
 
   // A message from the other person arrived while this conversation is open and visible: mark
@@ -303,7 +303,6 @@ function Thread({ id }: { id: string }) {
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <Composer

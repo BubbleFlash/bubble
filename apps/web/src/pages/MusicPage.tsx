@@ -6,14 +6,11 @@ import type { MusicTrackDTO, MusicUploadTicket } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 import MusicTrackList from "../components/MusicTrackList";
 import { useAuth } from "../store/auth";
-import type { MusicSettings } from "@commune/shared";
-
-type MusicScope = "all" | "mine" | "settings";
+type MusicScope = "all" | "mine";
 
 const MUSIC_TABS = [
   { scope: "mine", label: "Моя библиотека" },
   { scope: "all", label: "Вся музыка" },
-  { scope: "settings", label: "Настройки музыкальной библиотеки" },
 ] as const;
 
 const MIME_BY_EXTENSION: Record<string, (typeof ALLOWED_MUSIC_TYPES)[number]> = {
@@ -79,20 +76,6 @@ export default function MusicPage() {
           limit: "50",
         }),
       ),
-    enabled: scope !== "settings",
-  });
-
-  const settingsQuery = useQuery({
-    queryKey: ["music-settings", user?.id],
-    queryFn: () => api<MusicSettings>("/users/me/music-settings"),
-    enabled: scope === "settings" && !!user,
-  });
-  const settingsMutation = useMutation({
-    mutationFn: (visibility: MusicSettings["visibility"]) => api<MusicSettings>("/users/me/music-settings", { method: "PATCH", body: { visibility } }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(["music-settings", user?.id], data);
-      void queryClient.invalidateQueries({ queryKey: ["profile-music"] });
-    },
   });
 
   const uploadMutation = useMutation({
@@ -236,7 +219,7 @@ export default function MusicPage() {
         nextScope = "mine";
         break;
       case "End":
-        nextScope = "settings";
+        nextScope = "all";
         break;
       default:
         return;
@@ -290,11 +273,10 @@ export default function MusicPage() {
             tabIndex={scope === tabScope ? 0 : -1}
             className={scope === tabScope ? "tab active" : "tab"}
             aria-label={label}
-            title={tabScope === "settings" ? label : undefined}
             onClick={() => setScope(tabScope)}
             onKeyDown={(event) => handleTabKey(event, tabScope)}
           >
-            {tabScope === "settings" ? <span aria-hidden="true">⚙</span> : label}
+            {label}
           </button>
         ))}
       </div>
@@ -311,7 +293,7 @@ export default function MusicPage() {
         <header className="music-attachment-picker__header">
           <h2 id="music-upload-title">Загрузить музыку</h2>
           <span className="aero-window-controls music-player__window-controls">
-            <span className="aero-window-close">
+            <span className="aero-window-control aero-window-close">
               <button type="button" className="music-player__close" onClick={closeUploadDialog} disabled={uploadMutation.isPending} aria-label="Закрыть окно загрузки" title="Закрыть">
                 <i className="aero-control-close" aria-hidden="true" />
               </button>
@@ -407,21 +389,7 @@ export default function MusicPage() {
           hidden={scope !== tabScope}
           tabIndex={0}
         >
-          {scope === tabScope && tabScope === "settings" && (
-            <section className="aero-panel music-settings">
-              <h2>Кто может видеть музыку в моём профиле?</h2>
-              <p>Настройка влияет на отображение библиотеки в профиле, но не скрывает треки из общего каталога.</p>
-              {settingsQuery.isLoading && <p>Загрузка настроек...</p>}
-              {settingsQuery.isError && <p className="error" role="alert">Не удалось загрузить настройки. <button type="button" className="btn btn-ghost" onClick={() => void settingsQuery.refetch()}>Повторить</button></p>}
-              {settingsQuery.data && <fieldset disabled={settingsMutation.isPending}>
-                <label><input type="radio" name="music-visibility" checked={settingsQuery.data.visibility === "everyone"} onChange={() => settingsMutation.mutate("everyone")} /> Все пользователи</label>
-                <label><input type="radio" name="music-visibility" checked={settingsQuery.data.visibility === "private"} onChange={() => settingsMutation.mutate("private")} /> Только я</label>
-              </fieldset>}
-              {settingsMutation.isPending && <p role="status">Сохранение...</p>}
-              {settingsMutation.isError && <p className="error" role="alert">Не удалось сохранить настройку. Попробуйте ещё раз.</p>}
-            </section>
-          )}
-          {scope === tabScope && tabScope !== "settings" && (
+          {scope === tabScope && (
             <section className="music-page__list">
               <h2>{scope === "all" ? "Каталог" : "Моя библиотека"}</h2>
 

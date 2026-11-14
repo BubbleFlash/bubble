@@ -1,5 +1,5 @@
 import { Link, Navigate, Route, Routes, matchPath, useLocation } from "react-router-dom";
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "./store/auth";
 import AeroTitlebar from "./components/AeroTitlebar";
@@ -264,6 +264,9 @@ export default function App() {
   const authPage = AUTH_PATHS.includes(pathname);
   const signedIn = Boolean(user);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const homeRef = useRef<HTMLDivElement>(null);
+  const chromeRef = useRef<HTMLDivElement>(null);
   const profileName = matchPath("/u/:username", pathname)?.params.username;
   const visitingProfile = Boolean(user && profileName && profileName.toLowerCase() !== user.username.toLowerCase());
   const { data: profile, isError: profileError } = useProfile(profileName ?? "", visitingProfile);
@@ -277,6 +280,29 @@ export default function App() {
   useEffect(() => {
     if (signedIn) prefetchLikelyRoutes();
   }, [signedIn]);
+
+  const primaryColor = appearance?.primaryColor;
+  useLayoutEffect(() => {
+    if (authPage || !primaryColor) return;
+    const root = document.documentElement;
+    root.style.setProperty("--aero-chosen-primary", primaryColor);
+    return () => {
+      root.style.removeProperty("--aero-chosen-primary");
+    };
+  }, [authPage, primaryColor]);
+
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    const chrome = chromeRef.current;
+    if (!home || !chrome) return;
+    const update = () => {
+      home.style.setProperty("--aero-chrome-height", `${chrome.getBoundingClientRect().height}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(chrome);
+    return () => observer.disconnect();
+  }, [authPage]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages");
 
@@ -308,6 +334,7 @@ export default function App() {
   return (
     <div
       className="aero-app aero-home"
+      ref={homeRef}
       data-theme="aero-blue"
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
@@ -316,26 +343,23 @@ export default function App() {
     >
       <div className="aero-fixed-frame" aria-hidden="true" />
       <div className="aero-window">
-      <AeroTitlebar />
-      {skip}
-      <RouteMeta />
-      <Header />
-      <VerifyBanner />
-      <PwaBanner />
-      <div
-        className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}
-        role="region"
-        aria-label="Содержимое окна"
-        tabIndex={0}
-      >
-        {user && <LeftNav />}
-        <main id="main" tabIndex={-1} className="container">
-          <AppRoutes onWallpaperPreview={setWallpaperPreview} />
-        </main>
-        {!wide && <RightRail />}
-      </div>
-      <BottomNav />
-      <MusicPlayer />
+        {skip}
+        <RouteMeta />
+        <div className="aero-window-chrome" ref={chromeRef}>
+          <AeroTitlebar />
+          <Header menuOpen={mobileMenuOpen} setMenuOpen={setMobileMenuOpen} />
+          <VerifyBanner />
+        </div>
+        <PwaBanner />
+        <div className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}>
+          {user && <LeftNav />}
+          <main id="main" tabIndex={-1} className="container">
+            <AppRoutes onWallpaperPreview={setWallpaperPreview} />
+          </main>
+          {!wide && <RightRail />}
+        </div>
+        <BottomNav menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        <MusicPlayer />
       </div>
     </div>
   );

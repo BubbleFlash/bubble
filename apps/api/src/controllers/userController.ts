@@ -60,11 +60,21 @@ export async function updateMusicSettings(req: Request, res: Response) {
 export async function userMusic(req: Request, res: Response) {
   res.set("Cache-Control", "private, no-store");
   const owner = await findByUsername(req.params.username);
-  if (owner._id.toString() !== req.userId && owner.musicLibraryVisibility === "private") {
+  const viewerId = req.userId!;
+  const visibility = owner.musicLibraryVisibility ?? "everyone";
+  let canView = owner._id.toString() === viewerId || visibility === "everyone";
+  if (!canView && visibility === "friends") {
+    const [outgoing, incoming] = await Promise.all([
+      Follow.exists({ follower: viewerId, following: owner._id }),
+      Follow.exists({ follower: owner._id, following: viewerId }),
+    ]);
+    canView = Boolean(outgoing && incoming);
+  }
+  if (!canView) {
     res.json({ status: "hidden" });
     return;
   }
-  res.json(await listProfileMusic(owner._id.toString(), req.userId!, res.locals.query.cursor));
+  res.json(await listProfileMusic(owner._id.toString(), viewerId, res.locals.query.cursor));
 }
 
 /** Updates the supplied profile fields. A null avatarUrl removes the avatar. */
