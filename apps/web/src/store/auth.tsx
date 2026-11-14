@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { AuthResponse, LoginInput, PublicUser, RegisterInput } from "@commune/shared";
 import { releasePushOnLogout } from "../lib/push";
@@ -41,14 +41,28 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [user, setUserState] = useState<PublicUser | null>(readCachedUser);
-  const [loading, setLoading] = useState(() => readSessionHint() !== "guest");
+  const queryClient = useQueryClient();
+  const previousUserId = useRef(user?.id);
+  // Wait only when there is nothing to show yet: first visit (unknown) or a session without a cached profile.
+  const [loading, setLoading] = useState(() => {
+    const hint = readSessionHint();
+    return hint === null || (hint === "1" && readCachedUser() === null);
+  });
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [restoreFailed, setRestoreFailed] = useState(false);
 
   const setUser = useCallback((next: PublicUser | null) => {
+    if (previousUserId.current !== next?.id) {
+      queryClient.removeQueries({ queryKey: ["profile-music"] });
+      queryClient.removeQueries({ queryKey: ["music-settings"] });
+      queryClient.removeQueries({ queryKey: ["music"] });
+      queryClient.removeQueries({ queryKey: ["music-picker"] });
+      queryClient.removeQueries({ queryKey: ["link-preview"] });
+      previousUserId.current = next?.id;
+    }
     cacheUser(next);
     setUserState(next);
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     let alive = true;
