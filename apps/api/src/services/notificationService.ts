@@ -2,6 +2,7 @@ import type { Types } from "mongoose";
 import type { NotificationType } from "@commune/shared";
 import { logger } from "../config/logger.js";
 import { Notification } from "../models/Notification.js";
+import { Post } from "../models/Post.js";
 import { User } from "../models/User.js";
 import { pushConfigured, pushToUser } from "./pushService.js";
 import { emitToUsers } from "./realtime.js";
@@ -20,13 +21,13 @@ interface NotifyInput {
  * action (like, comment, follow) that triggered it.
  *
  * Likes and follows are upserted so repeated like/unlike or follow/unfollow does not
- * spam the recipient; each comment creates its own notification.
+ * spam the recipient; each comment and repost creates its own notification.
  */
 export async function notify({ user, actor, type, post }: NotifyInput): Promise<void> {
   if (user.toString() === actor) return;
   try {
     const key = { user, actor, type, post: post ?? null };
-    if (type === "comment") {
+    if (type === "comment" || type === "repost") {
       await Notification.create({ ...key, read: false });
     } else {
       await Notification.updateOne(
@@ -46,6 +47,7 @@ export async function notify({ user, actor, type, post }: NotifyInput): Promise<
       const text = {
         like: "liked your post",
         comment: "commented on your post",
+        repost: "shared your post",
         follow: "wants to add you as a friend",
       }[type];
       await pushToUser(user.toString(), "social", {
@@ -57,5 +59,24 @@ export async function notify({ user, actor, type, post }: NotifyInput): Promise<
     }
   } catch (err) {
     logger.warn({ err }, "Failed to create notification");
+  }
+}
+
+/** For a private message, link back to the original without revealing the conversation. */
+export async function notifyRepost(
+  source: { _id: Types.ObjectId; author: { _id: Types.ObjectId }; repostAncestors?: Types.ObjectId[] },
+  actor: string,
+  publishedPost?: Types.ObjectId,
+) {
+  try {
+    const rootId = source.repostAncestors?.[0];
+    const original = rootId
+      ? await Post.findById(rootId).select("_id author").lean()
+      : { _id: source._id, author: source.author._id };
+    if (original) {
+      await notify({ user: original.author, actor, type: "repost", post: publishedPost ?? original._id });
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to resolve the original author for a repost notification");
   }
 }

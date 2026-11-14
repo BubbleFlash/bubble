@@ -5,18 +5,16 @@ import { MusicTrack } from "../models/MusicTrack.js";
 import { Post } from "../models/Post.js";
 import { createPost, presentPosts } from "../controllers/postController.js";
 import { Like } from "../models/Like.js";
-import { Purchase } from "../models/Purchase.js";
 import { loadPostMusic } from "../services/postMusic.js";
 import { toPostDTO, type PopulatedPost } from "../utils/serializers.js";
 import type { Request, Response } from "express";
 
 const ids = Array.from({ length: 11 }, (_, index) => (index + 10).toString(16).padStart(24, "0"));
-const post = (musicTrackIds: string[], paid = false): PopulatedPost => ({
+const post = (musicTrackIds: string[]): PopulatedPost => ({
   _id: new Types.ObjectId(),
   content: "",
   author: { _id: new Types.ObjectId(), username: "owner" },
   musicTrackIds: musicTrackIds.map((id) => new Types.ObjectId(id)),
-  priceCents: paid ? 100 : null,
   likeCount: 0,
   commentCount: 0,
   createdAt: new Date(),
@@ -72,32 +70,12 @@ describe("post music", () => {
       { id: ids[0], title: "First", artist: "Artist", duration: null, unavailable: false },
     ]);
     expect(music.get(second._id.toString())).toHaveLength(1);
-    expect(toPostDTO(post([]), false, true).musicAttachments).toEqual([]);
+    expect(toPostDTO(post([]), false).musicAttachments).toEqual([]);
   });
 
-  it("never exposes paid attachment metadata or IDs when locked", () => {
-    const paid = post([ids[0]!], true);
-    const secret = [
-      {
-        id: ids[0]!,
-        title: "Secret title",
-        artist: "Secret artist",
-        duration: 10,
-        unavailable: false as const,
-      },
-    ];
-    const locked = toPostDTO(paid, false, false, secret);
-    expect(locked.musicAttachments).toEqual([]);
-    expect(JSON.stringify(locked)).not.toContain(ids[0]);
-    expect(JSON.stringify(locked)).not.toContain("Secret");
-    expect(toPostDTO(paid, false, true, secret).musicAttachments).toEqual(secret);
-  });
-
-  it("does not even fetch locked track metadata when presenting a page", async () => {
+  it("fetches track metadata in one batch when presenting a page", async () => {
+    vi.spyOn(Post, "aggregate").mockResolvedValue([] as never);
     vi.spyOn(Like, "find").mockImplementation((() => ({
-      select: () => ({ lean: async () => [] }),
-    })) as never);
-    vi.spyOn(Purchase, "find").mockImplementation((() => ({
       select: () => ({ lean: async () => [] }),
     })) as never);
     const filters: unknown[] = [];
@@ -105,12 +83,9 @@ describe("post music", () => {
       filters.push(filter);
       return { select: () => ({ lean: async () => [] }) };
     }) as never);
-    const free = post([ids[0]!]);
-    const locked = post([ids[1]!], true);
-    const result = await presentPosts("507f1f77bcf86cd799439011", [free, locked]);
+    const result = await presentPosts("507f1f77bcf86cd799439011", [post([ids[0]!]), post([ids[1]!])]);
     expect(find).toHaveBeenCalledTimes(1);
-    expect(filters[0]).toEqual({ _id: { $in: [ids[0]] } });
-    expect(result[1]?.musicAttachments).toEqual([]);
-    expect(JSON.stringify(result[1])).not.toContain(ids[1]);
+    expect(filters[0]).toEqual({ _id: { $in: ids.slice(0, 2) } });
+    expect(result[1]?.musicAttachments).toEqual([{ id: ids[1], unavailable: true }]);
   });
 });

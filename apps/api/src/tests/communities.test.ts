@@ -19,16 +19,19 @@ import { signAccessToken } from "../utils/tokens.js";
 const app = createApp();
 const oid = () => new mongoose.Types.ObjectId();
 const ME = oid().toString();
+const OWNER = oid();
 const auth = { Authorization: `Bearer ${signAccessToken(ME)}` };
 const chain = (value: unknown) => ({ select: () => ({ lean: () => Promise.resolve(value) }) });
 
-const community = () => ({
+const community = (overrides = {}) => ({
   _id: oid(),
   slug: "typescript",
   name: "TypeScript",
   description: "All things TS",
   memberCount: 3,
   createdAt: new Date(),
+  creator: OWNER,
+  ...overrides,
 });
 
 afterEach(() => {
@@ -69,7 +72,6 @@ describe("POST /api/communities", () => {
     vi.spyOn(Community, "countDocuments").mockResolvedValue(0 as never);
     const created = community();
     const create = vi.spyOn(Community, "create").mockResolvedValue(created as never);
-    const member = vi.spyOn(Membership, "create").mockResolvedValue({} as never);
 
     const res = await request(app).post("/api/communities").set(auth).send(body);
     expect(res.status).toBe(201);
@@ -77,7 +79,6 @@ describe("POST /api/communities", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "typescript", creator: ME, memberCount: 1 }),
     );
-    expect(member).toHaveBeenCalledWith({ user: ME, community: created._id, role: "owner" });
   });
 
   it("answers 409 for a taken address and 403 past the per-user limit", async () => {
@@ -96,7 +97,7 @@ describe("GET /api/communities", () => {
   it("lists with my role, and searches with an escaped pattern", async () => {
     const c = community();
     vi.spyOn(Membership, "find").mockReturnValue(
-      chain([{ community: c._id, role: "member" }]) as never,
+      chain([{ _id: oid(), community: c._id, role: "member" }]) as never,
     );
     const find = vi.spyOn(Community, "find").mockReturnValue({
       sort: () => ({ limit: () => ({ lean: () => Promise.resolve([c]) }) }),
@@ -145,29 +146,35 @@ describe("joining and leaving", () => {
 
   it("stops owners from leaving", async () => {
     vi.spyOn(Community, "findOne").mockReturnValue({
-      lean: () => Promise.resolve(community()),
+      lean: () => Promise.resolve(community({ creator: new mongoose.Types.ObjectId(ME) })),
     } as never);
-    vi.spyOn(Membership, "findOne").mockReturnValue(chain({ role: "owner" }) as never);
     const res = await request(app).delete("/api/communities/typescript/join").set(auth);
     expect(res.status).toBe(400);
   });
 
   it("lets members leave and updates the count", async () => {
     const c = community();
+    const membership = oid();
     vi.spyOn(Community, "findOne").mockReturnValue({ lean: () => Promise.resolve(c) } as never);
-    vi.spyOn(Membership, "findOne").mockReturnValue(chain({ role: "member" }) as never);
-    vi.spyOn(Membership, "findOneAndDelete").mockResolvedValue({} as never);
-    const update = vi.spyOn(Community, "updateOne").mockResolvedValue({} as never);
+    vi.spyOn(Membership, "findOne").mockReturnValue(chain({ _id: membership }) as never);
+    const remove = vi.spyOn(Membership, "deleteOne").mockResolvedValue({} as never);
+    const update = vi.spyOn(Community, "updateOne").mockResolvedValue({ matchedCount: 1 } as never);
     const res = await request(app).delete("/api/communities/typescript/join").set(auth);
     expect(res.status).toBe(204);
-    expect(update).toHaveBeenCalledWith({ _id: c._id }, { $inc: { memberCount: -1 } });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ _id: c._id, creator: OWNER }), {
+      $addToSet: { departingMemberships: membership },
+      $unset: { [`managers.${membership}`]: "", [`managerNotes.${ME}`]: "" },
+      $pull: { hiddenTeam: new mongoose.Types.ObjectId(ME) },
+      $inc: { memberCount: -1, accessVersion: 1 },
+    });
+    expect(remove).toHaveBeenCalledWith({ _id: membership });
   });
 });
 
 describe("posting in a community", () => {
   it("is refused for non-members", async () => {
     vi.spyOn(Community, "findOne").mockReturnValue(chain({ _id: oid() }) as never);
-    vi.spyOn(Membership, "exists").mockResolvedValue(null as never);
+    vi.spyOn(Membership, "findOne").mockReturnValue(chain(null) as never);
     const res = await request(app)
       .post("/api/posts")
       .set(auth)
@@ -190,19 +197,66 @@ describe("deleting posts in a community", () => {
 
   it("lets the community owner remove someone else's post", async () => {
     vi.spyOn(Post, "findById").mockReturnValue(chain({ author: oid(), community: oid() }) as never);
-    const exists = vi.spyOn(Membership, "exists").mockResolvedValue({ _id: oid() } as never);
+    vi.spyOn(Community, "findById").mockReturnValue(chain(community({ creator: new mongoose.Types.ObjectId(ME) })) as never);
     const res = await request(app).delete(`/api/posts/${postId}`).set(auth);
     expect(res.status).toBe(204);
-    expect(exists).toHaveBeenCalledWith(expect.objectContaining({ user: ME, role: "owner" }));
     expect(removePost).toHaveBeenCalled();
   });
 
   it("still refuses everyone else", async () => {
     vi.mocked(removePost).mockClear();
     vi.spyOn(Post, "findById").mockReturnValue(chain({ author: oid(), community: oid() }) as never);
-    vi.spyOn(Membership, "exists").mockResolvedValue(null as never);
+    vi.spyOn(Community, "findById").mockReturnValue(chain(community()) as never);
+    vi.spyOn(Membership, "findOne").mockReturnValue(chain({ _id: oid(), role: "owner" }) as never);
     const res = await request(app).delete(`/api/posts/${postId}`).set(auth);
     expect(res.status).toBe(403);
     expect(removePost).not.toHaveBeenCalled();
+  });
+});
+
+describe("community management permissions", () => {
+  const base = "/api/communities/typescript";
+  const owner = { Authorization: `Bearer ${signAccessToken(String(OWNER))}` };
+  const target = oid();
+  const member = oid();
+
+  it("does not let administrators promote themselves or other members, or change permission thresholds", async () => {
+    const c = community({ managers: { [String(member)]: "admin" } });
+    vi.spyOn(Community, "findOne").mockReturnValue({ lean: () => Promise.resolve(c) } as never);
+    vi.spyOn(Membership, "findOne").mockReturnValue(chain({ _id: member }) as never);
+    const update = vi.spyOn(Community, "updateOne");
+    expect((await request(app).put(`${base}/members/${ME}/role`).set(auth).send({ role: "admin" })).status).toBe(403);
+    expect((await request(app).put(`${base}/members/${target}/role`).set(auth).send({ role: "editor" })).status).toBe(403);
+    expect((await request(app).put(`${base}/permissions`).set(auth).send({
+      publish: "member", managePosts: "member", editAppearance: "member",
+    })).status).toBe(403);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("does not allow the appearance endpoint to change the owner or assign a role", async () => {
+    const res = await request(app).patch(base).set(owner).send({ creator: String(target), myRole: "owner" });
+    expect(res.status).toBe(400);
+  });
+
+  it("validates ownership confirmation and updates the current owner in a single guarded write", async () => {
+    const c = community({ accessVersion: 4 });
+    vi.spyOn(Community, "findOne").mockReturnValue({ lean: () => Promise.resolve(c) } as never);
+    vi.spyOn(Membership, "findOne").mockReturnValue(chain({ _id: member }) as never);
+    vi.spyOn(Membership, "updateOne").mockResolvedValue({} as never);
+    const update = vi.spyOn(Community, "updateOne").mockResolvedValue({ matchedCount: 1 } as never);
+    const transfer = (confirmation: string) => request(app).post(`${base}/transfer`).set(owner)
+      .send({ userId: String(target), confirmation });
+    expect((await transfer("other")).status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
+    const result = await transfer("typescript");
+    expect(result.status).toBe(200);
+    expect(result.body.myRole).toBe("member");
+    expect(update).toHaveBeenCalledWith({ _id: c._id, creator: OWNER, accessVersion: 4 }, {
+      $inc: { accessVersion: 1 },
+      $set: { creator: String(target) },
+      $unset: { [`managers.${member}`]: "", [`managerNotes.${OWNER}`]: "" },
+    });
+    update.mockResolvedValue({ matchedCount: 0 } as never);
+    expect((await transfer("typescript")).status).toBe(409);
   });
 });

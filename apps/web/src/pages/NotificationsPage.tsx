@@ -9,6 +9,7 @@ import { useMarkAllRead, useNotifications } from "../hooks/useSocial";
 const TEXT: Record<NotificationDTO["type"], string> = {
   like: "понравилась ваша запись",
   comment: "прокомментировал вашу запись",
+  repost: "поделился вашей записью",
   follow: "хочет добавить вас в друзья",
 };
 
@@ -32,7 +33,7 @@ export default function NotificationsPage() {
       {list.isLoading && <RowsSkeleton count={5} avatar={36} card />}
       {list.isError && <p className="error center">{list.error.message}</p>}
       {list.isSuccess && list.data.length === 0 && (
-        <p className="muted center">Здесь пока пусто. Здесь появятся отметки «Нравится», комментарии и заявки в друзья.</p>
+        <p className="muted center">Здесь пока пусто. Здесь появятся отметки «Нравится», комментарии, репосты и заявки в друзья.</p>
       )}
       {list.data?.map((n) => (
         <Link

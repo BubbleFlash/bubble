@@ -11,6 +11,7 @@ import { PostListSkeleton } from "../components/Skeleton";
 import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
 import { usePublicPosts } from "../hooks/usePublic";
 import ImageGallery from "../components/ImageGallery";
+import RepostCard from "../components/RepostCard";
 import { LinkedText, LinkPreview } from "../components/LinkContent";
 import { useAuth } from "../store/auth";
 
@@ -65,23 +66,27 @@ export default function ExplorePage() {
       {posts.map((post, i) => (
         <Fragment key={post.id}>
           <article className="card post post-head">
-            <Avatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} />
+            {post.community ? <Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /> : <Avatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} />}
             <div className="post-main">
               <div className="post-meta">
-                <strong className="user-link">{displayNameOf(post.author)}</strong>
-                <OnlineStatus online={user?.id === post.author.id || post.author.online} />
-                <PlusBadge plus={post.author.plus} />
+                <strong className="user-link">{post.community?.name ?? displayNameOf(post.author)}</strong>
+                {!post.community && <><OnlineStatus online={user?.id === post.author.id || post.author.online} /><PlusBadge plus={post.author.plus} /></>}
                 <span className="muted">· {timeAgo(post.createdAt)}</span>
               </div>
               {post.content && <><p className="post-body"><LinkedText text={post.content} /></p><LinkPreview text={post.content} /></>}
               {(post.imageUrls?.length || post.imageUrl) && <ImageGallery images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}
               {post.musicAttachments?.map((track) => <p className="muted" key={track.id}>{track.unavailable ? "Трек недоступен" : `${track.artist} — ${track.title}`}</p>)}
+              {post.repost && <RepostCard preview={post.repost} source={`explore:${post.id}`} guest={!user} />}
+              {post.community && <p className="muted"><Link to={`/u/${post.author.username}`}>{displayNameOf(post.author)}</Link></p>}
               <p className="post-foot muted">
                 <span className="metric">
                   <Icon name="heart" size={17} /> {post.likeCount}
                 </span>
                 <span className="metric">
                   <Icon name="comment" size={17} /> {post.commentCount}
+                </span>
+                <span className="metric">
+                  <Icon name="repost" size={17} /> {post.repostCount ?? 0}
                 </span>
                 <Link to={user ? `/posts/${post.id}` : "/login"}>
                   {user ? "Открыть запись" : "Войдите, чтобы присоединиться"}

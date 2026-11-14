@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import request from "supertest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import * as realtime from "../services/realtime.js";
 import { Post } from "../models/Post.js";
@@ -19,6 +19,9 @@ function queryChain(result: unknown) {
 }
 
 describe("GET /api/public/posts", () => {
+  beforeEach(() => {
+    vi.spyOn(Post, "aggregate").mockResolvedValue([] as never);
+  });
   const author = { _id: new mongoose.Types.ObjectId(), username: "sam", avatarUrl: null };
   const row = (content: string) => ({
     _id: new mongoose.Types.ObjectId(),
@@ -34,9 +37,9 @@ describe("GET /api/public/posts", () => {
     const find = vi.spyOn(Post, "find").mockReturnValue(queryChain([row("Hello")]) as never);
     const res = await request(app).get("/api/public/posts");
     expect(res.status).toBe(200);
-    expect(find).toHaveBeenCalledWith({ priceCents: null });
+    expect(find).toHaveBeenCalledWith({ priceCents: null, visibility: { $nin: ["private", "friends"] } });
     expect(res.body.items).toHaveLength(1);
-    expect(res.body.items[0]).toMatchObject({ content: "Hello", likedByMe: false, locked: false });
+    expect(res.body.items[0]).toMatchObject({ content: "Hello", likedByMe: false });
     expect(res.body.nextCursor).toBeNull();
     expect(res.headers["cache-control"]).toBe("no-store");
   });

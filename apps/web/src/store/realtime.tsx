@@ -71,7 +71,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           return next;
         });
-        if (fetching) void qc.invalidateQueries({ queryKey: key, exact: true });
+        if (fetching || message.hasRepost) void qc.invalidateQueries({ queryKey: key, exact: true });
         void qc.invalidateQueries({ queryKey: ["conversations"] });
         if (message.senderId !== userId) {
           void qc.invalidateQueries({ queryKey: ["unread-messages"] });

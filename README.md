@@ -103,7 +103,7 @@
 - RSS feeds parsed on the server and cached in memory and in MongoDB, so a cold start never waits on the publishers
 
 **Money**
-- Paid posts through [Lemon Squeezy](https://www.lemonsqueezy.com), with a platform fee and creator balance
+- Share posts and comments to profiles, communities, or direct messages
 - **Commune Plus**, a recurring subscription: insights, a lower fee, longer posts, more communities and a badge, with a customer portal, failed-payment handling and clear status
 - Test and live payments kept apart, so a test card can never unlock Plus on the real site
 - Optional Google AdSense slots on Explore
@@ -211,10 +211,10 @@ Optional features:
 | --- | --- |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Image storage in production |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Verification and reset emails |
-| `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_VARIANT_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET` | Paid posts |
-| `LEMONSQUEEZY_PLUS_VARIANT_ID`, `PLUS_PRICE_LABEL`, `PLUS_FEE_PERCENT` | Commune Plus |
+| `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_VARIANT_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET` | Billing provider configuration |
+| `LEMONSQUEEZY_PLUS_VARIANT_ID`, `PLUS_PRICE_LABEL` | Commune Plus |
 | `LEMONSQUEEZY_ACCEPT_TEST_MODE` | `true` only while testing payments; leave `false` on the real site |
-| `PLATFORM_FEE_PERCENT` | Platform share of paid posts |
+| `PLATFORM_FEE_PERCENT`, `PLUS_FEE_PERCENT` | Fee settings for legacy post orders |
 | `GOOGLE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID` | Sign in with Google |
 | `VITE_ADSENSE_CLIENT`, `VITE_ADSENSE_FEED_SLOT` | AdSense |
 | `CONTACT_EMAIL` | Also email contact-form messages |
@@ -297,7 +297,7 @@ See `apps/api/src/routes/index.ts` for the full list.
 - [x] Auth, profiles, follows, notifications
 - [x] Image uploads, search, moderation
 - [x] Email verification and password reset
-- [x] Paid posts and Commune Plus
+- [x] Commune Plus
 - [x] Communities, live news, direct messages
 - [x] PWA, responsive design, dark mode
 - [x] Real-time messages and notifications (Socket.IO)

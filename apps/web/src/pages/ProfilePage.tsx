@@ -8,7 +8,6 @@ import OnlineStatus from "../components/OnlineStatus";
 import Avatar from "../components/Avatar";
 import ProfileAction from "../components/ProfileAction";
 import PlusBadge from "../components/PlusBadge";
-import EarningsCard from "../components/EarningsCard";
 import PostList from "../components/PostList";
 import ProfileMusic from "../components/ProfileMusic";
 import { useProfile, useToggleFollow, useUpdateProfile, useUserPosts } from "../hooks/useSocial";
@@ -133,7 +132,6 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {isMe && <EarningsCard />}
 
         {isMe && editing && (
           <div className="row">
@@ -163,7 +161,7 @@ export default function ProfilePage() {
               onChange={(e) => setBio(e.target.value)}
               maxLength={160}
               rows={3}
-              placeholder="Расскажите сообществу о себе"
+              placeholder="Расскажите о себе"
             />
             <div className="composer-footer">
               <span className="muted">{bio.length}/160</span>
@@ -204,7 +202,7 @@ export default function ProfilePage() {
       </section>
 
       {me && <ProfileMusic key={`${me.id}:${p.id}`} username={p.username} viewerId={me.id} isMe={isMe} />}
-      {isMe && !p.banned && <Composer allowPaid={false} />}
+      {isMe && !p.banned && <Composer />}
       <PostList inlineComments query={posts} emptyMessage="Записей пока нет." />
     </>
   );

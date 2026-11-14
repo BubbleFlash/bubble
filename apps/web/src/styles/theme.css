@@ -205,11 +205,6 @@ h3,
   background: var(--hue, var(--muted));
 }
 
-.price-badge {
-  background: var(--gold);
-  color: var(--gold-ink);
-}
-
 /* ---------- Brand and header ---------- */
 .header {
   height: calc(var(--header-h) + env(safe-area-inset-top));
@@ -409,27 +404,6 @@ h3,
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-
-.paywall,
-.premium {
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-}
-
-.paywall p {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.premium {
-  border-color: var(--gold);
-}
-
-.premium-label {
-  color: var(--text);
 }
 
 /* ---------- Composer ---------- */

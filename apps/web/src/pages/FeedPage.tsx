@@ -20,7 +20,7 @@ export default function FeedPage() {
 
   return (
     <>
-      <Composer allowPaid={false} />
+      <Composer />
       <div className="tabs feed-tabs" role="tablist" aria-label="Лента">
         {TABS.map((t) => (
           <button

@@ -54,7 +54,7 @@ Do **not** set `VITE_API_URL` on the web project. Optional: `VITE_GOOGLE_CLIENT_
 
 - **Cloudinary**: create an account and copy cloud name, key and secret. Images upload straight from the browser using a signed ticket from `POST /api/uploads/sign`. See [UPLOADS.md](UPLOADS.md).
 - **Resend**: verify a domain, set `RESEND_API_KEY` and `EMAIL_FROM`.
-- **Lemon Squeezy**: create a store, a one-off product for paid posts and a recurring product for Plus. Add a webhook to `https://<api-domain>/api/webhooks/lemonsqueezy` (one endpoint serves paid posts and Plus; tick the order and subscription events) using the same `LEMONSQUEEZY_WEBHOOK_SECRET`.
+- **Lemon Squeezy**: the existing billing integration handles Plus subscriptions and legacy post orders. See [PLUS.md](PLUS.md) for provider configuration.
 - **Google sign-in**: create a Web OAuth client, add your web origin as an authorised JavaScript origin, set `GOOGLE_CLIENT_ID` (API) and `VITE_GOOGLE_CLIENT_ID` (web).
 - **AdSense**: needs an approved site; set the two `VITE_ADSENSE_*` values.
 

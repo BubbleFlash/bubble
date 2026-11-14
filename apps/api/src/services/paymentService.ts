@@ -8,8 +8,7 @@ import { env, isProd } from "../config/env.js";
  *
  * Modes:
  *  - "lemonsqueezy": all four LEMONSQUEEZY_* variables are set.
- *  - "mock": outside production with none set. Checkout instantly "buys" the post so the
- *    feature can be tried locally. Never active in production.
+ *  - "mock": subscriptions are simulated locally without provider configuration.
  *  - null: production without configuration; checkout answers 503.
  */
 const ls =
@@ -20,7 +19,6 @@ const ls =
     ? {
         apiKey: env.LEMONSQUEEZY_API_KEY,
         storeId: env.LEMONSQUEEZY_STORE_ID,
-        variantId: env.LEMONSQUEEZY_VARIANT_ID,
         webhookSecret: env.LEMONSQUEEZY_WEBHOOK_SECRET,
         plusVariantId: env.LEMONSQUEEZY_PLUS_VARIANT_ID,
       }
@@ -31,13 +29,6 @@ export const paymentsMode: PaymentsMode = ls ? "lemonsqueezy" : isProd ? null : 
 
 /** Commune Plus can be sold: simulated locally, or the Plus variant is configured. */
 export const plusAvailable = paymentsMode === "mock" || Boolean(ls?.plusVariantId);
-
-export interface CheckoutRequest {
-  postId: string;
-  userId: string;
-  email: string;
-  priceCents: number;
-}
 
 /** Creates a hosted checkout at Lemon Squeezy and returns its URL. */
 async function createHostedCheckout(
@@ -74,26 +65,6 @@ async function createHostedCheckout(
     throw new PaymentsNotLiveError();
   }
   return url;
-}
-
-/** Creates a hosted checkout for one post at its price and returns the URL to send the buyer to. */
-export async function createCheckoutUrl(req: CheckoutRequest): Promise<string> {
-  if (!ls) throw new Error("Lemon Squeezy is not configured");
-  return createHostedCheckout(
-    {
-      custom_price: req.priceCents,
-      product_options: {
-        name: "Unlock a post on Commune",
-        redirect_url: `${env.CLIENT_ORIGIN}/posts/${req.postId}?unlocked=1`,
-      },
-      checkout_data: {
-        email: req.email,
-        // Echoed back in the webhook, which is how we know who bought what.
-        custom: { post_id: req.postId, user_id: req.userId },
-      },
-    },
-    ls.variantId,
-  );
 }
 
 function apiHeaders(apiKey: string) {

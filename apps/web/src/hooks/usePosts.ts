@@ -6,7 +6,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import type { CommentDTO, CreatePostInput, Page, PostDTO } from "@commune/shared";
+import type { CommentDTO, CreatePostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 
 export type FeedType = "all" | "following";
@@ -32,22 +32,20 @@ function findPostInFeeds(qc: QueryClient, id: string): PostDTO | undefined {
   return undefined;
 }
 
-/** `pollWhileLocked` re-checks every 2s: after paying, the unlock arrives via a webhook. */
-export function usePost(id: string, pollWhileLocked = false) {
+export function usePost(id: string) {
   const qc = useQueryClient();
   return useQuery({
     queryKey: ["post", id],
     // Opening a post you just saw in a feed shows it at once; the fresh copy loads behind it.
     placeholderData: () => findPostInFeeds(qc, id),
     queryFn: () => api<PostDTO>(`/posts/${id}`),
-    refetchInterval: (query) => (pollWhileLocked && query.state.data?.locked ? 2000 : false),
   });
 }
 
-export function useComments(id: string) {
+export function useComments(id: string, linkedCommentId?: string) {
   return useQuery({
-    queryKey: ["comments", id],
-    queryFn: () => api<CommentDTO[]>(`/posts/${id}/comments`),
+    queryKey: linkedCommentId ? ["comments", id, linkedCommentId] : ["comments", id],
+    queryFn: () => api<CommentDTO[]>(withQuery(`/posts/${id}/comments`, { comment: linkedCommentId })),
   });
 }
 
@@ -65,8 +63,11 @@ export function useToggleLike() {
   return useMutation({
     mutationFn: (id: string) => api<PostDTO>(`/posts/${id}/like`, { method: "POST" }),
     onSuccess: (post) => {
+      void qc.invalidateQueries({ queryKey: ["post"], predicate: (query) => query.queryKey[1] !== post.id });
       qc.setQueryData(["post", post.id], post);
       void qc.invalidateQueries({ queryKey: ["feed"] });
+      void qc.invalidateQueries({ queryKey: ["search", "posts"] });
+      void qc.invalidateQueries({ queryKey: ["public", "posts"] });
     },
   });
 }
@@ -75,7 +76,25 @@ export function useDeletePost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<void>(`/posts/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["feed"] }),
+    onSuccess: (_result, id) => {
+      qc.removeQueries({ queryKey: ["post", id], exact: true });
+      for (const key of [["feed"], ["post"], ["search", "posts"], ["public", "posts"], ["thread"]]) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
+}
+
+export function useUpdateCommunityPost(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateCommunityPostInput) => api<PostDTO>(`/posts/${id}`, { method: "PATCH", body: input }),
+    onSuccess: (post) => {
+      qc.setQueryData(["post", id], post);
+      for (const key of [["feed"], ["post"], ["search", "posts"], ["public", "posts"], ["thread"]]) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
   });
 }
 

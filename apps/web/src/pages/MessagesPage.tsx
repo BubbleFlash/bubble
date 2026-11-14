@@ -9,6 +9,7 @@ import Avatar from "../components/Avatar";
 import MusicAttachmentPicker from "../components/MusicAttachmentPicker";
 import MusicAttachments from "../components/MusicAttachments";
 import MessageImages from "../components/MessageImages";
+import RepostCard from "../components/RepostCard";
 import { LinkedText, LinkPreview, splitLinks } from "../components/LinkContent";
 import { useImageDraft } from "../hooks/useImageDraft";
 import { useImageDrop } from "../hooks/useImageDrop";
@@ -273,10 +274,12 @@ function Thread({ id }: { id: string }) {
               key={m.id}
               className={`bubble-row${mine ? " mine" : ""}${pending ? " pending" : ""}`}
             >
-              <div className={`bubble${m.musicAttachments?.length || m.imageIds?.length || splitLinks(m.text).some((part) => part.href) ? " bubble--music" : ""}`}>
+              <div className={`bubble${m.hasRepost || m.musicAttachments?.length || m.imageIds?.length || splitLinks(m.text).some((part) => part.href) ? " bubble--music" : ""}`}>
                 {m.text && <><span><LinkedText text={m.text} /></span><LinkPreview text={m.text} /></>}
                 {(m.imageIds?.length ?? 0) > 0 && <MessageImages ids={m.imageIds!} />}
                 {(m.musicAttachments?.length ?? 0) > 0 && <MusicAttachments attachments={m.musicAttachments!} source={`message:${m.senderId}:${m.clientMessageId ?? m.id}`} />}
+                {m.repost && <RepostCard preview={m.repost} source={`message-repost:${m.id}`} />}
+                {m.hasRepost && !m.repost && <p className="muted">Загрузка репоста…</p>}
                 <time
                   className="bubble-time"
                   dateTime={m.createdAt}

@@ -5,6 +5,7 @@ import { useAddComment, useComments } from "../hooks/usePosts";
 import { ProfileAvatar } from "./Avatar";
 import CommentInput from "./CommentInput";
 import { LinkedText, LinkPreview } from "./LinkContent";
+import RepostButton from "./RepostButton";
 
 /** Mounted on first expansion; retained to preserve the draft and cached discussion. */
 export default function InlineComments({ postId }: { postId: string }) {
@@ -23,7 +24,14 @@ export default function InlineComments({ postId }: { postId: string }) {
       {comments.data?.map((comment) => (
         <div className="inline-comment" key={comment.id}>
           <ProfileAvatar username={comment.author.username} displayName={comment.author.displayName} url={comment.author.avatarUrl} frame={comment.author.avatarFrame} size={28} />
-          <div><Link to={`/u/${comment.author.username}`}>{displayNameOf(comment.author)}</Link>{" "}<time className="muted" dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString("ru-RU")}</time><p><LinkedText text={comment.content} /></p><LinkPreview text={comment.content} /></div>
+          <div>
+            <div className="repost-comment-meta">
+              <Link to={`/u/${comment.author.username}`}>{displayNameOf(comment.author)}</Link>
+              <time className="muted" dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString("ru-RU")}</time>
+              <RepostButton source={{ post: postId, comment: comment.id }} />
+            </div>
+            <p><LinkedText text={comment.content} /></p><LinkPreview text={comment.content} />
+          </div>
         </div>
       ))}
       <form onSubmit={submit}>

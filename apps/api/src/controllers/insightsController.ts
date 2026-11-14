@@ -23,7 +23,7 @@ export async function get(req: Request, res: Response) {
 
   const [totals, viewRows, followers, newFollowers, top] = await Promise.all([
     Post.aggregate<{ posts: number; views: number; likes: number; comments: number }>([
-      { $match: { author } },
+      { $match: { author, priceCents: null } },
       {
         $group: {
           _id: null,
@@ -40,7 +40,7 @@ export async function get(req: Request, res: Response) {
     ]),
     Follow.countDocuments({ following: author }),
     Follow.countDocuments({ following: author, createdAt: { $gte: since } }),
-    Post.find({ author })
+    Post.find({ author, priceCents: null })
       .sort({ viewCount: -1, _id: -1 })
       .limit(5)
       .select("content viewCount likeCount commentCount createdAt")

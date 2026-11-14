@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import type { Page, PostDTO } from "@commune/shared";
-import { onlineUsers } from "../services/realtime.js";
 import { Post } from "../models/Post.js";
-import { loadPostMusic } from "../services/postMusic.js";
+import { AUTHOR_FIELDS, COMMUNITY_FIELDS, publicPostFilter } from "../services/postAccess.js";
 import { badRequest } from "../utils/errors.js";
-import { toPostDTO, type PopulatedPost } from "../utils/serializers.js";
+import type { PopulatedPost } from "../utils/serializers.js";
+import { presentPosts } from "./postController.js";
 
 /**
  * Latest posts for logged-out visitors. Paid posts are excluded entirely (not even teasers),
@@ -15,22 +15,18 @@ export async function listPosts(_req: Request, res: Response) {
   const { cursor, limit } = (res.locals as { query: { cursor?: string; limit: number } }).query;
   if (cursor && !mongoose.isValidObjectId(cursor)) throw badRequest("Invalid cursor");
 
-  const filter = cursor ? { priceCents: null, _id: { $lt: cursor } } : { priceCents: null };
+  const filter = { ...publicPostFilter, ...(cursor ? { _id: { $lt: cursor } } : {}) };
   const rows = (await Post.find(filter)
     .sort({ _id: -1 })
     .limit(limit + 1)
-    .populate("author", "username displayName avatarUrl avatarFrame plusUntil")
-    .populate("community", "slug name")
+    .populate("author", AUTHOR_FIELDS)
+    .populate("community", COMMUNITY_FIELDS)
     .lean()) as unknown as PopulatedPost[];
 
   const hasMore = rows.length > limit;
   const posts = hasMore ? rows.slice(0, limit) : rows;
-  const [music, online] = await Promise.all([
-    loadPostMusic(posts),
-    onlineUsers(posts.map((post) => post.author._id.toString())),
-  ]);
   const body: Page<PostDTO> = {
-    items: posts.map((p) => toPostDTO(p, false, true, music.get(p._id.toString()), online.has(p.author._id.toString()))),
+    items: await presentPosts(undefined, posts),
     nextCursor: hasMore ? (posts[posts.length - 1]?._id.toString() ?? null) : null,
   };
   res.set("Cache-Control", "no-store");
