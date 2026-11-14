@@ -43,14 +43,14 @@ const MusicPage = lazy(() => import("./pages/MusicPage"));
 const UserMusicPage = lazy(() => import("./pages/UserMusicPage"));
 
 const TITLES: Record<string, string> = {
-  "/": "Bubble — открытая платформа сообществ",
+  "/": "Bubble — открытая платформа групп",
   "/explore": "Обзор",
   "/news": "Последние новости",
   "/contact": "Связаться",
   "/plus": "Bubble Plus",
   "/insights": "Статистика",
   "/messages": "Сообщения",
-  "/communities": "Сообщества",
+  "/communities": "Группы",
   "/notifications": "Уведомления",
   "/search": "Поиск",
   "/friends": "Друзья",
@@ -241,7 +241,7 @@ function AuthArt() {
         <p className="art-title">Ваши люди и новости — в одном месте.</p>
         <ul>
           <li>
-            <Icon name="users" size={20} /> Вступайте в сообщества и подписывайтесь на людей
+            <Icon name="users" size={20} /> Вступайте в группы и подписывайтесь на людей
           </li>
           <li>
             <Icon name="mail" size={20} /> Общайтесь с друзьями в личных сообщениях

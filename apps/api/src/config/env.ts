@@ -53,8 +53,7 @@ const schema = z.object({
     .transform((v) => v?.trim() || "Commune <onboarding@resend.dev>"),
   // "Sign in with Google": the OAuth Web client ID (looks like 123-abc.apps.googleusercontent.com).
   GOOGLE_CLIENT_ID: z.string().optional(),
-  // Paid posts, through Lemon Squeezy (https://lemonsqueezy.com). All four are needed for real
-  // checkouts. Outside production, with none set, purchases are simulated so you can test.
+  // Lemon Squeezy provider configuration for Plus and legacy order webhooks.
   LEMONSQUEEZY_API_KEY: z.string().optional(),
   LEMONSQUEEZY_STORE_ID: z.string().optional(),
   LEMONSQUEEZY_VARIANT_ID: z.string().optional(),

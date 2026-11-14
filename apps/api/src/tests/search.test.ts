@@ -5,7 +5,7 @@ import { searchQuerySchema } from "@commune/shared";
 import { createApp } from "../app.js";
 import { Like } from "../models/Like.js";
 import { Post } from "../models/Post.js";
-import { Purchase } from "../models/Purchase.js";
+import { Follow } from "../models/Follow.js";
 import { User } from "../models/User.js";
 import { escapeRegex } from "../utils/regex.js";
 import { signAccessToken } from "../utils/tokens.js";
@@ -104,27 +104,22 @@ describe("GET /api/search/posts", () => {
     createdAt: new Date(),
   };
 
-  it("uses a text search and never leaks locked content", async () => {
+  it("uses a text search restricted to readable posts", async () => {
+    vi.spyOn(Follow, "find").mockReturnValue(queryChain([]) as never);
     const free = { ...base, _id: new mongoose.Types.ObjectId(), content: "hello world" };
-    const paid = {
-      ...base,
-      _id: new mongoose.Types.ObjectId(),
-      content: "hello teaser",
-      priceCents: 500,
-      premiumContent: "TOP SECRET TEXT",
-    };
-    const find = vi.spyOn(Post, "find").mockReturnValue(queryChain([free, paid]) as never);
+    const find = vi.spyOn(Post, "find").mockReturnValue(queryChain([free]) as never);
+    vi.spyOn(Post, "aggregate").mockResolvedValue([] as never);
     vi.spyOn(Like, "find").mockReturnValue(queryChain([]) as never);
-    vi.spyOn(Purchase, "find").mockReturnValue(queryChain([]) as never);
 
     const res = await request(app).get("/api/search/posts?q=hello").set(auth);
     expect(res.status).toBe(200);
     expect(find).toHaveBeenCalledWith(
-      { $text: { $search: "hello" } },
+      expect.objectContaining({ $text: { $search: "hello" }, priceCents: null, $or: [
+        { visibility: { $nin: ["private", "friends"] } }, expect.objectContaining({ author: expect.any(String) }),
+        { visibility: "friends", author: { $in: [] } },
+      ] }),
       { score: { $meta: "textScore" } },
     );
-    expect(res.body.items).toHaveLength(2);
-    expect(JSON.stringify(res.body)).not.toContain("TOP SECRET TEXT");
-    expect(res.body.items[1].locked).toBe(true);
+    expect(res.body.items).toHaveLength(1);
   });
 });

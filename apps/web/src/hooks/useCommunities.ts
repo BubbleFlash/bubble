@@ -2,12 +2,13 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { CommunityDTO, CreateCommunityInput, Page, PostDTO } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 
-export function useCommunities(filter: { q?: string; mine?: boolean }) {
+export function useCommunities(filter: { q?: string; mine?: boolean; owned?: boolean }, enabled = true) {
   return useQuery({
     queryKey: ["communities", filter],
+    enabled,
     queryFn: () =>
       api<CommunityDTO[]>(
-        withQuery("/communities", { q: filter.q, mine: filter.mine ? "1" : undefined }),
+        withQuery("/communities", { q: filter.q, mine: filter.mine ? "1" : undefined, owned: filter.owned ? "1" : undefined }),
       ),
   });
 }

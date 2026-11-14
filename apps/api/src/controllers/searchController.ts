@@ -6,6 +6,7 @@ import { User } from "../models/User.js";
 import { isPlusActive } from "../utils/plan.js";
 import { escapeRegex } from "../utils/regex.js";
 import type { PopulatedPost } from "../utils/serializers.js";
+import { AUTHOR_FIELDS, COMMUNITY_FIELDS, readablePostFilter } from "../services/postAccess.js";
 import { presentPosts } from "./postController.js";
 
 interface SearchQuery {
@@ -57,12 +58,12 @@ export async function users(_req: Request, res: Response) {
 /** Posts matching the words, best match first. Only free text is searched, never paid content. */
 export async function posts(req: Request, res: Response) {
   const { q, page } = readQuery(res);
-  const rows = (await Post.find({ $text: { $search: q } }, { score: { $meta: "textScore" } })
+  const rows = (await Post.find({ $text: { $search: q }, ...await readablePostFilter(req.userId) }, { score: { $meta: "textScore" } })
     .sort({ score: { $meta: "textScore" } })
     .skip((page - 1) * SEARCH_PAGE_SIZE)
     .limit(SEARCH_PAGE_SIZE + 1)
-    .populate("author", "username displayName avatarUrl avatarFrame plusUntil")
-    .populate("community", "slug name")
+    .populate("author", AUTHOR_FIELDS)
+    .populate("community", COMMUNITY_FIELDS)
     .lean()) as unknown as PopulatedPost[];
 
   const { items, nextCursor } = paginate(rows, page);

@@ -9,6 +9,7 @@ import { badRequest, conflict, forbidden, notFound } from "../utils/errors.js";
 import { escapeRegex } from "../utils/regex.js";
 import { toCommunityDTO } from "../utils/serializers.js";
 import { sendPostPage } from "./postController.js";
+import { deleteUploadIfUnused } from "../services/uploadService.js";
 
 const MAX_COMMUNITIES_FREE = 5;
 const MAX_COMMUNITIES_PLUS = 20;
@@ -64,13 +65,14 @@ export async function create(req: Request, res: Response) {
 
 /** Most popular communities, optionally filtered by text, or only the ones I belong to. */
 export async function list(req: Request, res: Response) {
-  const { q, mine } = (res.locals as { query: { q?: string; mine?: "1" } }).query;
+  const { q, mine, owned } = (res.locals as { query: { q?: string; mine?: "1"; owned?: "1" } }).query;
 
   const memberships = await Membership.find({ user: req.userId }).select("community role").lean();
   const roles = new Map(memberships.map((m) => [m.community.toString(), m.role]));
 
   const filter: Record<string, unknown> = {};
   if (mine) filter._id = { $in: memberships.map((m) => m.community) };
+  if (owned) filter.creator = req.userId;
   if (q) {
     const pattern = { $regex: escapeRegex(q), $options: "i" };
     filter.$or = [{ slug: pattern }, { name: pattern }];
@@ -92,6 +94,19 @@ export async function get(req: Request, res: Response) {
     .select("role")
     .lean();
   res.json(toCommunityDTO(community, membership?.role ?? null));
+}
+
+export async function update(req: Request, res: Response) {
+  const community = await findBySlug(req.params.slug);
+  if (String(community.creator) !== req.userId) throw forbidden("Only the community owner can edit it");
+  const updated = await Community.findOneAndUpdate(
+    { _id: community._id, creator: req.userId },
+    { $set: req.body },
+    { new: true, runValidators: true },
+  ).lean();
+  if (!updated) throw notFound("Community not found");
+  if (community.avatarUrl !== updated.avatarUrl) await deleteUploadIfUnused(community.avatarUrl);
+  res.json(toCommunityDTO(updated, "owner"));
 }
 
 export async function join(req: Request, res: Response) {

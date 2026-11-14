@@ -22,7 +22,9 @@ import {
   communityListSchema,
   createCommentSchema,
   createCommunitySchema,
+  updateCommunitySchema,
   createPostSchema,
+  createRepostSchema,
   createReportSchema,
   forgotPasswordSchema,
   googleLoginSchema,
@@ -359,6 +361,7 @@ router.post(
   asyncHandler(communities.create),
 );
 router.get("/communities/:slug", requireAuth, asyncHandler(communities.get));
+router.patch("/communities/:slug", requireAuth, requireActive, validate(updateCommunitySchema), asyncHandler(communities.update));
 router.get(
   "/communities/:slug/posts",
   requireAuth,
@@ -387,16 +390,16 @@ router.post(
   requireActive,
   asyncHandler(posts.createPost),
 );
+router.post(
+  "/posts/reposts",
+  requireAuth,
+  validate(createRepostSchema),
+  requireActive,
+  asyncHandler(posts.createRepost),
+);
 router.get("/posts/:id", requireAuth, asyncHandler(posts.getPost));
 router.delete("/posts/:id", requireAuth, requireActive, asyncHandler(posts.deletePost));
 router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.toggleLike));
-router.post(
-  "/posts/:id/checkout",
-  requireAuth,
-  checkoutLimiter,
-  requireActive,
-  asyncHandler(payments.checkout),
-);
 router.post("/posts/:id/view", requireAuth, viewLimiter, asyncHandler(posts.trackView));
 router.get("/posts/:id/comments", requireAuth, asyncHandler(posts.listComments));
 router.post(

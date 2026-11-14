@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import { repostSource } from "./repostSource.js";
 
 const messageSchema = new Schema({
   conversation: { type: Schema.Types.ObjectId, ref: "Conversation", required: true },
@@ -12,11 +13,15 @@ const messageSchema = new Schema({
     },
   },
   imageIds: { type: [{ type: Schema.Types.ObjectId, ref: "MessageImage" }], default: [] },
+  repost: { type: repostSource },
+  repostAncestors: { type: [Schema.Types.ObjectId], default: undefined },
   clientMessageId: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
 messageSchema.index({ conversation: 1, createdAt: -1 });
 messageSchema.index({ imageIds: 1 });
+messageSchema.index({ repostAncestors: 1 });
+messageSchema.index({ "repost.post": 1 });
 
 export const Message = model("Message", messageSchema);

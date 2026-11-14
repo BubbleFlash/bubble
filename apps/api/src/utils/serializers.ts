@@ -31,7 +31,7 @@ interface UserLike {
   createdAt: Date;
 }
 
-interface PopulatedAuthor {
+export interface PopulatedAuthor {
   _id: Types.ObjectId;
   username: string;
   displayName?: string | null;
@@ -47,8 +47,10 @@ export interface PopulatedPost {
   imageUrls?: string[];
   musicTrackIds?: Types.ObjectId[];
   priceCents?: number | null;
-  premiumContent?: string | null;
-  community?: { slug: string; name: string } | null;
+  community?: { slug: string; name: string; avatarUrl?: string | null; creator?: Types.ObjectId } | null;
+  visibility?: PostDTO["visibility"];
+  repost?: { post: Types.ObjectId; comment?: Types.ObjectId };
+  repostAncestors?: Types.ObjectId[];
   author: PopulatedAuthor;
   likeCount: number;
   commentCount: number;
@@ -88,7 +90,7 @@ export interface PopulatedReport {
   resolvedAt?: Date | null;
 }
 
-const toAuthor = (a: PopulatedAuthor) => ({
+export const toAuthor = (a: PopulatedAuthor) => ({
   id: a._id.toString(),
   username: a.username,
   displayName: a.displayName ?? undefined,
@@ -152,27 +154,19 @@ export function toProfileDTO(
   return { ...publicUser, ...counts, followedByMe, followsMe, banned: Boolean(u.banned), profileAppearance };
 }
 
-/**
- * `unlocked` must be true for the author and for buyers. This is the single place that decides
- * whether premium content leaves the server, so it never defaults to true.
- */
-export function toPostDTO(p: PopulatedPost, likedByMe: boolean, unlocked: boolean, musicAttachments: PostDTO["musicAttachments"] = [], online = false): PostDTO {
-  const paid = p.priceCents != null;
-  const locked = paid && !unlocked;
+export function toPostDTO(p: PopulatedPost, likedByMe: boolean, musicAttachments: PostDTO["musicAttachments"] = [], online = false): PostDTO {
   return {
     id: p._id.toString(),
     content: p.content,
     imageUrl: p.imageUrl ?? null,
     imageUrls: p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [],
-    musicAttachments: locked ? [] : musicAttachments,
+    musicAttachments,
     author: { ...toAuthor(p.author), online },
     likeCount: p.likeCount,
     commentCount: p.commentCount,
     likedByMe,
-    community: p.community ? { slug: p.community.slug, name: p.community.name } : null,
-    priceCents: p.priceCents ?? null,
-    locked,
-    premiumContent: paid && !locked ? (p.premiumContent ?? "") : null,
+    visibility: p.visibility ?? "public",
+    community: p.community ? { slug: p.community.slug, name: p.community.name, avatarUrl: p.community.avatarUrl ?? null, creatorId: p.community.creator?.toString() } : null,
     createdAt: p.createdAt.toISOString(),
   };
 }
@@ -223,6 +217,7 @@ export interface CommunityLike {
   slug: string;
   name: string;
   description?: string | null;
+  avatarUrl?: string | null;
   memberCount: number;
   createdAt: Date;
 }
@@ -233,6 +228,7 @@ export function toCommunityDTO(c: CommunityLike, myRole: "owner" | "member" | nu
     slug: c.slug,
     name: c.name,
     description: c.description ?? "",
+    avatarUrl: c.avatarUrl ?? null,
     memberCount: c.memberCount,
     joinedByMe: myRole !== null,
     myRole,

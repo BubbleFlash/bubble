@@ -62,48 +62,63 @@ export const createCommunitySchema = z.object({
   name: z.string().trim().min(3, "Name needs at least 3 characters").max(40),
   description: z.string().trim().max(280).default(""),
 });
+export const updateCommunitySchema = z.object({
+  name: z.string().trim().min(3).max(40).optional(),
+  description: z.string().trim().max(280).optional(),
+  avatarUrl: uploadUrlSchema.nullable().optional(),
+}).strict();
 
 export const communityListSchema = z.object({
   q: z.string().trim().max(30).optional(),
   mine: z.enum(["1"]).optional(),
+  owned: z.enum(["1"]).optional(),
 });
 
 /** Paid-post prices are in US cents: $1.00 to $500.00. */
-export const MIN_PRICE_CENTS = 100;
-export const MAX_PRICE_CENTS = 50000;
-export const MAX_PREMIUM_LENGTH = 5000;
-
 /** Free accounts can write 500 characters per post; Commune Plus members 2000. */
 export const FREE_POST_LENGTH = 500;
 export const PLUS_POST_LENGTH = 2000;
 
 export const musicTrackIdsSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(10).refine((ids) => new Set(ids).size === ids.length, "Duplicate music tracks");
 
+export const postVisibilitySchema = z.enum(["public", "private", "friends"]);
+export type PostVisibility = z.infer<typeof postVisibilitySchema>;
+
+const objectIdSchema = z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase());
+export const repostSourceSchema = z.object({
+  post: objectIdSchema,
+  comment: objectIdSchema.optional(),
+}).strict();
+export type RepostSource = z.infer<typeof repostSourceSchema>;
+
+export const createRepostSchema = z.object({
+  source: repostSourceSchema,
+  content: z.string().trim().max(PLUS_POST_LENGTH).default(""),
+  community: communitySlugSchema.optional(),
+}).strict();
+export type CreateRepostInput = z.infer<typeof createRepostSchema>;
+
 export const createPostSchema = z
   .object({
-    // For a paid post this is the free teaser everyone can see. The 500 limit for free
-    // accounts is enforced on the server, because it depends on the account's plan.
+    // The limit for free accounts is enforced on the server.
     content: z.string().trim().max(PLUS_POST_LENGTH),
     imageUrl: uploadUrlSchema.nullish(),
     imageUrls: z.array(uploadUrlSchema).max(10).optional(),
     musicTrackIds: musicTrackIdsSchema.optional(),
-    // Setting a price makes the post paid: premiumContent is shown only after purchase.
     // Slug of a community the author belongs to; the post then appears in that community.
     community: communitySlugSchema.nullish(),
-    priceCents: z.number().int().min(MIN_PRICE_CENTS).max(MAX_PRICE_CENTS).nullish(),
-    premiumContent: z.string().trim().max(MAX_PREMIUM_LENGTH).nullish(),
+    visibility: postVisibilitySchema.optional(),
+    // Older clients sent null for these fields on ordinary posts.
+    priceCents: z.null().optional(),
+    premiumContent: z.null().optional(),
   })
   .refine((v) => v.content.length > 0 || Boolean(v.imageUrl) || (v.imageUrls?.length ?? 0) > 0 || (v.musicTrackIds?.length ?? 0) > 0, {
     message: "Write something or attach an image",
     path: ["content"],
   })
-  .refine((v) => v.priceCents == null || (v.premiumContent?.length ?? 0) > 0, {
-    message: "Add the content people will pay to unlock",
-    path: ["premiumContent"],
-  })
-  .refine((v) => v.priceCents != null || !v.premiumContent, {
-    message: "Set a price to publish paid content",
-    path: ["priceCents"],
+  .refine((v) => v.visibility === undefined || v.visibility === "public" || !v.community, {
+    message: "Only posts in your profile can be private",
+    path: ["visibility"],
   });
 
 /** Search results come in pages of 20, up to 10 pages. */
@@ -247,7 +262,8 @@ export const sendMessageSchema = z.object({
   musicTrackIds: musicTrackIdsSchema.optional(),
   imageIds: z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(10).refine((ids) => new Set(ids).size === ids.length).optional(),
   clientMessageId: z.string().uuid().optional(),
-}).refine((value) => Boolean(value.text || value.musicTrackIds?.length || value.imageIds?.length), { message: "Write a message or attach a file", path: ["text"] });
+  repost: repostSourceSchema.optional(),
+}).refine((value) => Boolean(value.text || value.musicTrackIds?.length || value.imageIds?.length || value.repost), { message: "Write a message or attach a file", path: ["text"] });
 export const messagesQuerySchema = z.object({
   /** ISO timestamp of the oldest message already loaded; returns older ones. */
   cursor: z.string().datetime().optional(),
@@ -275,6 +291,8 @@ export interface MessageDTO {
   text: string;
   musicAttachments?: MusicAttachmentDTO[];
   imageIds?: string[];
+  hasRepost?: boolean;
+  repost?: RepostPreviewDTO;
   clientMessageId?: string;
   createdAt: string;
 }
@@ -363,16 +381,32 @@ export interface PostDTO {
   likeCount: number;
   commentCount: number;
   likedByMe: boolean;
+  repostCount?: number;
+  repost?: RepostPreviewDTO;
+  visibility?: PostVisibility;
   /** The community this post was made in, if any. */
-  community: { slug: string; name: string } | null;
-  /** Price in US cents, or null for a free post. */
-  priceCents: number | null;
-  /** True when the post is paid and the viewer has not unlocked it (and isn't the author). */
-  locked: boolean;
-  /** The paid content. Always null while `locked`, and for free posts. */
-  premiumContent: string | null;
+  community: { slug: string; name: string; avatarUrl?: string | null; creatorId?: string } | null;
   createdAt: string;
 }
+
+interface RepostPreviewContent {
+  postId: string;
+  author: AuthorDTO;
+  content: string;
+  createdAt: string;
+}
+
+export type RepostPreviewDTO =
+  | { kind: "unavailable" }
+  | { kind: "link"; postId: string }
+  | (RepostPreviewContent & { kind: "comment"; commentId: string })
+  | (RepostPreviewContent & {
+      kind: "post";
+      imageUrls: string[];
+      musicAttachments: MusicAttachmentDTO[];
+      community?: { slug: string; name: string; avatarUrl?: string | null };
+      repost?: RepostPreviewDTO;
+    });
 
 export type MusicAttachmentDTO =
   | { id: string; title: string; artist: string; duration: number | null; unavailable: false }
@@ -433,6 +467,7 @@ export interface CommunityDTO {
   slug: string;
   name: string;
   description: string;
+  avatarUrl?: string | null;
   memberCount: number;
   joinedByMe: boolean;
   /** "owner" for the creator, "member" for everyone else who joined, null if not a member. */
@@ -480,7 +515,7 @@ export interface ProfileDTO extends PublicUser {
   banned: boolean;
 }
 
-export type NotificationType = "like" | "comment" | "follow";
+export type NotificationType = "like" | "comment" | "follow" | "repost";
 
 export interface NotificationDTO {
   id: string;
