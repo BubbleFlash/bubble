@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { AuthProvider } from "./store/auth";
 import { RealtimeProvider } from "./store/realtime";
+import { MusicPlayerProvider } from "./store/music";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installErrorReporting } from "./lib/report";
 import { registerServiceWorker } from "./lib/pwa";
@@ -32,9 +33,11 @@ const router = createBrowserRouter([
     path: "*",
     element: (
       <AuthProvider>
-        <RealtimeProvider>
-          <App />
-        </RealtimeProvider>
+        <MusicPlayerProvider>
+          <RealtimeProvider>
+            <App />
+          </RealtimeProvider>
+        </MusicPlayerProvider>
       </AuthProvider>
     ),
   },

@@ -7,6 +7,7 @@ import { ProfileAvatar } from "../components/Avatar";
 import PostCard, { timeAgo } from "../components/PostCard";
 import PlusBadge from "../components/PlusBadge";
 import CommentInput from "../components/CommentInput";
+import { LinkedText, LinkPreview } from "../components/LinkContent";
 import { useTrackView } from "../hooks/useBilling";
 import { useAddComment, useComments, usePost } from "../hooks/usePosts";
 
@@ -58,7 +59,7 @@ export default function PostPage() {
               <PlusBadge plus={c.author.plus} />
               <span className="muted">· {timeAgo(c.createdAt)}</span>
             </div>
-            <p className="post-body">{c.content}</p>
+            <p className="post-body"><LinkedText text={c.content} /></p><LinkPreview text={c.content} />
           </div>
         </div>
       ))}

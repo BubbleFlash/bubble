@@ -77,19 +77,23 @@ export const MAX_PREMIUM_LENGTH = 5000;
 export const FREE_POST_LENGTH = 500;
 export const PLUS_POST_LENGTH = 2000;
 
+export const musicTrackIdsSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(10).refine((ids) => new Set(ids).size === ids.length, "Duplicate music tracks");
+
 export const createPostSchema = z
   .object({
     // For a paid post this is the free teaser everyone can see. The 500 limit for free
     // accounts is enforced on the server, because it depends on the account's plan.
     content: z.string().trim().max(PLUS_POST_LENGTH),
     imageUrl: uploadUrlSchema.nullish(),
+    imageUrls: z.array(uploadUrlSchema).max(10).optional(),
+    musicTrackIds: musicTrackIdsSchema.optional(),
     // Setting a price makes the post paid: premiumContent is shown only after purchase.
     // Slug of a community the author belongs to; the post then appears in that community.
     community: communitySlugSchema.nullish(),
     priceCents: z.number().int().min(MIN_PRICE_CENTS).max(MAX_PRICE_CENTS).nullish(),
     premiumContent: z.string().trim().max(MAX_PREMIUM_LENGTH).nullish(),
   })
-  .refine((v) => v.content.length > 0 || Boolean(v.imageUrl), {
+  .refine((v) => v.content.length > 0 || Boolean(v.imageUrl) || (v.imageUrls?.length ?? 0) > 0 || (v.musicTrackIds?.length ?? 0) > 0, {
     message: "Write something or attach an image",
     path: ["content"],
   })
@@ -237,9 +241,13 @@ export const reportQuerySchema = paginationSchema.omit({ feed: true }).extend({
 // ---- Direct messages, news and contact ----
 
 export const MESSAGE_MAX_LENGTH = 1000;
+export const linkPreviewSchema = z.object({ url: z.string().max(2048).url() });
 export const sendMessageSchema = z.object({
-  text: z.string().trim().min(1, "Write a message").max(MESSAGE_MAX_LENGTH),
-});
+  text: z.string().trim().max(MESSAGE_MAX_LENGTH).default(""),
+  musicTrackIds: musicTrackIdsSchema.optional(),
+  imageIds: z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(10).refine((ids) => new Set(ids).size === ids.length).optional(),
+  clientMessageId: z.string().uuid().optional(),
+}).refine((value) => Boolean(value.text || value.musicTrackIds?.length || value.imageIds?.length), { message: "Write a message or attach a file", path: ["text"] });
 export const messagesQuerySchema = z.object({
   /** ISO timestamp of the oldest message already loaded; returns older ones. */
   cursor: z.string().datetime().optional(),
@@ -265,6 +273,9 @@ export interface MessageDTO {
   conversationId: string;
   senderId: string;
   text: string;
+  musicAttachments?: MusicAttachmentDTO[];
+  imageIds?: string[];
+  clientMessageId?: string;
   createdAt: string;
 }
 
@@ -346,6 +357,8 @@ export interface PostDTO {
   id: string;
   content: string;
   imageUrl: string | null;
+  imageUrls?: string[];
+  musicAttachments: MusicAttachmentDTO[];
   author: AuthorDTO;
   likeCount: number;
   commentCount: number;
@@ -360,6 +373,10 @@ export interface PostDTO {
   premiumContent: string | null;
   createdAt: string;
 }
+
+export type MusicAttachmentDTO =
+  | { id: string; title: string; artist: string; duration: number | null; unavailable: false }
+  | { id: string; unavailable: true };
 
 export interface UserSummaryDTO {
   id: string;
@@ -477,6 +494,90 @@ export interface NotificationDTO {
 export interface UploadResponse {
   url: string;
 }
+
+
+/** Supported audio formats for the music library. */
+export const ALLOWED_MUSIC_TYPES = [
+  "audio/mpeg",
+  "audio/flac",
+  "audio/x-flac",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/vnd.wave",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/ogg",
+] as const;
+
+/** Maximum audio file size: 100 MB. */
+export const MAX_MUSIC_BYTES = 100 * 1024 * 1024;
+
+export const musicUploadSignSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  artist: z.string().trim().min(1).max(200),
+  mimeType: z.enum(ALLOWED_MUSIC_TYPES),
+  size: z.number().int().min(1).max(MAX_MUSIC_BYTES),
+});
+
+export const musicUploadCompleteSchema = z.object({
+  uploadId: z.string().regex(/^[a-f0-9]{24}$/i, "Invalid upload ID"),
+  duration: z.number().finite().positive().max(604800).optional(),
+});
+
+export const musicListQuerySchema = z.object({
+  scope: z.enum(["all", "mine"]).default("all"),
+  q: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+export const musicPickerQuerySchema = z.object({
+  scope: z.enum(["all", "mine"]).default("all"),
+  q: z.string().trim().max(100).optional(),
+  cursor: z.string().regex(/^[a-f0-9]{24}$/i).optional(),
+});
+
+export const musicSettingsSchema = z.object({
+  visibility: z.enum(["everyone", "private"]),
+}).strict();
+
+export const profileMusicQuerySchema = z.object({
+  cursor: z.string().regex(/^\d{13}-[a-f0-9]{24}$/i).optional(),
+});
+
+export type MusicSettings = z.infer<typeof musicSettingsSchema>;
+export type ProfileMusicResponse =
+  | { status: "hidden" }
+  | { status: "visible"; tracks: MusicTrackDTO[]; nextCursor: string | null };
+
+export const musicTrackIdSchema = z.object({
+  id: z.string().regex(/^[a-f0-9]{24}$/i, "Invalid track ID"),
+});
+export const musicLibraryStatusSchema = z.object({
+  ids: z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(100),
+});
+
+export type MusicUploadSignInput = z.infer<typeof musicUploadSignSchema>;
+export type MusicUploadCompleteInput = z.infer<typeof musicUploadCompleteSchema>;
+export type MusicListQuery = z.infer<typeof musicListQuerySchema>;
+
+export interface MusicUploadTicket {
+  uploadId: string;
+  url: string;
+  fields: Record<string, string>;
+}
+
+export interface MusicTrackDTO {
+  id: string;
+  title: string;
+  artist: string;
+  mimeType: string;
+  size: number;
+  duration: number | null;
+  addedAt: string | null;
+  addedByMe: boolean;
+}
+
 
 /** Step two of a direct-to-storage upload: tell the API which file the browser uploaded. */
 export const completeUploadSchema = z.object({

@@ -44,15 +44,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [user, setUserState] = useState<AccountUser | null>(readCachedUser);
   const currentUser = useRef(user);
-  const [loading, setLoading] = useState(() => readSessionHint() !== "guest");
+  // Wait only when there is nothing to show yet: first visit (unknown) or a session without a cached profile.
+  const [loading, setLoading] = useState(() => {
+    const hint = readSessionHint();
+    return hint === null || (hint === "1" && readCachedUser() === null);
+  });
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [restoreFailed, setRestoreFailed] = useState(false);
 
   const setUser = useCallback((next: AccountUser | null) => {
+    if (currentUser.current?.id !== next?.id) {
+      qc.removeQueries({ queryKey: ["profile-music"] });
+      qc.removeQueries({ queryKey: ["music-settings"] });
+      qc.removeQueries({ queryKey: ["music"] });
+      qc.removeQueries({ queryKey: ["music-picker"] });
+      qc.removeQueries({ queryKey: ["link-preview"] });
+    }
     currentUser.current = next;
     cacheUser(next);
     setUserState(next);
-  }, []);
+  }, [qc]);
 
   const isCurrentAccount = useCallback((userId: string) => currentUser.current?.id === userId, []);
 

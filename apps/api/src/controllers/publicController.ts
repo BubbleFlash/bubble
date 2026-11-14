@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import type { Page, PostDTO } from "@commune/shared";
 import { onlineUsers } from "../services/realtime.js";
 import { Post } from "../models/Post.js";
+import { loadPostMusic } from "../services/postMusic.js";
 import { badRequest } from "../utils/errors.js";
 import { toPostDTO, type PopulatedPost } from "../utils/serializers.js";
 
@@ -24,9 +25,12 @@ export async function listPosts(_req: Request, res: Response) {
 
   const hasMore = rows.length > limit;
   const posts = hasMore ? rows.slice(0, limit) : rows;
-  const online = await onlineUsers(posts.map((post) => post.author._id.toString()));
+  const [music, online] = await Promise.all([
+    loadPostMusic(posts),
+    onlineUsers(posts.map((post) => post.author._id.toString())),
+  ]);
   const body: Page<PostDTO> = {
-    items: posts.map((p) => toPostDTO(p, false, true, online.has(p.author._id.toString()))),
+    items: posts.map((p) => toPostDTO(p, false, true, music.get(p._id.toString()), online.has(p.author._id.toString()))),
     nextCursor: hasMore ? (posts[posts.length - 1]?._id.toString() ?? null) : null,
   };
   res.set("Cache-Control", "no-store");

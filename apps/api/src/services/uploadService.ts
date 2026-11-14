@@ -80,7 +80,7 @@ export async function deleteUploadIfUnused(
 
   try {
     const [usedByPost, usedByUser, usedByWorkshop] = await Promise.all([
-      Post.exists({ imageUrl: url }),
+      Post.exists({ $or: [{ imageUrl: url }, { imageUrls: url }] }),
       User.exists({ $or: [{ avatarUrl: url }, { "appearance.backgroundUrl": url }] }),
       Wallpaper.exists({ imageUrl: url }),
     ]);
