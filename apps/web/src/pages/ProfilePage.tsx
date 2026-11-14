@@ -1,4 +1,3 @@
-import { pluralRu } from "../lib/plural";
 import { useRef, useState } from "react";
 import { ProfileSkeleton } from "../components/Skeleton";
 import type { ChangeEvent, FormEvent } from "react";
@@ -14,6 +13,7 @@ import { useBanUser, useUnbanUser } from "../hooks/useModeration";
 import { useUploadImage } from "../hooks/useUpload";
 import { validateImage } from "../lib/images";
 import { useAuth } from "../store/auth";
+import ProfileFriends from "../components/ProfileFriends";
 
 export default function ProfilePage() {
   const { username = "" } = useParams();
@@ -102,10 +102,14 @@ export default function ProfilePage() {
               </Link>
               <button
                 className={`btn ${p.followedByMe ? "btn-outline" : ""}`}
-                onClick={() => follow.mutate()}
+                title={p.followedByMe && !p.followsMe ? "Отменить исходящую заявку" : undefined}
+                onClick={() => {
+                  if (p.followedByMe && p.followsMe && !window.confirm("Удалить пользователя из друзей? Вы отпишетесь от него.")) return;
+                  follow.mutate(!p.followedByMe);
+                }}
                 disabled={follow.isPending}
               >
-                {p.followedByMe ? "Вы подписаны" : "Подписаться"}
+                {p.followedByMe ? (p.followsMe ? "Удалить из друзей" : "Отменить заявку") : (p.followsMe ? "Добавить в ответ" : "Добавить в друзья")}
               </button>
             </div>
           )}
@@ -204,14 +208,7 @@ export default function ProfilePage() {
           <p className="error">{(ban.error ?? unban.error)?.message}</p>
         )}
 
-        <div className="profile-stats">
-          <span>
-            <strong>{p.followerCount}</strong> <span className="muted">{pluralRu(p.followerCount, "подписчик", "подписчика", "подписчиков")}</span>
-          </span>
-          <span>
-            <strong>{p.followingCount}</strong> <span className="muted">{pluralRu(p.followingCount, "подписка", "подписки", "подписок")}</span>
-          </span>
-        </div>
+        <ProfileFriends key={`${me?.id ?? "guest"}:${username.toLowerCase()}`} username={username} isMe={isMe} />
       </section>
 
       {me && <ProfileMusic key={`${me.id}:${p.id}`} username={p.username} viewerId={me.id} isMe={isMe} />}
