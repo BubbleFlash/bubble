@@ -52,7 +52,7 @@ export default function MusicTrackList({ tracks, source, order, selection }: { t
       const added = statuses.data?.includes(track.id);
       const checked = selection?.selected.some((item) => item.id === track.id) ?? false;
       return <article className={`card music-page__track${selected ? " music-page__track--playing" : ""}`} key={track.id}>
-        {selection && <input className="music-attachment-picker__checkbox" type="checkbox" checked={checked} disabled={!checked && selection.selected.length >= 10} aria-label={`Выбрать ${track.artist} — ${track.title}`} onChange={() => selection.onChange(checked ? selection.selected.filter((item) => item.id !== track.id) : [...selection.selected, track])} />}
+        {selection && <input className="aero-checkbox" type="checkbox" checked={checked} disabled={!checked && selection.selected.length >= 10} aria-label={`Выбрать ${track.artist} — ${track.title}`} onChange={() => selection.onChange(checked ? selection.selected.filter((item) => item.id !== track.id) : [...selection.selected, track])} />}
         <button type="button" className="music-page__play" onClick={() => toggle(track)} aria-label={`${playing ? "Пауза" : "Воспроизвести"} ${track.title}`} title={playing ? "Пауза" : "Воспроизвести"}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d={playing ? "M4 3h3v10H4zM9 3h3v10H9z" : "M3 2v12l10-6z"} fill="currentColor" /></svg>
         </button>

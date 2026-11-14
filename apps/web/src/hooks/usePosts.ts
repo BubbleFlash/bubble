@@ -6,7 +6,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import type { CommentDTO, CreatePostInput, Page, PostDTO } from "@commune/shared";
+import type { CommentDTO, CreatePostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 
 export type FeedType = "all" | "following";
@@ -78,6 +78,19 @@ export function useDeletePost() {
     mutationFn: (id: string) => api<void>(`/posts/${id}`, { method: "DELETE" }),
     onSuccess: (_result, id) => {
       qc.removeQueries({ queryKey: ["post", id], exact: true });
+      for (const key of [["feed"], ["post"], ["search", "posts"], ["public", "posts"], ["thread"]]) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
+}
+
+export function useUpdateCommunityPost(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateCommunityPostInput) => api<PostDTO>(`/posts/${id}`, { method: "PATCH", body: input }),
+    onSuccess: (post) => {
+      qc.setQueryData(["post", id], post);
       for (const key of [["feed"], ["post"], ["search", "posts"], ["public", "posts"], ["thread"]]) {
         void qc.invalidateQueries({ queryKey: key });
       }

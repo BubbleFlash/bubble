@@ -57,6 +57,34 @@ export const communitySlugSchema = z
   .toLowerCase()
   .regex(/^[a-z0-9_]{3,24}$/, "3 to 24 letters, numbers or underscores");
 
+const objectIdSchema = z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase());
+export const communityRoleSchema = z.enum(["member", "editor", "admin", "owner"]);
+export type CommunityRole = z.infer<typeof communityRoleSchema>;
+export const communityPermissionsSchema = z.object({
+  publish: communityRoleSchema,
+  managePosts: communityRoleSchema,
+  editAppearance: communityRoleSchema,
+}).strict();
+export type CommunityPermissions = z.infer<typeof communityPermissionsSchema>;
+export const DEFAULT_COMMUNITY_PERMISSIONS: Readonly<CommunityPermissions> = {
+  publish: "member",
+  managePosts: "member",
+  editAppearance: "admin",
+};
+export const communityMemberListSchema = z.object({
+  q: z.string().trim().max(40).optional(),
+  cursor: objectIdSchema.optional(),
+});
+export const communityMemberRoleSchema = z.object({
+  role: communityRoleSchema.exclude(["owner"]),
+}).strict();
+export const communityMemberNoteSchema = z.object({ note: z.string().trim().max(100) }).strict();
+export const communityTeamVisibilitySchema = z.object({ visible: z.boolean() }).strict();
+export const communityTransferSchema = z.object({
+  userId: objectIdSchema,
+  confirmation: communitySlugSchema,
+}).strict();
+
 export const createCommunitySchema = z.object({
   slug: communitySlugSchema,
   name: z.string().trim().min(3, "Name needs at least 3 characters").max(40),
@@ -72,6 +100,7 @@ export const communityListSchema = z.object({
   q: z.string().trim().max(30).optional(),
   mine: z.enum(["1"]).optional(),
   owned: z.enum(["1"]).optional(),
+  publishable: z.enum(["1"]).optional(),
 });
 
 /** Paid-post prices are in US cents: $1.00 to $500.00. */
@@ -84,7 +113,6 @@ export const musicTrackIdsSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i).t
 export const postVisibilitySchema = z.enum(["public", "private", "friends"]);
 export type PostVisibility = z.infer<typeof postVisibilitySchema>;
 
-const objectIdSchema = z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase());
 export const repostSourceSchema = z.object({
   post: objectIdSchema,
   comment: objectIdSchema.optional(),
@@ -120,6 +148,13 @@ export const createPostSchema = z
     message: "Only posts in your profile can be private",
     path: ["visibility"],
   });
+
+export const updateCommunityPostSchema = z.object({
+  content: z.string().trim().max(PLUS_POST_LENGTH),
+  imageUrls: z.array(uploadUrlSchema).max(10).optional(),
+  musicTrackIds: musicTrackIdsSchema.optional(),
+}).strict();
+export type UpdateCommunityPostInput = z.infer<typeof updateCommunityPostSchema>;
 
 /** Search results come in pages of 20, up to 10 pages. */
 export const SEARCH_PAGE_SIZE = 20;
@@ -386,6 +421,7 @@ export interface PostDTO {
   visibility?: PostVisibility;
   /** The community this post was made in, if any. */
   community: { slug: string; name: string; avatarUrl?: string | null; creatorId?: string } | null;
+  communityActions?: { edit: boolean; delete: boolean };
   createdAt: string;
 }
 
@@ -470,9 +506,27 @@ export interface CommunityDTO {
   avatarUrl?: string | null;
   memberCount: number;
   joinedByMe: boolean;
-  /** "owner" for the creator, "member" for everyone else who joined, null if not a member. */
-  myRole: "owner" | "member" | null;
+  myRole: CommunityRole | null;
+  permissions: CommunityPermissions;
+  actions: { publish: boolean; editAppearance: boolean; manageMembers: boolean };
   createdAt: string;
+}
+
+export interface CommunityMemberDTO {
+  id: string;
+  username: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  role: CommunityRole;
+  note?: string;
+  visibleInTeam?: boolean;
+}
+
+export interface ServerFundraiserDTO {
+  title: string;
+  current: number;
+  target: number;
+  updatedAt: string;
 }
 
 export interface CheckoutResponse {

@@ -4,6 +4,7 @@ const membershipSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User", required: true },
     community: { type: Schema.Types.ObjectId, ref: "Community", required: true },
+    // Legacy field. Access is resolved from Community.creator and Community.managers.
     role: { type: String, enum: ["owner", "member"], default: "member" },
   },
   { timestamps: true },
@@ -11,6 +12,6 @@ const membershipSchema = new Schema(
 
 // One membership per person per community; also makes joins safe under double clicks.
 membershipSchema.index({ user: 1, community: 1 }, { unique: true });
-membershipSchema.index({ community: 1 });
+membershipSchema.index({ community: 1, _id: 1 });
 
 export const Membership = model("Membership", membershipSchema);

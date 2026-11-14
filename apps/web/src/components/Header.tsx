@@ -1,5 +1,6 @@
 import { displayNameOf } from "@commune/shared";
 import NavigationIcon from "./NavigationIcon";
+import ServerFundraiser from "./ServerFundraiser";
 import { useEffect } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
@@ -136,7 +137,8 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen }: {
               <nav className="drawer-links" aria-label="Меню">
                 {navigationFor("member", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" && msgCount > 0 ? <span className="pill">{msgCount}</span> : entry.id === "notifications" && count > 0 ? <span className="pill">{countLabel}</span> : undefined, entry.end)}</span>)}
               </nav>
-              <button className="btn btn-outline block" onClick={confirmLogout}>
+              {open && <ServerFundraiser />}
+              <button className="btn btn-outline block drawer-logout" onClick={confirmLogout}>
                 <Icon name="logout" size={18} />  Выйти
               </button>
             </>
