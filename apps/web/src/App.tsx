@@ -1,6 +1,7 @@
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Suspense, lazy, useEffect } from "react";
+import { Link, Navigate, Route, Routes, useLocation, useMatch } from "react-router-dom";
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import type { NotificationDTO } from "@commune/shared";
 import { useAuth } from "./store/auth";
 import Header, { AUTH_PATHS } from "./components/Header";
 import FeedPage from "./pages/FeedPage";
@@ -14,6 +15,7 @@ import Brand from "./components/BrandMark";
 import Icon from "./components/Icon";
 import { PageSkeleton } from "./components/Skeleton";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
+import { useNotificationReadSession } from "./hooks/useSocial";
 
 const PostPage = lazy(() => import("./pages/PostPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -99,7 +101,7 @@ function Home() {
   return user ? <FeedPage /> : <ExplorePage />;
 }
 
-function AppRoutes() {
+function AppRoutes({ onNotificationItems }: { onNotificationItems: (items: NotificationDTO[]) => void }) {
   return (
     <Suspense fallback={<PageSkeleton />}>
       <Routes>
@@ -132,7 +134,7 @@ function AppRoutes() {
           path="/notifications"
           element={
             <Protected>
-              <NotificationsPage />
+              <NotificationsPage onItems={onNotificationItems} />
             </Protected>
           }
         />
@@ -238,6 +240,22 @@ function AuthArt() {
 export default function App() {
   const { pathname } = useLocation();
   const { user } = useAuth();
+  const onNotificationsPage = Boolean(useMatch("/notifications"));
+  const notificationVisit = useRef<string>();
+  const { remember, finish } = useNotificationReadSession();
+  const userId = user?.id;
+  useLayoutEffect(() => {
+    const previousUser = notificationVisit.current;
+    if (previousUser && previousUser !== userId) finish([]);
+    else if (previousUser && !onNotificationsPage) finish();
+    notificationVisit.current = onNotificationsPage ? userId : undefined;
+  }, [onNotificationsPage, userId, finish]);
+  useEffect(() => {
+    if (!onNotificationsPage || !userId) return;
+    const leave = () => finish();
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [onNotificationsPage, userId, finish]);
   const authPage = AUTH_PATHS.includes(pathname);
   const signedIn = Boolean(user);
   // Once signed in, quietly download the most-used pages so tapping them is instant.
@@ -265,7 +283,7 @@ export default function App() {
             <Link to="/" className="auth-brand" aria-label="На главную Bubble">
               <Brand size={36} />
             </Link>
-            <AppRoutes />
+            <AppRoutes onNotificationItems={remember} />
           </main>
         </div>
       </div>
@@ -285,7 +303,8 @@ export default function App() {
       )}
       {skip}
       <RouteMeta />
-      <Header />
+      {/* Opening one specific notification from the popup takes precedence over the page exit. */}
+      <Header onNavigateToNotification={() => finish([])} />
       <VerifyBanner />
       <PwaBanner />
       <div
@@ -296,7 +315,7 @@ export default function App() {
       >
         {user && <LeftNav />}
         <main id="main" tabIndex={-1} className="container">
-          <AppRoutes />
+          <AppRoutes onNotificationItems={remember} />
         </main>
         {!wide && <RightRail />}
       </div>

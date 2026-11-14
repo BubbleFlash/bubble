@@ -1,6 +1,11 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useCallback, useRef } from "react";
 import type {
   NotificationDTO,
+  NotificationPreference,
+  NotificationPreferences,
+  NotificationType,
+  ReadNotificationsInput,
   Page,
   PostDTO,
   ProfileDTO,
@@ -156,11 +161,16 @@ export function useUpdateProfile() {
   });
 }
 
-export function useNotifications() {
+export function useNotifications(type: NotificationType | undefined, compact = false) {
   const { user } = useAuth();
-  return useQuery({
-    queryKey: ["notifications"],
-    queryFn: () => api<NotificationDTO[]>("/notifications"),
+  return useInfiniteQuery({
+    queryKey: ["notifications", user?.id, type, compact],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => api<Page<NotificationDTO>>(
+      withQuery("/notifications", { type, limit: "30", cursor: pageParam }),
+      { signal },
+    ),
+    getNextPageParam: (last) => compact ? undefined : last.nextCursor ?? undefined,
     enabled: Boolean(user), refetchInterval: 30_000, refetchOnWindowFocus: true, staleTime: 0,
   });
 }
@@ -176,11 +186,83 @@ export function useUnreadCount(enabled: boolean) {
   });
 }
 
-export function useMarkAllRead() {
+export function useReadNotifications() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api<void>("/notifications/read", { method: "POST" }),
-    // Only the badge is refreshed, so the page keeps showing which items were new.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["unread-count"] }),
+    mutationFn: async (items: NonNullable<ReadNotificationsInput["items"]>) => {
+      const requests: Promise<void>[] = [];
+      for (let start = 0; start < items.length; start += 100) {
+        requests.push(api<void>("/notifications/read", {
+          method: "POST",
+          body: { items: items.slice(start, start + 100) },
+          keepalive: true,
+        }));
+      }
+      await Promise.all(requests);
+    },
+    onSettled: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["notifications", user?.id] }),
+        qc.invalidateQueries({ queryKey: ["unread-count"] }),
+      ]);
+    },
+  });
+}
+
+/** Remembers the unread entries rendered during a page or popup visit. */
+export function useNotificationReadSession() {
+  const seen = useRef(new Map<string, NotificationDTO>());
+  const { mutate } = useReadNotifications();
+  const remember = useCallback((items: NotificationDTO[]) => {
+    for (const item of items) {
+      if (!item.read) seen.current.set(item.id, item);
+      else if (seen.current.get(item.id)?.createdAt === item.createdAt) seen.current.delete(item.id);
+    }
+  }, []);
+  const finish = useCallback((selection?: NotificationDTO[]) => {
+    const items = selection ?? Array.from(seen.current.values());
+    seen.current.clear();
+    if (items.length) mutate(items.map(({ id, createdAt }) => ({ id, createdAt })));
+  }, [mutate]);
+  return { remember, finish };
+}
+
+export function useNotificationPreferences() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["notification-preferences", user?.id],
+    queryFn: ({ signal }) => api<NotificationPreferences>("/notifications/preferences", { signal }),
+    enabled: Boolean(user),
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSaveNotificationPreference() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const key = ["notification-preferences", user?.id];
+  return useMutation({
+    mutationFn: (body: NotificationPreference) =>
+      api<NotificationPreferences>("/notifications/preferences", { method: "PATCH", body }),
+    onSuccess: async (prefs, change) => {
+      await qc.cancelQueries({ queryKey: key });
+      qc.setQueryData(key, prefs);
+      if (!prefs[change.type].visible) {
+        qc.setQueriesData<InfiniteData<Page<NotificationDTO>>>({ queryKey: ["notifications", user?.id] }, (data) =>
+          data && {
+            ...data,
+            pages: data.pages.map((page) => ({
+              ...page,
+              items: page.items.filter((item) => item.type !== change.type),
+            })),
+          },
+        );
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["notifications", user?.id] }),
+        qc.invalidateQueries({ queryKey: ["unread-count"] }),
+      ]);
+    },
   });
 }

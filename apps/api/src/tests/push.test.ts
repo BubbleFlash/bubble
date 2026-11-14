@@ -194,6 +194,17 @@ describe("pushToUser", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
+  it("skips hidden categories and delivers muted categories silently", async () => {
+    configure(true);
+    subs([sub]);
+    prefs({ notificationPreferences: { like: { visible: false }, comment: { sound: false } } });
+    await pushToUser(ME, "social", payload, "like");
+    expect(sendNotification).not.toHaveBeenCalled();
+    await pushToUser(ME, "social", payload, "comment");
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(sendNotification.mock.calls[0]![1] as string)).toEqual({ ...payload, silent: true });
+  });
+
   it("skips people who are looking at the site right now", async () => {
     configure(true);
     (env as { REALTIME_URL?: string }).REALTIME_URL = "http://realtime.test";

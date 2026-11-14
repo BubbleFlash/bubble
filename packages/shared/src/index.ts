@@ -377,7 +377,36 @@ export interface ProfileDTO extends PublicUser {
   banned: boolean;
 }
 
-export type NotificationType = "like" | "comment" | "follow";
+export const notificationTypes = ["follow", "like", "comment"] as const;
+const notificationTypeSchema = z.enum(notificationTypes);
+export type NotificationType = z.infer<typeof notificationTypeSchema>;
+
+export const notificationQuerySchema = z.object({
+  type: notificationTypeSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  cursor: z.string().max(49).transform((value) => value.split("|")).pipe(z.tuple([
+    z.iso.datetime({ precision: 3 }),
+    z.string().regex(/^[a-f0-9]{24}$/i),
+  ])).optional(),
+});
+export type NotificationQuery = z.infer<typeof notificationQuerySchema>;
+export const notificationPreferenceSchema = z.object({
+  type: notificationTypeSchema,
+  visible: z.boolean(),
+  sound: z.boolean(),
+});
+export type NotificationPreference = z.infer<typeof notificationPreferenceSchema>;
+export type NotificationPreferences = Record<NotificationType, Omit<NotificationPreference, "type">>;
+
+export const readNotificationsSchema = z.object({
+  type: notificationTypeSchema.optional(),
+  through: z.string().datetime().optional(),
+  items: z.array(z.object({
+    id: z.string().regex(/^[a-f0-9]{24}$/i),
+    createdAt: z.string().datetime(),
+  })).min(1).max(100).optional(),
+});
+export type ReadNotificationsInput = z.infer<typeof readNotificationsSchema>;
 
 export interface NotificationDTO {
   id: string;
@@ -386,6 +415,11 @@ export interface NotificationDTO {
   postId: string | null;
   read: boolean;
   createdAt: string;
+}
+
+export interface NotificationNewEvent {
+  notification?: NotificationDTO;
+  sound?: boolean;
 }
 
 export interface UploadResponse {

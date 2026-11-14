@@ -3,6 +3,7 @@ import { io, type Socket } from "socket.io-client";
 import type {
   MessageNewEvent,
   MessageReadEvent,
+  NotificationNewEvent,
   PresenceEvent,
   TypingEvent,
 } from "@commune/shared";
@@ -54,7 +55,7 @@ export const isRealtimeConnected = () => state.connected;
 export interface RealtimeHandlers {
   onMessage: (e: MessageNewEvent) => void;
   onRead: (e: MessageReadEvent) => void;
-  onNotification: () => void;
+  onNotification: (event?: NotificationNewEvent) => void;
   /** After a reconnect, so anything missed while offline can be refetched. */
   onResync: () => void;
 }

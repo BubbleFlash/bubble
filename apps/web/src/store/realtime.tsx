@@ -1,8 +1,10 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { MessageDTO } from "@commune/shared";
+import type { MessageDTO, NotificationDTO } from "@commune/shared";
+import NotificationToasts from "../components/NotificationToasts";
 import type { ThreadPage } from "../hooks/useMessages";
 import { realtimeEnabled, startRealtime, stopRealtime } from "../lib/realtime";
+import { hideNotificationToasts, notificationVersion } from "../lib/notifications";
 import { isViewingConversation, playSound } from "../lib/sound";
 import { useAuth } from "./auth";
 import { useUnreadCount } from "../hooks/useSocial";
@@ -23,6 +25,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const userId = user?.id;
   const unread = useUnreadCount(Boolean(userId));
   const previous = useRef<{ userId: string; count: number } | null>(null);
+  const timers = useRef(new Map<string, number>());
+  const [toasts, setToasts] = useState<Array<{ userId: string; item: NotificationDTO }>>([]);
+  const dismissToast = useCallback((version: string) => {
+    window.clearTimeout(timers.current.get(version));
+    timers.current.delete(version);
+    setToasts((current) => current.filter(({ item }) => notificationVersion(item) !== version));
+  }, []);
 
   useEffect(() => {
     if (!userId || unread.data === undefined) { previous.current = null; return; }
@@ -46,6 +55,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!realtimeEnabled || !userId) return;
+    const toastTimers = timers.current;
+    const hideToasts = window.matchMedia(hideNotificationToasts);
 
     startRealtime({
       onMessage: ({ message }) => {
@@ -79,11 +90,16 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         );
         void qc.invalidateQueries({ queryKey: ["conversations"] });
       },
-      onNotification: () => {
-        if (!(
-          document.visibilityState === "visible" && window.location.pathname === "/notifications"
-        )) {
-          playSound("notification");
+      onNotification: (event) => {
+        if (event?.notification) {
+          const item = event.notification;
+          const visible = document.visibilityState === "visible";
+          if (event.sound !== false) playSound("notification");
+          const version = notificationVersion(item);
+          if (visible && !hideToasts.matches && !toastTimers.has(version)) {
+            setToasts((current) => [...current, { userId, item }]);
+            toastTimers.set(version, window.setTimeout(() => dismissToast(version), 2700));
+          }
         }
         void qc.invalidateQueries({ queryKey: ["notifications"] });
         void qc.invalidateQueries({ queryKey: ["unread-count"] });
@@ -103,8 +119,21 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         }
       },
     });
-    return () => stopRealtime();
-  }, [userId, qc]);
+    return () => {
+      stopRealtime();
+      toastTimers.forEach((timer) => window.clearTimeout(timer));
+      toastTimers.clear();
+      setToasts([]);
+    };
+  }, [userId, qc, dismissToast]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {userId && <NotificationToasts
+        items={toasts.filter((toast) => toast.userId === userId).map(({ item }) => item)}
+        dismiss={dismissToast}
+      />}
+    </>
+  );
 }

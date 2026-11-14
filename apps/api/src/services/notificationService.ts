@@ -1,8 +1,13 @@
 import type { Types } from "mongoose";
-import type { NotificationType } from "@commune/shared";
+import {
+  type NotificationNewEvent,
+  type NotificationPreferences,
+  type NotificationType,
+} from "@commune/shared";
 import { logger } from "../config/logger.js";
 import { Notification } from "../models/Notification.js";
 import { User } from "../models/User.js";
+import { toNotificationDTO } from "../utils/serializers.js";
 import { pushConfigured, pushToUser } from "./pushService.js";
 import { emitToUsers } from "./realtime.js";
 
@@ -13,6 +18,19 @@ interface NotifyInput {
   actor: string;
   type: NotificationType;
   post?: Types.ObjectId | string;
+}
+
+export async function getNotificationPreferences(userId: Types.ObjectId | string) {
+  const user = await User.findById(userId).select("notificationPreferences").lean();
+  const preferenceFor = (type: NotificationType) => {
+    const preference = user?.notificationPreferences?.[type];
+    return { visible: preference?.visible !== false, sound: preference?.sound !== false };
+  };
+  return {
+    follow: preferenceFor("follow"),
+    like: preferenceFor("like"),
+    comment: preferenceFor("comment"),
+  } satisfies NotificationPreferences;
 }
 
 /**
@@ -26,21 +44,28 @@ export async function notify({ user, actor, type, post }: NotifyInput): Promise<
   if (user.toString() === actor) return;
   try {
     const key = { user, actor, type, post: post ?? null };
-    if (type === "comment") {
-      await Notification.create({ ...key, read: false });
-    } else {
-      await Notification.updateOne(
+    const saved = type === "comment"
+      ? await Notification.create({ ...key, read: false })
+      : await Notification.findOneAndUpdate(
         key,
         { $set: { read: false, createdAt: new Date() } },
-        { upsert: true },
+        { upsert: true, new: true },
       );
+    const prefs = await getNotificationPreferences(user);
+    if (!prefs[type].visible) {
+      // A hidden request can still change the recipient's relationships.
+      await emitToUsers([user], "notification:new");
+      return;
     }
-    // A hint only (no content): the client refetches its notifications.
-    await emitToUsers([user], "notification:new");
+    const actorUser = await User.findById(actor).select("username").lean();
+    const event: NotificationNewEvent = saved && actorUser
+      ? {
+          notification: toNotificationDTO({ ...saved.toObject(), post: saved.post ?? null, actor: actorUser }),
+          sound: prefs[type].sound,
+        }
+      : {};
+    await emitToUsers([user], "notification:new", event);
     if (pushConfigured()) {
-      const actorUser = (await User.findById(actor).select("username").lean()) as {
-        username?: string;
-      } | null;
       const name = `@${actorUser?.username ?? "Someone"}`;
       const text = {
         like: "liked your post",
@@ -52,7 +77,7 @@ export async function notify({ user, actor, type, post }: NotifyInput): Promise<
         body: `${name} ${text}`,
         url: post ? `/posts/${post.toString()}` : `/u/${actorUser?.username ?? ""}`,
         tag: `social-${type}-${post?.toString() ?? actor}`,
-      });
+      }, type);
     }
   } catch (err) {
     logger.warn({ err }, "Failed to create notification");

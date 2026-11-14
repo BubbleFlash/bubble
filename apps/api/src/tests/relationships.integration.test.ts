@@ -4,7 +4,9 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { Follow } from "../models/Follow.js";
+import { Notification } from "../models/Notification.js";
 import { User } from "../models/User.js";
+import { notify } from "../services/notificationService.js";
 import { signAccessToken } from "../utils/tokens.js";
 
 // Explicitly opt in: never use the application's configured database for integration tests.
@@ -57,6 +59,38 @@ integration("relationships with isolated local MongoDB", () => {
     );
     expect(replies.every((r) => r.status === 200)).toBe(true);
     expect(await Follow.countDocuments({ follower: viewer, following: owner })).toBe(1);
+  });
+
+  it("stores hidden events and restores them when enabled, with category-specific read state", async () => {
+    const recipient = third.toString();
+    const authorization = { Authorization: `Bearer ${signAccessToken(recipient)}` };
+    const prefs = () => request(app).get("/api/notifications/preferences").set(authorization);
+    const save = (visible: boolean) => request(app).patch("/api/notifications/preferences")
+      .set(authorization).send({ type: "like", visible, sound: false });
+    const list = (type?: string) => request(app).get("/api/notifications")
+      .query(type ? { type } : {}).set(authorization);
+    const unread = () => request(app).get("/api/notifications/unread-count").set(authorization);
+
+    expect((await prefs()).body.like).toEqual({ visible: true, sound: true });
+    expect((await save(false)).body.like).toEqual({ visible: false, sound: false });
+    await notify({ user: third, actor: viewer.toString(), type: "like" });
+    await notify({ user: third, actor: viewer.toString(), type: "comment" });
+    expect(await Notification.countDocuments({ user: third, type: "like" })).toBe(1);
+    expect((await list()).body.map((item: { type: string }) => item.type)).toEqual(["comment"]);
+    expect((await unread()).body.count).toBe(1);
+    expect((await save(true)).body.like).toEqual({ visible: true, sound: false });
+    const likes = (await list("like")).body;
+    expect(likes).toHaveLength(1);
+    expect(likes[0]).toMatchObject({ type: "like", read: false });
+
+    const read = (through: string) => request(app).post("/api/notifications/read")
+      .set(authorization).send({ type: "like", through });
+    const newest = new Date(Date.parse(likes[0].createdAt) + 1000);
+    await Notification.updateOne({ _id: likes[0].id }, { $set: { createdAt: newest } });
+    expect((await read(likes[0].createdAt)).status).toBe(204);
+    expect((await unread()).body.count).toBe(2);
+    expect((await read(newest.toISOString())).status).toBe(204);
+    expect((await unread()).body.count).toBe(1);
   });
 
   it("checks privacy, friend counts, and equal-timestamp cursors on real data", async () => {

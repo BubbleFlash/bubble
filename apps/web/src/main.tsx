@@ -18,6 +18,7 @@ import "./styles/aero-themes.css";
 import "./styles/aero-components.css";
 import "./styles/aero-shell.css";
 import "./styles/aero-home.css";
+import "./styles/notifications.css";
 
 armSoundUnlock();
 
