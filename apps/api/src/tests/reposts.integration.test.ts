@@ -140,6 +140,100 @@ integration("reposts on isolated MongoDB", () => {
     expect((await get("vera", `/posts/${share.body.id}`)).body.repost).toEqual({ kind: "unavailable" });
   });
 
+  it("enforces community roles across member management, appearance, posts and reposts", async () => {
+    const base = "/communities/rolecheck";
+    const call = (person: Person, method: "post" | "put" | "patch" | "delete", path: string, body?: object) => {
+      const req = api[method](`/api${path}`).set(auth(person));
+      return body ? req.send(body) : req;
+    };
+    const role = (person: Person, target: Person, value: string) =>
+      call(person, "put", `${base}/members/${ids.get(target)}/role`, { role: value });
+    expect((await call("alice", "post", "/communities", { slug: "rolecheck", name: "Проверка ролей" })).status).toBe(201);
+    expect((await call("boris", "post", `${base}/join`)).status).toBe(204);
+    expect((await call("vera", "post", `${base}/join`)).status).toBe(204);
+    expect((await role("alice", "boris", "admin")).status).toBe(204);
+    expect((await role("alice", "vera", "editor")).status).toBe(204);
+    expect((await call("boris", "put", `${base}/members/${ids.get("vera")}/team-visibility`, { visible: false })).status).toBe(403);
+    expect((await call("alice", "put", `${base}/members/${ids.get("vera")}/note`, { note: "Отвечает за мемы" })).status).toBe(204);
+    expect((await get("vera", `${base}/team`)).body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "vera", note: "Отвечает за мемы" }),
+    ]));
+    expect((await call("alice", "put", `${base}/members/${ids.get("vera")}/team-visibility`, { visible: false })).status).toBe(204);
+    expect((await get("vera", `${base}/team`)).body.items.some((person: { username: string }) => person.username === "vera")).toBe(false);
+    expect((await get("boris", `${base}/managers`)).body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "vera", visibleInTeam: false }),
+    ]));
+    expect((await call("alice", "put", `${base}/members/${ids.get("vera")}/team-visibility`, { visible: true })).status).toBe(204);
+    expect((await role("boris", "vera", "admin")).status).toBe(403);
+    expect((await call("boris", "delete", `${base}/members/${ids.get("alice")}`)).status).toBe(400);
+    expect((await call("boris", "delete", `${base}/members/${ids.get("vera")}`)).status).toBe(403);
+    expect((await get("vera", `${base}/managers`)).status).toBe(403);
+    expect((await get("boris", `${base}/managers`)).body.items).toEqual([
+      expect.objectContaining({ username: "alice", role: "owner" }),
+      expect.objectContaining({ username: "boris", role: "admin" }),
+      expect.objectContaining({ username: "vera", role: "editor" }),
+    ]);
+    const original = await newPost("vera", "Запись редактора", { community: "rolecheck" });
+    const other = await newPost("alice", "Запись владельца", { community: "rolecheck" });
+    const edited = await call("vera", "patch", `/posts/${other}`, {
+      content: "Правка редактора", imageUrls: ["/uploads/0123456789abcdef0123456789abcdef.webp"],
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({ author: { username: "alice" }, imageUrls: [expect.stringContaining(".webp")] });
+    expect((await call("vera", "patch", `/posts/${other}`, { content: "", imageUrls: [], musicTrackIds: [] })).status).toBe(400);
+    expect((await call("boris", "patch", base, { name: "Название администратора" })).status).toBe(200);
+    expect((await call("alice", "put", `${base}/permissions`, {
+      publish: "admin", managePosts: "admin", editAppearance: "owner",
+    })).status).toBe(200);
+    expect((await call("boris", "patch", base, { name: "Другое название" })).status).toBe(403);
+    expect((await call("vera", "post", "/posts", { content: "Запись", community: "rolecheck" })).status).toBe(403);
+    expect((await repost("vera", original, { community: "rolecheck" })).status).toBe(403);
+    expect((await repost("boris", other, { community: "rolecheck" })).status).toBe(201);
+    expect((await get("vera", "/communities?publishable=1")).body.some((group: { slug: string }) => group.slug === "rolecheck")).toBe(false);
+    expect((await get("boris", "/communities?publishable=1")).body.some((group: { slug: string }) => group.slug === "rolecheck")).toBe(true);
+    expect((await get("vera", `/posts/${original}`)).body.communityActions).toEqual({ edit: false, delete: false });
+    expect((await call("vera", "patch", `/posts/${original}`, { content: "Правка" })).status).toBe(403);
+    expect((await remove("vera", original)).status).toBe(403);
+    expect((await remove("boris", original)).status).toBe(204);
+    expect((await role("alice", "vera", "member")).status).toBe(204);
+    expect((await get("boris", `${base}/members?q=vera`)).body.items).toEqual([
+      expect.objectContaining({ username: "vera", role: "member" }),
+    ]);
+    expect((await call("boris", "delete", `${base}/members/${ids.get("vera")}`)).status).toBe(204);
+    expect((await get("vera", base)).body).toMatchObject({ memberCount: 2, myRole: null });
+    expect((await call("vera", "post", `${base}/join`)).status).toBe(204);
+    expect((await get("vera", base)).body.myRole).toBe("member");
+  });
+
+  it("keeps exactly one owner when a member leaves during transfer and supports legacy owner rows", async () => {
+    const slug = "handover";
+    const base = `/api/communities/${slug}`;
+    const community = await Community.create({ name: "Передача группы", slug, creator: ids.get("alice"), memberCount: 3 });
+    await Membership.create(["alice", "boris", "vera"].map((person) => ({
+      community: community._id, user: ids.get(person as Person), role: person === "alice" ? "owner" : "member",
+    })));
+    const transfer = (person: Person) => api.post(`${base}/transfer`).set(auth("alice"))
+      .send({ userId: String(ids.get(person)), confirmation: slug });
+    const [handover, leave] = await Promise.all([
+      transfer("boris"),
+      api.delete(`${base}/join`).set(auth("boris")),
+    ]);
+    const roles = await Promise.all(users.map(async (person) => (await get(person, `/communities/${slug}`)).body.myRole));
+    expect(roles.filter((value) => value === "owner")).toHaveLength(1);
+    if (handover.status === 200) {
+      expect(roles).toEqual(["member", "owner", "member"]);
+      expect([400, 409]).toContain(leave.status);
+      expect((await api.delete(`${base}/join`).set(auth("boris"))).status).toBe(400);
+      expect((await transfer("vera")).status).toBe(403);
+      expect((await api.delete(`${base}/join`).set(auth("alice"))).status).toBe(204);
+    } else {
+      expect([404, 409]).toContain(handover.status);
+      expect(leave.status).toBe(204);
+      expect(roles).toEqual(["owner", null, "member"]);
+      expect((await transfer("vera")).status).toBe(200);
+    }
+  });
+
   it("keeps private content out of feeds, search, comments, and nested previews", async () => {
     const original = await newPost("alice", "uniquewordprivate", { visibility: "private" });
     expect((await get("alice", `/posts/${original}`)).body.visibility).toBe("private");

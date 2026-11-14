@@ -28,13 +28,13 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
   const qc = useQueryClient();
   const [destination, setDestination] = useState<Destination>("profile");
   const [content, setContent] = useState("");
-  const [community, setCommunity] = useState("");
+  const [selectedCommunity, setCommunity] = useState("");
   const [recipient, setRecipient] = useState("");
-  const communities = useCommunities({ mine: true }, destination === "community");
+  const communities = useCommunities({ publishable: true }, destination === "community");
   const conversations = useConversations(destination === "message");
-  useEffect(() => {
-    if (communities.data?.length && !community) setCommunity(communities.data[0]!.slug);
-  }, [communities.data, community]);
+  const community = selectedCommunity
+    ? communities.data?.find((item) => item.slug === selectedCommunity)?.slug ?? ""
+    : communities.data?.[0]?.slug ?? "";
   const maxLength = destination === "message" ? MESSAGE_MAX_LENGTH : user?.plus ? PLUS_POST_LENGTH : FREE_POST_LENGTH;
   const mutation = useMutation({
     mutationFn: async () => {
@@ -86,14 +86,14 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
   }
 
   return (
-    <dialog ref={dialog} className="repost-dialog" aria-labelledby={titleId} onCancel={(event) => {
+    <dialog ref={dialog} className="aero-dialog repost-dialog" aria-labelledby={titleId} onCancel={(event) => {
       event.preventDefault();
       close();
     }}>
       <AeroTitlebar onClose={close} closeLabel="Закрыть окно репоста">
         <h2 id={titleId}>{source.comment ? "Поделиться комментарием" : "Поделиться записью"}</h2>
       </AeroTitlebar>
-      <form className="repost-dialog__body" onSubmit={submit}>
+      <form className="aero-dialog__body repost-dialog__body" onSubmit={submit}>
         <fieldset disabled={mutation.isPending}>
           <legend>Поделиться в</legend>
           <div className="repost-dialog__destinations">
@@ -112,7 +112,7 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
               <RepostSelect label="Группа" value={community} onChange={setCommunity} options={(communities.data ?? []).map((item) => ({ value: item.slug, username: item.slug, name: item.name, avatarUrl: item.avatarUrl }))} />
               {communities.isPending && <p role="status">Загрузка групп…</p>}
               {communities.isError && <p role="alert" className="error">{communities.error.message}</p>}
-              {communities.isSuccess && communities.data.length === 0 && <p className="muted">Вступите в группу, чтобы опубликовать в нём репост.</p>}
+              {communities.isSuccess && communities.data.length === 0 && <p className="muted">У вас пока нет групп, в которых вы можете публиковать репосты.</p>}
             </>
           )}
           {destination === "message" && (

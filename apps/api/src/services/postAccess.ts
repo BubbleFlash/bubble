@@ -5,7 +5,7 @@ import { notFound } from "../utils/errors.js";
 import type { PopulatedPost } from "../utils/serializers.js";
 
 export const AUTHOR_FIELDS = "username displayName avatarUrl avatarFrame plusUntil";
-export const COMMUNITY_FIELDS = "slug name avatarUrl creator";
+export const COMMUNITY_FIELDS = "slug name avatarUrl creator managers permissions departingMemberships";
 
 export const publicPostFilter = { priceCents: null, visibility: { $nin: ["private", "friends"] } };
 

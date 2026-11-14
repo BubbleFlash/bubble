@@ -16,6 +16,7 @@ import ImageGallery from "./ImageGallery";
 import { LinkedText, LinkPreview } from "./LinkContent";
 import RepostButton from "./RepostButton";
 import RepostCard from "./RepostCard";
+import CommunityPostEditor from "./CommunityPostEditor";
 
 const relativeTime = new Intl.RelativeTimeFormat("ru", { numeric: "always" });
 export function timeAgo(iso: string): string {
@@ -33,9 +34,12 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsMounted, setCommentsMounted] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const mine = user?.id === post.author.id;
   const isAdmin = user?.role === "admin";
-  const canDelete = mine || isAdmin || user?.id === post.community?.creatorId;
+  const canDelete = isAdmin || (post.community ? post.communityActions?.delete : mine);
+  const canEdit = Boolean(post.communityActions?.edit);
+  const showEditor = editing && canEdit;
 
   return (
     <article className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
@@ -56,9 +60,11 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
           {post.visibility === "private" && <span className="repost-private"><Icon name="lock" size={14} /> Только я</span>}
           {post.visibility === "friends" && <span className="repost-private"><Icon name="lock" size={14} /> Только друзья</span>}
         </div>
-        {post.content && <><p className="post-body"><LinkedText text={post.content} /></p><LinkPreview text={post.content} /></>}
-        {(post.imageUrls?.length || post.imageUrl) && <ImageGallery images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}
-        {post.musicAttachments?.length > 0 && <MusicAttachments attachments={post.musicAttachments} source={`post:${post.id}`} />}
+        {showEditor ? <CommunityPostEditor post={post} onClose={() => setEditing(false)} /> : <>
+          {post.content && <><p className="post-body"><LinkedText text={post.content} /></p><LinkPreview text={post.content} /></>}
+          {(post.imageUrls?.length || post.imageUrl) && <ImageGallery images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}
+          {post.musicAttachments?.length > 0 && <MusicAttachments attachments={post.musicAttachments} source={`post:${post.id}`} />}
+        </>}
         {post.repost && <RepostCard preview={post.repost} source={`post-repost:${post.id}`} />}
         {post.community && <p className="muted community-post-author"><Link to={`/u/${post.author.username}`}>{displayNameOf(post.author)}</Link></p>}
         <div className="post-actions">
@@ -76,7 +82,9 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
             <span>{post.commentCount}</span>
           </Link>}
           <RepostButton source={{ post: post.id }} count={post.repostCount ?? 0} />
+          {canEdit && !showEditor && <button type="button" className="btn btn-ghost" aria-label="Редактировать запись" title="Редактировать запись" onClick={() => setEditing(true)}><Icon name="pencil" size={18} /></button>}
         </div>
+        {del.error && <p className="error" role="alert">{del.error.message}</p>}
         {inlineComments && (
           <div className={`comments-disclosure${commentsOpen ? " is-open" : ""}`} aria-hidden={!commentsOpen} ref={(node) => { node?.toggleAttribute("inert", !commentsOpen); }}>
             <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} />}</div>

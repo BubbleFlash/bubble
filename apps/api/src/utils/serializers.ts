@@ -7,6 +7,7 @@ import type {
   SiteAppearance,
   CommentDTO,
   CommunityDTO,
+  CommunityRole,
   NotificationDTO,
   NotificationType,
   PostDTO,
@@ -16,6 +17,7 @@ import type {
   ReportReason,
   ReportStatus,
 } from "@commune/shared";
+import { communityPermissions, meetsCommunityRole, type CommunityAccess } from "../services/communityAccess.js";
 
 interface UserLike {
   _id: Types.ObjectId;
@@ -47,10 +49,11 @@ export interface PopulatedPost {
   imageUrls?: string[];
   musicTrackIds?: Types.ObjectId[];
   priceCents?: number | null;
-  community?: { slug: string; name: string; avatarUrl?: string | null; creator?: Types.ObjectId } | null;
+  community?: (CommunityAccess & { slug: string; name: string; avatarUrl?: string | null }) | null;
   visibility?: PostDTO["visibility"];
   repost?: { post: Types.ObjectId; comment?: Types.ObjectId };
   repostAncestors?: Types.ObjectId[];
+  updatedAt?: Date;
   author: PopulatedAuthor;
   likeCount: number;
   commentCount: number;
@@ -212,8 +215,7 @@ export function toReportDTO(r: PopulatedReport): ReportDTO {
   };
 }
 
-export interface CommunityLike {
-  _id: Types.ObjectId;
+export interface CommunityLike extends CommunityAccess {
   slug: string;
   name: string;
   description?: string | null;
@@ -222,7 +224,8 @@ export interface CommunityLike {
   createdAt: Date;
 }
 
-export function toCommunityDTO(c: CommunityLike, myRole: "owner" | "member" | null): CommunityDTO {
+export function toCommunityDTO(c: CommunityLike, myRole: CommunityRole | null): CommunityDTO {
+  const permissions = communityPermissions(c);
   return {
     id: c._id.toString(),
     slug: c.slug,
@@ -232,6 +235,12 @@ export function toCommunityDTO(c: CommunityLike, myRole: "owner" | "member" | nu
     memberCount: c.memberCount,
     joinedByMe: myRole !== null,
     myRole,
+    permissions,
+    actions: {
+      publish: meetsCommunityRole(myRole, permissions.publish),
+      editAppearance: meetsCommunityRole(myRole, permissions.editAppearance),
+      manageMembers: meetsCommunityRole(myRole, "admin"),
+    },
     createdAt: c.createdAt.toISOString(),
   };
 }

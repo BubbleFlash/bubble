@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import { FREE_POST_LENGTH } from "@commune/shared";
-import type { CreateRepostInput, Page, PostDTO } from "@commune/shared";
+import type { CreateRepostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { Comment } from "../models/Comment.js";
 import { Follow } from "../models/Follow.js";
 import { Community } from "../models/Community.js";
@@ -11,13 +11,15 @@ import { Post } from "../models/Post.js";
 import { onlineUsers } from "../services/realtime.js";
 import { notify, notifyRepost } from "../services/notificationService.js";
 import { removePost } from "../services/moderationService.js";
+import { canManageCommunityPost, communityMembership, communityPermissions, communityRole, meetsCommunityRole } from "../services/communityAccess.js";
+import { deleteUploadIfUnused } from "../services/uploadService.js";
 import { PostView } from "../models/PostView.js";
 import { User } from "../models/User.js";
 import { loadPostMusic, validateMusicTrackIds } from "../services/postMusic.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, loadPost, loadReadablePostAuthor, readablePostFilter } from "../services/postAccess.js";
 import { combinedLikeCounts, presentReposts, repostCounts, validateRepostSource } from "../services/repostService.js";
 import { isPlusActive } from "../utils/plan.js";
-import { badRequest, forbidden, notFound } from "../utils/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../utils/errors.js";
 import {
   toCommentDTO,
   toPostDTO,
@@ -42,21 +44,30 @@ async function likedSet(userId: string, postIds: mongoose.Types.ObjectId[]) {
 export async function presentPosts(userId: string | undefined, posts: PopulatedPost[]): Promise<PostDTO[]> {
   if (!posts.length) return [];
   const ids = posts.map((post) => post._id);
-  const [liked, online, counts, previews, music] = await Promise.all([
+  const communityIds = new Map(posts.flatMap((post) => post.community?._id && !post.community.creator?.equals(userId)
+    ? [[String(post.community._id), post.community._id] as const] : []));
+  const [liked, online, counts, previews, music, memberships] = await Promise.all([
     userId ? likedSet(userId, ids) : new Set<string>(),
     onlineUsers(posts.map((post) => post.author._id.toString())),
     repostCounts(ids),
     presentReposts(posts.map((post) => post.repost), userId),
     loadPostMusic(posts),
+    userId && communityIds.size
+      ? Membership.find({ user: userId, community: { $in: [...communityIds.values()] } }).select("community").lean()
+      : [],
   ]);
+  const membershipIds = new Map(memberships.map((row) => [String(row.community), row._id]));
   const combined = await combinedLikeCounts(posts.filter((post) => !post.repost && counts.has(String(post._id))).map((post) => post._id));
   return posts.map((p, index) => {
     const key = p._id.toString();
+    const role = p.community && userId ? communityRole(p.community, userId, membershipIds.get(String(p.community._id))) : null;
+    const canManage = p.community && canManageCommunityPost(p.community, role, p.author._id.equals(userId));
     return {
       ...toPostDTO(p, liked.has(key), music.get(key), online.has(p.author._id.toString())),
       likeCount: combined.get(key) ?? p.likeCount,
       repostCount: counts.get(key) ?? 0,
       repost: previews[index],
+      ...(userId && p.community ? { communityActions: { edit: Boolean(canManage), delete: Boolean(canManage) } } : {}),
     };
   });
 }
@@ -120,10 +131,11 @@ async function requirePostLength(userId: string, content: string) {
 
 async function postingCommunity(userId: string, slug?: string | null) {
   if (!slug) return null;
-  const community = await Community.findOne({ slug }).select("_id").lean();
+  const community = await Community.findOne({ slug }).select(COMMUNITY_FIELDS).lean();
   if (!community) throw notFound("Community not found");
-  if (!(await Membership.exists({ user: userId, community: community._id }))) {
-    throw forbidden("Join this community to post in it");
+  const { role } = await communityMembership(community, userId);
+  if (!meetsCommunityRole(role, communityPermissions(community).publish)) {
+    throw forbidden("You cannot publish in this community");
   }
   return community._id.toString();
 }
@@ -147,9 +159,12 @@ export async function createPost(req: Request, res: Response) {
     loadPostMusic([post]),
     onlineUsers([post.author._id.toString()]),
   ]);
+  const role = post.community ? (await communityMembership(post.community, req.userId!)).role : null;
+  const canManage = post.community && canManageCommunityPost(post.community, role, true);
   res.status(201).json({
     ...toPostDTO(post, false, music.get(post._id.toString()), online.has(post.author._id.toString())),
     repostCount: 0,
+    ...(post.community ? { communityActions: { edit: Boolean(canManage), delete: Boolean(canManage) } } : {}),
   });
 }
 
@@ -179,19 +194,60 @@ export async function deletePost(req: Request, res: Response) {
   const id = param(req, "id");
   const post = await Post.findById(id).select("author community").lean();
   if (!post) throw notFound("Post not found");
-  // Authors can delete their own posts; admins can remove anyone's; so can the owner of the
-  // community the post was made in.
-  const allowed =
-    post.author.toString() === req.userId ||
-    req.userRole === "admin" ||
-    (post.community != null &&
-      Boolean(
-        await Membership.exists({ user: req.userId, community: post.community, role: "owner" }),
-      ));
-  if (!allowed) throw forbidden("You can only delete your own posts");
+  const mine = post.author.equals(req.userId);
+  if (req.userRole !== "admin") {
+    if (post.community) {
+      const community = await Community.findById(post.community).select(COMMUNITY_FIELDS).lean();
+      const role = community ? (await communityMembership(community, req.userId!)).role : null;
+      if (!community || !canManageCommunityPost(community, role, mine)) {
+        throw forbidden("You cannot delete this community post");
+      }
+    } else if (!mine) {
+      throw forbidden("You can only delete your own posts");
+    }
+  }
 
   await removePost(id, req.userId);
   res.status(204).end();
+}
+
+export async function updatePost(req: Request, res: Response) {
+  const id = param(req, "id");
+  const userId = req.userId!;
+  const post = await loadPost(id, userId);
+  const role = post.community ? (await communityMembership(post.community, userId)).role : null;
+  if (!post.community || !canManageCommunityPost(post.community, role, post.author._id.equals(userId))) {
+    throw forbidden("You cannot edit this community post");
+  }
+
+  const { content, imageUrls, musicTrackIds } = req.body as UpdateCommunityPostInput;
+  const images = imageUrls ?? (post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
+  const music = musicTrackIds ?? post.musicTrackIds ?? [];
+  if (!content && !images.length && !music.length && !post.repost) {
+    throw badRequest("Write something or attach a file");
+  }
+  if (content !== post.content) await requirePostLength(userId, content);
+  if (musicTrackIds) {
+    const existing = new Set(post.musicTrackIds?.map(String));
+    await validateMusicTrackIds(musicTrackIds.filter((trackId) => !existing.has(trackId)));
+  }
+  const previous = await Post.findOneAndUpdate(
+    { _id: id, community: post.community._id, updatedAt: post.updatedAt ?? { $exists: false } },
+    { $set: {
+      content,
+      ...(imageUrls ? { imageUrls, imageUrl: imageUrls[0] ?? null } : {}),
+      ...(musicTrackIds ? { musicTrackIds } : {}),
+    } },
+    { runValidators: true },
+  ).lean();
+  if (!previous) throw conflict("This post changed. Refresh and try again.");
+  if (imageUrls) {
+    const removed = new Set([previous.imageUrl, ...(previous.imageUrls ?? [])]);
+    await Promise.all([...removed].filter((url): url is string => Boolean(url && !imageUrls.includes(url))).map(deleteUploadIfUnused));
+  }
+  const updated = await loadPost(id, userId);
+  const [dto] = await presentPosts(userId, [updated]);
+  res.json(dto);
 }
 
 /** Toggles the current user's like. The unique index makes this safe under concurrent clicks. */

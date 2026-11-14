@@ -107,7 +107,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           <button type="button" className="btn btn-ghost" onClick={() => setMusicPickerOpen(true)}><Icon name="music" size={20} /> Музыка</button>
           {!communitySlug && (
             <label className="row post-visibility">
-              <input type="checkbox" checked={privatePost} onChange={(e) => setPrivatePost(e.target.checked)} />
+              <input className="aero-checkbox" type="checkbox" checked={privatePost} onChange={(e) => setPrivatePost(e.target.checked)} />
               Только друзья
             </label>
           )}

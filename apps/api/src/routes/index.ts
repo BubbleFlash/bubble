@@ -20,9 +20,16 @@ import {
   newsQuerySchema,
   sendMessageSchema,
   communityListSchema,
+  communityMemberListSchema,
+  communityMemberRoleSchema,
+  communityMemberNoteSchema,
+  communityTeamVisibilitySchema,
+  communityPermissionsSchema,
+  communityTransferSchema,
   createCommentSchema,
   createCommunitySchema,
   updateCommunitySchema,
+  updateCommunityPostSchema,
   createPostSchema,
   createRepostSchema,
   createReportSchema,
@@ -51,6 +58,7 @@ import * as monitor from "../controllers/monitorController.js";
 import * as contact from "../controllers/contactController.js";
 import * as messages from "../controllers/messageController.js";
 import * as news from "../controllers/newsController.js";
+import * as serverFundraiser from "../controllers/serverFundraiserController.js";
 import * as billing from "../controllers/billingController.js";
 import * as insights from "../controllers/insightsController.js";
 import * as admin from "../controllers/adminController.js";
@@ -362,6 +370,15 @@ router.post(
 );
 router.get("/communities/:slug", requireAuth, asyncHandler(communities.get));
 router.patch("/communities/:slug", requireAuth, requireActive, validate(updateCommunitySchema), asyncHandler(communities.update));
+router.put("/communities/:slug/permissions", requireAuth, requireActive, validate(communityPermissionsSchema), asyncHandler(communities.updatePermissions));
+router.get("/communities/:slug/members", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.members));
+router.get("/communities/:slug/managers", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.managers));
+router.get("/communities/:slug/team", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.team));
+router.put("/communities/:slug/members/:userId/note", requireAuth, requireActive, validate(communityMemberNoteSchema), asyncHandler(communities.updateMemberNote));
+router.put("/communities/:slug/members/:userId/team-visibility", requireAuth, requireActive, validate(communityTeamVisibilitySchema), asyncHandler(communities.updateTeamVisibility));
+router.put("/communities/:slug/members/:userId/role", requireAuth, requireActive, validate(communityMemberRoleSchema), asyncHandler(communities.updateMemberRole));
+router.delete("/communities/:slug/members/:userId", requireAuth, requireActive, asyncHandler(communities.removeMember));
+router.post("/communities/:slug/transfer", requireAuth, requireActive, validate(communityTransferSchema), asyncHandler(communities.transfer));
 router.get(
   "/communities/:slug/posts",
   requireAuth,
@@ -398,6 +415,7 @@ router.post(
   asyncHandler(posts.createRepost),
 );
 router.get("/posts/:id", requireAuth, asyncHandler(posts.getPost));
+router.patch("/posts/:id", requireAuth, requireActive, validate(updateCommunityPostSchema), asyncHandler(posts.updatePost));
 router.delete("/posts/:id", requireAuth, requireActive, asyncHandler(posts.deletePost));
 router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.toggleLike));
 router.post("/posts/:id/view", requireAuth, viewLimiter, asyncHandler(posts.trackView));
@@ -444,6 +462,7 @@ router.post("/admin/users/:username/unban", ...adminOnly, asyncHandler(admin.unb
 
 // News (public: guests see it too) and the Contact form
 router.get("/news", publicLimiter, validate(newsQuerySchema, "query"), asyncHandler(news.list));
+router.get("/server-fundraiser", publicLimiter, asyncHandler(serverFundraiser.get));
 router.post("/contact", contactLimiter, validate(contactSchema), asyncHandler(contact.send));
 
 // Web Push (notifications when the site is closed)
