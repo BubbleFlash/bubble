@@ -21,10 +21,7 @@ services:
       - backend
 
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    image: commune-api:local
+    image: ${API_IMAGE:?Set API_IMAGE}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -63,10 +60,7 @@ services:
       - backend
 
   realtime:
-    build:
-      context: .
-      dockerfile: apps/realtime/Dockerfile
-    image: commune-realtime:local
+    image: ${REALTIME_IMAGE:?Set REALTIME_IMAGE}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -94,10 +88,7 @@ services:
       - backend
 
   web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    image: commune-web:local
+    image: ${WEB_IMAGE:?Set WEB_IMAGE}
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-8080}:80"
