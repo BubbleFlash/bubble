@@ -1,10 +1,10 @@
-
 name: Test environment
 
 on:
   push:
     branches:
       - develop
+      - feature/test-server-config
   workflow_dispatch:
 
 permissions:
