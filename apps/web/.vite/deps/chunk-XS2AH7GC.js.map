@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../../node_modules/music-metadata/lib/type.js"],
+  "sourcesContent": ["export { LyricsContentType, TimestampFormat } from './id3v2/ID3v2Token.js';\n/** Container-independent track types. Existing Matroska values are preserved. */\nexport const TrackType = {\n    video: 0x01,\n    audio: 0x02,\n    complex: 0x03,\n    logo: 0x04,\n    subtitle: 0x11,\n    button: 0x12,\n    control: 0x20,\n    /** Timed metadata (library extension to the Matroska track types). */\n    metadata: 0x21\n};\nexport const TrackTypeValueToKeyMap = {\n    [TrackType.video]: 'video',\n    [TrackType.audio]: 'audio',\n    [TrackType.complex]: 'complex',\n    [TrackType.logo]: 'logo',\n    [TrackType.subtitle]: 'subtitle',\n    [TrackType.button]: 'button',\n    [TrackType.control]: 'control',\n    [TrackType.metadata]: 'metadata'\n};\n"],
+  "mappings": ";AAEO,IAAM,YAAY;AAAA,EACrB,OAAO;AAAA,EACP,OAAO;AAAA,EACP,SAAS;AAAA,EACT,MAAM;AAAA,EACN,UAAU;AAAA,EACV,QAAQ;AAAA,EACR,SAAS;AAAA;AAAA,EAET,UAAU;AACd;AACO,IAAM,yBAAyB;AAAA,EAClC,CAAC,UAAU,KAAK,GAAG;AAAA,EACnB,CAAC,UAAU,KAAK,GAAG;AAAA,EACnB,CAAC,UAAU,OAAO,GAAG;AAAA,EACrB,CAAC,UAAU,IAAI,GAAG;AAAA,EAClB,CAAC,UAAU,QAAQ,GAAG;AAAA,EACtB,CAAC,UAAU,MAAM,GAAG;AAAA,EACpB,CAAC,UAAU,OAAO,GAAG;AAAA,EACrB,CAAC,UAAU,QAAQ,GAAG;AAC1B;",
+  "names": []
+}

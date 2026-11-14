@@ -337,10 +337,10 @@
 }
 
 /* WebKit/Blink native scrollbar; no custom scrolling widget. */
-.aero-home .shell::-webkit-scrollbar { width: 16px; }
-.aero-home .shell::-webkit-scrollbar-track { background: rgb(193 227 246 / 65%); border-left: 1px solid #8bbbd7; }
-.aero-home .shell::-webkit-scrollbar-thumb { min-height: 40px; border: 1px solid #8bbbd7; border-radius: 4px; background: linear-gradient(90deg, #f6fcff, #d3eafa 48%, #bedff3 51%, #e8f8ff); box-shadow: inset 0 1px #fff; }
-.aero-home .shell::-webkit-scrollbar-thumb:hover { border-color: #297cb8; background: linear-gradient(90deg, #fff, #b8e3fa); }
+.aero-home :is(.shell, .notification-list-compact)::-webkit-scrollbar { width: 16px; }
+.aero-home :is(.shell, .notification-list-compact)::-webkit-scrollbar-track { background: rgb(193 227 246 / 65%); border-left: 1px solid #8bbbd7; }
+.aero-home :is(.shell, .notification-list-compact)::-webkit-scrollbar-thumb { min-height: 40px; border: 1px solid #8bbbd7; border-radius: 4px; background: linear-gradient(90deg, #f6fcff, #d3eafa 48%, #bedff3 51%, #e8f8ff); box-shadow: inset 0 1px #fff; }
+.aero-home :is(.shell, .notification-list-compact)::-webkit-scrollbar-thumb:hover { border-color: #297cb8; background: linear-gradient(90deg, #fff, #b8e3fa); }
 
 /* Keep the logo, search and account in separate, shrinkable tracks. */
 @media (min-width: 1101px) {
@@ -377,5 +377,5 @@
   .aero-home .shell { background: var(--aero-gradient-panel); background-color: var(--aero-color-canvas); }
 }
 @supports not selector(::-webkit-scrollbar) {
-  .aero-home .shell { scrollbar-width: auto; scrollbar-color: #bedff3 #e4f3fc; }
+  .aero-home :is(.shell, .notification-list-compact) { scrollbar-width: auto; scrollbar-color: #bedff3 #e4f3fc; }
 }
