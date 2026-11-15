@@ -98,6 +98,27 @@ integration("reposts on isolated MongoDB", () => {
       expect.objectContaining({ postId: end, actor: expect.objectContaining({ username: "vera" }) }),
     ]));
 
+    const preferences = (visible: boolean) => api.patch("/api/notifications/preferences")
+      .set(auth("alice")).send({ type: "repost", visible, sound: false });
+    const repostEvents = () => get("alice", "/notifications").query({ type: "repost", limit: 30 });
+    try {
+      expect((await preferences(false)).body.repost).toEqual({ visible: false, sound: false });
+      expect((await repostEvents()).body.items).toEqual([]);
+      expect((await preferences(true)).body.repost).toEqual({ visible: true, sound: false });
+      const visible = (await repostEvents()).body.items;
+      const selected = visible.find((item: { postId: string }) => item.postId === end);
+      expect(selected).toMatchObject({ type: "repost", read: false });
+      expect((await api.post("/api/notifications/read").set(auth("alice"))
+        .send({ items: [{ id: selected.id, createdAt: selected.createdAt }] })).status).toBe(204);
+      expect((await repostEvents()).body.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ postId: middle, read: false }),
+        expect.objectContaining({ postId: end, read: true }),
+      ]));
+    } finally {
+      await api.patch("/api/notifications/preferences").set(auth("alice"))
+        .send({ type: "repost", visible: true, sound: true });
+    }
+
     expect((await remove("boris", middle)).status).toBe(204);
     expect((await get("vera", `/posts/${original}`)).body).toMatchObject({ repostCount: 2, likeCount: 1 });
     expect((await get("vera", `/posts/${end}`)).body.repost).toEqual({ kind: "unavailable" });

@@ -368,24 +368,24 @@
 }
 
 html:has(.aero-home) { scrollbar-gutter: stable; }
-html:has(.aero-home)::-webkit-scrollbar { width: 16px; }
-html:has(.aero-home)::-webkit-scrollbar-track {
+:is(html:has(.aero-home), .aero-home .notification-list-compact)::-webkit-scrollbar { width: 16px; }
+:is(html:has(.aero-home), .aero-home .notification-list-compact)::-webkit-scrollbar-track {
   background: var(--aero-color-scrollbar-track);
   border-left: 1px solid var(--aero-color-border);
 }
-html:has(.aero-home)::-webkit-scrollbar-thumb {
+:is(html:has(.aero-home), .aero-home .notification-list-compact)::-webkit-scrollbar-thumb {
   min-height: 40px;
   border: 1px solid var(--aero-color-border);
   border-radius: 4px;
   background: var(--aero-gradient-scrollbar);
   box-shadow: inset 0 1px white;
 }
-html:has(.aero-home)::-webkit-scrollbar-thumb:hover {
+:is(html:has(.aero-home), .aero-home .notification-list-compact)::-webkit-scrollbar-thumb:hover {
   border-color: var(--aero-color-border-strong);
   background: var(--aero-gradient-scrollbar-hover);
 }
 @supports not selector(::-webkit-scrollbar) {
-  html:has(.aero-home) {
+  :is(html:has(.aero-home), .aero-home .notification-list-compact) {
     scrollbar-color: var(--aero-color-scrollbar-thumb) var(--aero-color-canvas);
   }
 }
@@ -424,7 +424,6 @@ html:has(.aero-home)::-webkit-scrollbar-thumb:hover {
   /* Keep the scrolling surface opaque while reducing overlapping paint layers. */
   .aero-home .shell { background: var(--aero-gradient-panel); background-color: var(--aero-color-canvas); }
 }
-
 /* On narrow screens the window covers the viewport, so show the chosen wallpaper under its content. */
 @media (max-width: 1100px) {
   .aero-home[data-custom-wallpaper] .shell {

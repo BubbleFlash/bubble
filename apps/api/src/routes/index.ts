@@ -6,6 +6,9 @@ import {
   pushPreferencesSchema,
   pushSubscribeSchema,
   pushUnsubscribeSchema,
+  notificationPreferenceSchema,
+  notificationQuerySchema,
+  readNotificationsSchema,
   contactSchema,
   messagesQuerySchema,
   linkPreviewSchema,
@@ -321,9 +324,26 @@ router.put("/users/:username/follow", requireAuth, requireActive, asyncHandler(u
 router.delete("/users/:username/follow", requireAuth, requireActive, asyncHandler(users.unfollow));
 
 // Notifications
-router.get("/notifications", requireAuth, asyncHandler(notifications.list));
+router.get(
+  "/notifications",
+  requireAuth,
+  validate(notificationQuerySchema, "query"),
+  asyncHandler(notifications.list),
+);
 router.get("/notifications/unread-count", requireAuth, asyncHandler(notifications.unreadCount));
-router.post("/notifications/read", requireAuth, asyncHandler(notifications.markAllRead));
+router.post(
+  "/notifications/read",
+  requireAuth,
+  validate(readNotificationsSchema.optional()),
+  asyncHandler(notifications.markAllRead),
+);
+router.get("/notifications/preferences", requireAuth, asyncHandler(notifications.preferences));
+router.patch(
+  "/notifications/preferences",
+  requireAuth,
+  validate(notificationPreferenceSchema),
+  asyncHandler(notifications.savePreference),
+);
 
 // Commune Plus: billing and creator insights
 router.get("/billing", requireAuth, asyncHandler(billing.status));

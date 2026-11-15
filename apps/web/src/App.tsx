@@ -1,6 +1,7 @@
 import { Link, Navigate, Route, Routes, matchPath, useLocation } from "react-router-dom";
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { NotificationDTO } from "@commune/shared";
 import { useAuth } from "./store/auth";
 import AeroTitlebar from "./components/AeroTitlebar";
 import Header, { AUTH_PATHS } from "./components/Header";
@@ -14,7 +15,7 @@ import BottomNav from "./components/BottomNav";
 import Brand from "./components/BrandMark";
 import Icon from "./components/Icon";
 import { PageSkeleton } from "./components/Skeleton";
-import { useProfile } from "./hooks/useSocial";
+import { useNotificationReadSession, useProfile } from "./hooks/useSocial";
 import { useStoredFont } from "./lib/siteFont";
 import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
@@ -109,7 +110,10 @@ function Home() {
   return user ? <FeedPage /> : <ExplorePage />;
 }
 
-function AppRoutes({ onWallpaperPreview }: { onWallpaperPreview?: (path?: string | null) => void } = {}) {
+function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
+  onNotificationItems: (items: NotificationDTO[]) => void;
+  onWallpaperPreview?: (path?: string | null) => void;
+}) {
   return (
     <Suspense fallback={<PageSkeleton />}>
       <Routes>
@@ -147,7 +151,7 @@ function AppRoutes({ onWallpaperPreview }: { onWallpaperPreview?: (path?: string
           path="/notifications"
           element={
             <Protected>
-              <NotificationsPage />
+              <NotificationsPage onItems={onNotificationItems} />
             </Protected>
           }
         />
@@ -261,6 +265,22 @@ function AuthArt() {
 export default function App() {
   const { pathname } = useLocation();
   const { user } = useAuth();
+  const onNotificationsPage = Boolean(matchPath("/notifications", pathname));
+  const notificationVisit = useRef<string>();
+  const { remember, finish } = useNotificationReadSession();
+  const userId = user?.id;
+  useLayoutEffect(() => {
+    const previousUser = notificationVisit.current;
+    if (previousUser && previousUser !== userId) finish([]);
+    else if (previousUser && !onNotificationsPage) finish();
+    notificationVisit.current = onNotificationsPage ? userId : undefined;
+  }, [onNotificationsPage, userId, finish]);
+  useEffect(() => {
+    if (!onNotificationsPage || !userId) return;
+    const leave = () => finish();
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [onNotificationsPage, userId, finish]);
   const authPage = AUTH_PATHS.includes(pathname);
   const signedIn = Boolean(user);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
@@ -324,7 +344,7 @@ export default function App() {
             <Link to="/" className="auth-brand" aria-label="На главную Bubble">
               <Brand size={36} />
             </Link>
-            <AppRoutes />
+            <AppRoutes onNotificationItems={remember} />
           </main>
         </div>
       </div>
@@ -347,14 +367,18 @@ export default function App() {
         <RouteMeta />
         <div className="aero-window-chrome" ref={chromeRef}>
           <AeroTitlebar />
-          <Header menuOpen={mobileMenuOpen} setMenuOpen={setMobileMenuOpen} />
+          <Header
+            menuOpen={mobileMenuOpen}
+            setMenuOpen={setMobileMenuOpen}
+            onNavigateToNotification={() => finish([])}
+          />
           <VerifyBanner />
         </div>
         <PwaBanner />
         <div className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}>
           {user && <LeftNav />}
           <main id="main" tabIndex={-1} className="container">
-            <AppRoutes onWallpaperPreview={setWallpaperPreview} />
+            <AppRoutes onWallpaperPreview={setWallpaperPreview} onNotificationItems={remember} />
           </main>
           {!wide && <RightRail />}
         </div>

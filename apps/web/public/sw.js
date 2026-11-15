@@ -135,6 +135,7 @@ self.addEventListener("push", (event) => {
       tag,
       // A new notification with the same tag replaces the old one but still alerts.
       renotify: Boolean(tag),
+      silent: data.silent === true,
       data: { url: safeTarget(data.url) },
     }),
   );

@@ -109,7 +109,7 @@ export class ApiError extends Error {
 
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+  options: { method?: string; body?: unknown; signal?: AbortSignal; keepalive?: boolean } = {},
   retry = true,
 ): Promise<T> {
   const isForm = options.body instanceof FormData;
@@ -121,6 +121,7 @@ export async function api<T>(
     fetch(`${BASE}${path}`, {
       method: options.method ?? "GET",
       signal: options.signal,
+      keepalive: options.keepalive,
       credentials: "include",
       headers: {
         // For FormData the browser sets the multipart Content-Type (with boundary) itself.

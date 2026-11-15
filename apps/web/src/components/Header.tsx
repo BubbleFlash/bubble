@@ -12,14 +12,16 @@ import Brand from "./BrandMark";
 import Icon, { type IconName } from "./Icon";
 import PlusBadge from "./PlusBadge";
 import SearchBox from "./SearchBox";
+import NotificationMenu from "./NotificationMenu";
 import { navigationFor } from "../lib/navigation";
 
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
 export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 
-export default function Header({ menuOpen: open, setMenuOpen: setOpen }: {
+export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigateToNotification }: {
   menuOpen: boolean;
   setMenuOpen: Dispatch<SetStateAction<boolean>>;
+  onNavigateToNotification: () => void;
 }) {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
@@ -80,40 +82,39 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen }: {
           </div>
         )}
 
-        {/* Desktop navigation (wide screens with the left menu hide this bar for members) */}
-        <nav className="header-right nav-desktop" aria-label="Основная навигация">
-          {!user && navigationFor("guest", "header").map((entry) => <NavLink key={entry.id} to={entry.to("")} className={navClass}>{entry.label}</NavLink>)}
-          {user && (
-            <>
-              <Link to={`/u/${user.username}`} className="nav-link nav-profile">
-                <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={26} /><span className="nav-profile-name">{displayNameOf(user)}</span>
-                <PlusBadge plus={user.plus} />
+        <div className="header-actions">
+          {user && <NotificationMenu key={user.id} count={count} onNavigateToItem={onNavigateToNotification} />}
+          <nav className="header-right nav-desktop" aria-label="Основная навигация">
+            {!user && navigationFor("guest", "header").map((entry) => <NavLink key={entry.id} to={entry.to("")} className={navClass}>{entry.label}</NavLink>)}
+            {user && (
+              <>
+                <Link to={`/u/${user.username}`} className="nav-link nav-profile">
+                  <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={26} />
+                  <span className="nav-profile-name">{displayNameOf(user)}</span>
+                  <PlusBadge plus={user.plus} />
+                </Link>
+                <button className="btn btn-ghost" onClick={confirmLogout}>Выйти</button>
+              </>
+            )}
+          </nav>
+
+          <div className="nav-mobile">
+            {user && navigationFor("member", "header").map((entry) => (
+              <Link key={entry.id} to={entry.to(user.username)} className="icon-btn" aria-label={entry.label}>
+                <NavigationIcon name={entry.icon} size={22} />
               </Link>
-              <button className="btn btn-ghost" onClick={confirmLogout}>
-
-                Выйти
-              </button>
-            </>
-          )}
-        </nav>
-
-        {/* Mobile / tablet controls */}
-        <div className="nav-mobile">
-          {user && navigationFor("member", "header").map((entry) => (
-            <Link key={entry.id} to={entry.to(user.username)} className="icon-btn" aria-label={entry.label}>
-              <NavigationIcon name={entry.icon} size={22} />
-            </Link>
-          ))}
-          {!user && <button
-            type="button"
-            className="icon-btn"
-            aria-label={open ? "Закрыть меню" : "Открыть меню"}
-            aria-expanded={open}
-            aria-controls="mobile-menu"
-            onClick={() => setOpen((o) => !o)}
-          >
-            <NavigationIcon name="menu" size={24} />
-          </button>}
+            ))}
+            {!user && <button
+              type="button"
+              className="icon-btn"
+              aria-label={open ? "Закрыть меню" : "Открыть меню"}
+              aria-expanded={open}
+              aria-controls="mobile-menu"
+              onClick={() => setOpen((o) => !o)}
+            >
+              <NavigationIcon name="menu" size={24} />
+            </button>}
+          </div>
         </div>
       </header>
 

@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import type { NotificationType } from "@commune/shared";
 import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { PushSubscription } from "../models/PushSubscription.js";
@@ -42,21 +43,24 @@ export async function pushToUser(
   userId: string,
   kind: PushKind,
   payload: PushPayload,
+  socialType?: NotificationType,
 ): Promise<void> {
   if (!pushConfigured()) return;
   try {
     configure();
+    let silent = false;
     if (kind !== "test") {
-      const user = (await User.findById(userId)
-        .select("pushMessages pushSocial banned")
-        .lean()) as {
-        pushMessages?: boolean;
-        pushSocial?: boolean;
-        banned?: boolean;
-      } | null;
+      const user = await User.findById(userId)
+        .select("pushMessages pushSocial banned notificationPreferences")
+        .lean();
       if (!user || user.banned) return;
       if (kind === "message" && user.pushMessages === false) return;
       if (kind === "social" && user.pushSocial === false) return;
+      if (kind === "social" && socialType) {
+        const preference = user.notificationPreferences?.[socialType];
+        if (preference?.visible === false) return;
+        silent = preference?.sound === false;
+      }
       if ((await activeUsers([userId])).has(userId)) return;
     }
 
@@ -68,6 +72,7 @@ export async function pushToUser(
       body: payload.body.slice(0, 140),
       url: payload.url,
       tag: payload.tag,
+      ...(silent && { silent }),
     });
     await Promise.allSettled(
       subs.map(async (sub) => {

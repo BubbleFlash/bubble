@@ -15,8 +15,7 @@ import FriendsPrivacySettings from "../components/FriendsPrivacySettings";
 import ProfileAppearancePrivacy from "../components/ProfileAppearancePrivacy";
 import MusicPrivacySettings from "../components/MusicPrivacySettings";
 import UnsavedAppearanceDialog from "../components/UnsavedAppearanceDialog";
-import PushSettings from "../components/PushSettings";
-import SoundSettings from "../components/SoundSettings";
+import NotificationSettings from "../components/NotificationSettings";
 import Avatar from "../components/Avatar";
 import FontSettings from "../components/FontSettings";
 import ColorPalette from "../components/ColorPalette";
@@ -136,10 +135,7 @@ function SettingsSections({ user, onWallpaperPreview }: { user: AccountUser } & 
             </>
           )}
           {id === "notifications" && tab === id && (
-            <>
-              <SoundSettings />
-              <PushSettings />
-            </>
+            <NotificationSettings />
           )}
         </div>
       ))}
