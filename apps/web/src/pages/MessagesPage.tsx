@@ -26,6 +26,7 @@ import {
 } from "../hooks/useMessages";
 import { joinConversation, noteTyping, stopTyping, useRealtime } from "../lib/realtime";
 import { useAuth } from "../store/auth";
+import {createId} from "../lib/uuid";
 
 /** Text box that sends on Enter (Shift+Enter makes a new line). */
 function Composer({
@@ -67,7 +68,7 @@ function Composer({
     sending.current = true;
     onStopTyping?.();
     try {
-      await onSend({ text: value, tracks, imageIds: images.images.map((image) => image.url!), clientMessageId: crypto.randomUUID() });
+      await onSend({ text: value, tracks, imageIds: images.images.map((image) => image.url!), clientMessageId: createId() });
       setText("");
       setTracks([]);
       images.clear();

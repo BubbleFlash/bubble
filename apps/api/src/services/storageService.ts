@@ -4,7 +4,6 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "../config/env.js";
 import { s3Client, s3PresignClient } from "./s3Client.js";
@@ -57,23 +56,20 @@ export async function deleteObject(key: string): Promise<void> {
  * Ограничение размера проверяется самим хранилищем,
  * а не только нашим API.
  */
-export async function createUploadForm(
+export async function createUploadUrl(
   key: string,
   contentType: string,
-  maxBytes: number,
-): Promise<{ url: string; fields: Record<string, string> }> {
-  return createPresignedPost(s3PresignClient, {
-    Bucket: env.S3_BUCKET,
-    Key: key,
-    Expires: 600,
-    Fields: {
-      "Content-Type": contentType,
-    },
-    Conditions: [
-      ["content-length-range", 1, maxBytes],
-      ["eq", "$Content-Type", contentType],
-    ],
-  });
+  expiresIn = 600,
+): Promise<string> {
+  return getSignedUrl(
+    s3PresignClient,
+    new PutObjectCommand({
+      Bucket: env.S3_BUCKET,
+      Key: key,
+      ContentType: contentType,
+    }),
+    { expiresIn },
+  );
 }
 
 /**

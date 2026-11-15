@@ -213,6 +213,7 @@ export async function getMusicDownloadUrl(trackId: string): Promise<string> {
   const track = await MusicTrack.findById(trackId).select("storageKey title artist mimeType").lean();
   if (!track) throw notFound("Music track not found");
   const extensions: Record<string, string> = { "audio/mpeg": "mp3", "audio/flac": "flac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/ogg": "ogg" };
+  // eslint-disable-next-line no-control-regex -- Remove control characters from downloaded filename.
   const name = `${track.artist} - ${track.title}`.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").slice(0, 180);
   return createDownloadUrl(track.storageKey, 600, `${name}.${extensions[track.mimeType] ?? "audio"}`);
 }

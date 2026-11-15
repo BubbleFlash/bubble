@@ -6,7 +6,7 @@ import { MusicUpload } from "../models/MusicUpload.js";
 import { UserMusic } from "../models/UserMusic.js";
 import { badRequest, conflict, notFound } from "../utils/errors.js";
 import {
-  createUploadForm,
+  createUploadUrl,
   getObjectMetadata,
 } from "./storageService.js";
 
@@ -35,16 +35,14 @@ export async function createMusicUpload(
   });
 
   try {
-    const form = await createUploadForm(
+    const url  = await createUploadUrl(
       storageKey,
-      input.mimeType,
-      input.size,
+      input.mimeType
     );
 
     return {
       uploadId: upload.id,
-      url: form.url,
-      fields: form.fields,
+      url: url
     };
   } catch (error) {
     await MusicUpload.deleteOne({ _id: upload._id });

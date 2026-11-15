@@ -127,17 +127,12 @@ export default function MusicPage() {
         },
       });
 
-      const formData = new FormData();
-
-      for (const [key, value] of Object.entries(ticket.fields)) {
-        formData.append(key, value);
-      }
-
-      formData.append("file", selectedFile);
-
       const uploadResponse = await fetch(ticket.url, {
-        method: "POST",
-        body: formData,
+        method: "PUT",
+        headers: {
+          "Content-Type": mimeType,
+        },
+        body: selectedFile,
       });
 
       if (!uploadResponse.ok) {
