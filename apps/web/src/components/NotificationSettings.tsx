@@ -9,9 +9,9 @@ export default function NotificationSettings() {
   const save = useSaveNotificationPreference();
 
   return (
-    <details className="card notification-settings">
-      <summary>Настройки уведомлений</summary>
-      <div className="notification-settings-body">
+    <>
+      <section className="card notification-settings" aria-labelledby="notification-settings-title">
+        <h2 id="notification-settings-title" className="push-title">Категории уведомлений</h2>
         <p className="muted small">
           Скрытые уведомления сохраняются и снова появятся при включении категории.
         </p>
@@ -50,9 +50,9 @@ export default function NotificationSettings() {
           </table>
         )}
         {save.isError && <p className="error" role="alert">{save.error.message}</p>}
-        <SoundSettings />
-        <PushSettings />
-      </div>
-    </details>
+      </section>
+      <SoundSettings />
+      <PushSettings />
+    </>
   );
 }

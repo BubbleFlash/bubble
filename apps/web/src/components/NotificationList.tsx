@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link } from "react-router-dom";
-import { notificationTypes, type NotificationDTO, type NotificationType } from "@commune/shared";
+import { displayNameOf, notificationTypes, type NotificationDTO, type NotificationType } from "@commune/shared";
 import { useNotificationPreferences, useNotifications } from "../hooks/useSocial";
 import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
 import { notificationLabels, notificationTarget, notificationText } from "../lib/notifications";
@@ -66,7 +66,7 @@ export default function NotificationList({ compact, openInNewTab, onItems, onSel
             aria-description={`${item.read ? "Прочитано" : "Не прочитано"}${openInNewTab ? ". Откроется в новой вкладке." : ""}`}
             onClick={(event) => onSelect?.(item, event)}
           >
-            <span><strong>@{item.actor.username}</strong> {notificationText[item.type]}</span>
+            <span><strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}</span>
             <time className="muted small" dateTime={item.createdAt}>{timeAgo(item.createdAt)}</time>
           </Link>
         ))}

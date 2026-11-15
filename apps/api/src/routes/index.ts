@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { RequestHandler } from "express";
 import {
   banUserSchema,
   clientErrorSchema,
@@ -10,12 +11,30 @@ import {
   readNotificationsSchema,
   contactSchema,
   messagesQuerySchema,
+  linkPreviewSchema,
+  musicUploadSignSchema,
+  musicUploadCompleteSchema,
+  musicListQuerySchema,
+  musicPickerQuerySchema,
+  musicTrackIdSchema,
+  musicLibraryStatusSchema,
+  musicSettingsSchema,
+  profileMusicQuerySchema,
   newsQuerySchema,
   sendMessageSchema,
   communityListSchema,
+  communityMemberListSchema,
+  communityMemberRoleSchema,
+  communityMemberNoteSchema,
+  communityTeamVisibilitySchema,
+  communityPermissionsSchema,
+  communityTransferSchema,
   createCommentSchema,
   createCommunitySchema,
+  updateCommunitySchema,
+  updateCommunityPostSchema,
   createPostSchema,
+  createRepostSchema,
   createReportSchema,
   forgotPasswordSchema,
   googleLoginSchema,
@@ -29,9 +48,12 @@ import {
   resetPasswordSchema,
   resolveReportSchema,
   searchQuerySchema,
+  updateAppearanceSchema,
   updateProfileSchema,
   verifyEmailSchema,
+  wallpaperQuerySchema,
 } from "@commune/shared";
+import * as music from "../controllers/musicController.js";
 import * as account from "../controllers/accountController.js";
 import * as push from "../controllers/pushController.js";
 import * as internal from "../controllers/internalController.js";
@@ -39,6 +61,7 @@ import * as monitor from "../controllers/monitorController.js";
 import * as contact from "../controllers/contactController.js";
 import * as messages from "../controllers/messageController.js";
 import * as news from "../controllers/newsController.js";
+import * as serverFundraiser from "../controllers/serverFundraiserController.js";
 import * as billing from "../controllers/billingController.js";
 import * as insights from "../controllers/insightsController.js";
 import * as admin from "../controllers/adminController.js";
@@ -51,6 +74,7 @@ import * as reports from "../controllers/reportController.js";
 import * as publicApi from "../controllers/publicController.js";
 import * as search from "../controllers/searchController.js";
 import * as uploads from "../controllers/uploadController.js";
+import * as wallpapers from "../controllers/wallpaperController.js";
 import * as users from "../controllers/userController.js";
 import * as relationships from "../controllers/relationshipController.js";
 import { requireActive, requireAdmin, requireAuth, requirePlus } from "../middleware/auth.js";
@@ -69,14 +93,20 @@ import {
   reportLimiter,
   publicLimiter,
   searchLimiter,
+  linkPreviewLimiter,
   uploadLimiter,
   viewLimiter,
 } from "../middleware/rateLimit.js";
-import { parseImageUpload } from "../middleware/upload.js";
+import { parseFontUpload, parseImageUpload } from "../middleware/upload.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../utils/errors.js";
+import { loadLinkPreview } from "../services/linkPreview.js";
 
 export const router = Router();
+const privateMusicResponse: RequestHandler = (_req, res, next) => {
+  res.set("Cache-Control", "private, no-store");
+  next();
+};
 
 /**
  * Middleware order on write routes:  requireAuth -> (limiter) -> validate -> requireActive.
@@ -89,6 +119,10 @@ const adminOnly = [requireAuth, requireActive, requireAdmin];
 // and is the one for an uptime monitor. Neither reveals versions, paths or settings.
 router.get("/health", monitor.live);
 router.get("/health/ready", monitor.ready);
+router.post("/link-preview", requireAuth, linkPreviewLimiter, validate(linkPreviewSchema), asyncHandler(async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+  res.json({ preview: await loadLinkPreview(req.body.url) });
+}));
 
 // Used only by the realtime service (shared secret; 404 for everyone else).
 router.get(
@@ -158,14 +192,98 @@ router.post(
   asyncHandler(uploads.upload),
 );
 
+router.post("/uploads/font", requireAuth, uploadLimiter, requireActive, parseFontUpload, asyncHandler(uploads.uploadFont));
+
+router.get("/wallpapers", requireAuth, validate(wallpaperQuerySchema, "query"), asyncHandler(wallpapers.list));
+router.post("/wallpapers", requireAuth, uploadLimiter, requireActive, parseImageUpload, asyncHandler(wallpapers.publish));
+for (const kind of ["like", "favorite"] as const) {
+  router.put(`/wallpapers/:id/${kind}`, requireAuth, requireActive, asyncHandler(wallpapers.reactToWallpaper(kind, true)));
+  router.delete(`/wallpapers/:id/${kind}`, requireAuth, requireActive, asyncHandler(wallpapers.reactToWallpaper(kind, false)));
+}
+router.post("/wallpapers/:id/report", requireAuth, reportLimiter, validate(createReportSchema), requireActive, asyncHandler(wallpapers.report));
+
+router.post(
+  "/music/uploads/sign",
+  requireAuth,
+  uploadLimiter,
+  validate(musicUploadSignSchema),
+  requireActive,
+  asyncHandler(music.signUpload),
+);
+
+router.post(
+  "/music/uploads/complete",
+  requireAuth,
+  uploadLimiter,
+  validate(musicUploadCompleteSchema),
+  requireActive,
+  asyncHandler(music.completeUpload),
+);
+
+router.get("/music/picker", requireAuth, validate(musicPickerQuerySchema, "query"), asyncHandler(music.picker));
+router.post("/music/library/status", requireAuth, validate(musicLibraryStatusSchema), asyncHandler(music.libraryStatuses));
+router.get(
+  "/music",
+  requireAuth,
+  validate(musicListQuerySchema, "query"),
+  asyncHandler(music.list),
+);
+
+router.post(
+  "/music/:id/library",
+  requireAuth,
+  validate(musicTrackIdSchema, "params"),
+  requireActive,
+  asyncHandler(music.addToLibrary),
+);
+
+router.get(
+  "/music/:id/library",
+  requireAuth,
+  validate(musicTrackIdSchema, "params"),
+  asyncHandler(music.libraryStatus),
+);
+
+router.delete(
+  "/music/:id/library",
+  requireAuth,
+  validate(musicTrackIdSchema, "params"),
+  requireActive,
+  asyncHandler(music.removeFromLibrary),
+);
+
+router.get(
+  "/music/:id/download",
+  requireAuth,
+  validate(musicTrackIdSchema, "params"),
+  asyncHandler(music.download),
+);
+
+router.get(
+  "/music/:id/play",
+  requireAuth,
+  validate(musicTrackIdSchema, "params"),
+  asyncHandler(music.play),
+);
+
 // Users. "/users/me" must be declared before "/users/:username".
 router.get("/users/me", requireAuth, asyncHandler(users.me));
+router.get("/users/me/music-settings", privateMusicResponse, requireAuth, asyncHandler(users.getMusicSettings));
+router.patch("/users/me/music-settings", privateMusicResponse, requireAuth, validate(musicSettingsSchema), requireActive, asyncHandler(users.updateMusicSettings));
+router.get("/users/:username/music", privateMusicResponse, requireAuth, validate(profileMusicQuerySchema, "query"), asyncHandler(users.userMusic));
 router.patch(
   "/users/me",
   requireAuth,
   validate(updateProfileSchema),
   requireActive,
   asyncHandler(users.updateMe),
+);
+router.patch(
+  "/users/me/appearance",
+  requireAuth,
+  validate(updateAppearanceSchema),
+  requireActive,
+  asyncHandler(users.updateAppearance),
 );
 router.get("/users/me/earnings", requireAuth, asyncHandler(payments.earnings));
 router.patch(
@@ -271,6 +389,16 @@ router.post(
   asyncHandler(communities.create),
 );
 router.get("/communities/:slug", requireAuth, asyncHandler(communities.get));
+router.patch("/communities/:slug", requireAuth, requireActive, validate(updateCommunitySchema), asyncHandler(communities.update));
+router.put("/communities/:slug/permissions", requireAuth, requireActive, validate(communityPermissionsSchema), asyncHandler(communities.updatePermissions));
+router.get("/communities/:slug/members", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.members));
+router.get("/communities/:slug/managers", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.managers));
+router.get("/communities/:slug/team", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.team));
+router.put("/communities/:slug/members/:userId/note", requireAuth, requireActive, validate(communityMemberNoteSchema), asyncHandler(communities.updateMemberNote));
+router.put("/communities/:slug/members/:userId/team-visibility", requireAuth, requireActive, validate(communityTeamVisibilitySchema), asyncHandler(communities.updateTeamVisibility));
+router.put("/communities/:slug/members/:userId/role", requireAuth, requireActive, validate(communityMemberRoleSchema), asyncHandler(communities.updateMemberRole));
+router.delete("/communities/:slug/members/:userId", requireAuth, requireActive, asyncHandler(communities.removeMember));
+router.post("/communities/:slug/transfer", requireAuth, requireActive, validate(communityTransferSchema), asyncHandler(communities.transfer));
 router.get(
   "/communities/:slug/posts",
   requireAuth,
@@ -299,16 +427,17 @@ router.post(
   requireActive,
   asyncHandler(posts.createPost),
 );
+router.post(
+  "/posts/reposts",
+  requireAuth,
+  validate(createRepostSchema),
+  requireActive,
+  asyncHandler(posts.createRepost),
+);
 router.get("/posts/:id", requireAuth, asyncHandler(posts.getPost));
+router.patch("/posts/:id", requireAuth, requireActive, validate(updateCommunityPostSchema), asyncHandler(posts.updatePost));
 router.delete("/posts/:id", requireAuth, requireActive, asyncHandler(posts.deletePost));
 router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.toggleLike));
-router.post(
-  "/posts/:id/checkout",
-  requireAuth,
-  checkoutLimiter,
-  requireActive,
-  asyncHandler(payments.checkout),
-);
 router.post("/posts/:id/view", requireAuth, viewLimiter, asyncHandler(posts.trackView));
 router.get("/posts/:id/comments", requireAuth, asyncHandler(posts.listComments));
 router.post(
@@ -353,6 +482,7 @@ router.post("/admin/users/:username/unban", ...adminOnly, asyncHandler(admin.unb
 
 // News (public: guests see it too) and the Contact form
 router.get("/news", publicLimiter, validate(newsQuerySchema, "query"), asyncHandler(news.list));
+router.get("/server-fundraiser", publicLimiter, asyncHandler(serverFundraiser.get));
 router.post("/contact", contactLimiter, validate(contactSchema), asyncHandler(contact.send));
 
 // Web Push (notifications when the site is closed)
@@ -385,6 +515,8 @@ router.post("/push/test", requireAuth, testPushLimiter, asyncHandler(push.test))
 // before "/messages/:id".
 router.get("/messages", requireAuth, asyncHandler(messages.listConversations));
 router.get("/messages/unread-count", requireAuth, asyncHandler(messages.unreadCount));
+router.post("/messages/images", requireAuth, uploadLimiter, parseImageUpload, requireActive, asyncHandler(messages.uploadImage));
+router.get("/messages/images/:imageId", requireAuth, asyncHandler(messages.imageUrl));
 router.post(
   "/messages/with/:username",
   requireAuth,

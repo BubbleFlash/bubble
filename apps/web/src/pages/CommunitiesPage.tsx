@@ -5,16 +5,17 @@ import { pluralRu } from "../lib/plural";
 import { Link, useNavigate } from "react-router-dom";
 import { createCommunitySchema } from "@commune/shared";
 import { useCommunities, useCreateCommunity } from "../hooks/useCommunities";
+import Avatar from "../components/Avatar";
 
 export default function CommunitiesPage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"all" | "mine">("all");
+  const [tab, setTab] = useState<"all" | "subscriptions" | "owned">("subscriptions");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ slug: "", name: "", description: "" });
   const [error, setError] = useState<string | null>(null);
 
-  const list = useCommunities({ q: q.trim() || undefined, mine: tab === "mine" });
+  const list = useCommunities({ q: q.trim() || undefined, mine: tab === "subscriptions", owned: tab === "owned" });
   const create = useCreateCommunity();
 
   const submit = (e: FormEvent) => {
@@ -37,9 +38,9 @@ export default function CommunitiesPage() {
   return (
     <>
       <div className="row between">
-        <h1 className="search-title">Сообщества</h1>
+        <h1 className="search-title">Группы</h1>
         <button className="btn" onClick={() => setCreating((c) => !c)}>
-          {creating ? "Отмена" : "Создать сообщество"}
+          {creating ? "Отмена" : "Создать группу"}
         </button>
       </div>
 
@@ -72,7 +73,7 @@ export default function CommunitiesPage() {
           </label>
           {error && <p className="error">{error}</p>}
           <button className="btn block" disabled={create.isPending}>
-            {create.isPending ? "Создание…" : "Создать сообщество"}
+            {create.isPending ? "Создание…" : "Создать группу"}
           </button>
         </form>
       )}
@@ -82,13 +83,13 @@ export default function CommunitiesPage() {
         type="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Найти сообщество"
-        aria-label="Найти сообщество"
+        placeholder="Найти группу"
+        aria-label="Найти группу"
         maxLength={30}
       />
 
-      <div className="tabs feed-tabs" role="tablist">
-        {(["all", "mine"] as const).map((t) => (
+      <div className="tabs feed-tabs" role="tablist" aria-label="Группы">
+        {(["all", "subscriptions", "owned"] as const).map((t) => (
           <button
             key={t}
             role="tab"
@@ -96,7 +97,7 @@ export default function CommunitiesPage() {
             className={`tab ${tab === t ? "active" : ""}`}
             onClick={() => setTab(t)}
           >
-            {t === "all" ? "Популярные" : "Мои"}
+            {t === "all" ? "Все группы" : t === "subscriptions" ? "Подписки" : "Мои"}
           </button>
         ))}
       </div>
@@ -105,17 +106,16 @@ export default function CommunitiesPage() {
       {list.isError && <p className="error center">{list.error.message}</p>}
       {list.isSuccess && list.data.length === 0 && (
         <p className="muted center">
-          {tab === "mine" ? "Вы пока не вступили ни в одно сообщество." : "Сообщества не найдены."}
+          {tab === "subscriptions" ? "Вы пока не вступили ни в одну группу." : tab === "owned" ? "У вас пока нет групп." : "Группы не найдены."}
         </p>
       )}
       {list.data?.map((c) => (
         <Link key={c.id} to={`/c/${c.slug}`} className="card person">
+          <Avatar username={c.slug} displayName={c.name} url={c.avatarUrl} size={40} preview />
           <div>
-            <strong>{c.name}</strong> <span className="muted">c/{c.slug}</span>
-            {c.description && <p className="muted">{c.description}</p>}
+            <strong>{c.name}</strong>
             <p className="muted">
               {c.memberCount} {pluralRu(c.memberCount, "участник", "участника", "участников")}
-              {c.joinedByMe && " · Вы участник"}
             </p>
           </div>
         </Link>

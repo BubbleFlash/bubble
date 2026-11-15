@@ -1,6 +1,8 @@
+import { displayNameOf } from "@commune/shared";
 import NavigationIcon from "./NavigationIcon";
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import ServerFundraiser from "./ServerFundraiser";
+import { useEffect } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../store/auth";
 import { useUnreadCount } from "../hooks/useSocial";
@@ -16,7 +18,11 @@ import { navigationFor } from "../lib/navigation";
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
 export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 
-export default function Header({ onNavigateToNotification }: { onNavigateToNotification: () => void }) {
+export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigateToNotification }: {
+  menuOpen: boolean;
+  setMenuOpen: Dispatch<SetStateAction<boolean>>;
+  onNavigateToNotification: () => void;
+}) {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const confirmLogout = () => {
@@ -24,13 +30,12 @@ export default function Header({ onNavigateToNotification }: { onNavigateToNotif
   };
   const unread = useUnreadCount(Boolean(user));
   const msgs = useUnreadMessages(Boolean(user));
-  const [open, setOpen] = useState(false);
   const count = unread.data?.count ?? 0;
   const msgCount = msgs.data?.count ?? 0;
   const countLabel = count > 99 ? "99+" : String(count);
 
   // Close the drawer whenever the page changes.
-  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => setOpen(false), [pathname, setOpen]);
 
   // While the drawer is open: Escape closes it and the page behind it does not scroll.
   useEffect(() => {
@@ -43,7 +48,7 @@ export default function Header({ onNavigateToNotification }: { onNavigateToNotif
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   // If the window grows to desktop size, make sure no stale drawer stays open.
   useEffect(() => {
@@ -51,13 +56,13 @@ export default function Header({ onNavigateToNotification }: { onNavigateToNotif
     const onChange = () => mq.matches && setOpen(false);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, []);
+  }, [setOpen]);
 
   if (AUTH_PATHS.includes(pathname)) return null;
 
   const navClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? " active" : ""}`;
   const item = (to: string, icon: IconName, label: string, extra?: ReactNode, end = false) => (
-    <NavLink to={to} end={end} className={navClass}>
+    <NavLink to={to} end={end} className={navClass} onClick={() => setOpen(false)}>
       <NavigationIcon name={icon} size={20} />
       {label}
       {extra}
@@ -84,8 +89,8 @@ export default function Header({ onNavigateToNotification }: { onNavigateToNotif
             {user && (
               <>
                 <Link to={`/u/${user.username}`} className="nav-link nav-profile">
-                  <Avatar username={user.username} url={user.avatarUrl} size={26} />
-                  <span className="nav-profile-name">@{user.username}</span>
+                  <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={26} />
+                  <span className="nav-profile-name">{displayNameOf(user)}</span>
                   <PlusBadge plus={user.plus} />
                 </Link>
                 <button className="btn btn-ghost" onClick={confirmLogout}>Выйти</button>
@@ -99,15 +104,16 @@ export default function Header({ onNavigateToNotification }: { onNavigateToNotif
                 <NavigationIcon name={entry.icon} size={22} />
               </Link>
             ))}
-            <button
+            {!user && <button
+              type="button"
               className="icon-btn"
               aria-label={open ? "Закрыть меню" : "Открыть меню"}
               aria-expanded={open}
               aria-controls="mobile-menu"
               onClick={() => setOpen((o) => !o)}
             >
-              <Icon name={open ? "close" : "menu"} size={24} />
-            </button>
+              <NavigationIcon name="menu" size={24} />
+            </button>}
           </div>
         </div>
       </header>
@@ -132,7 +138,8 @@ export default function Header({ onNavigateToNotification }: { onNavigateToNotif
               <nav className="drawer-links" aria-label="Меню">
                 {navigationFor("member", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" && msgCount > 0 ? <span className="pill">{msgCount}</span> : entry.id === "notifications" && count > 0 ? <span className="pill">{countLabel}</span> : undefined, entry.end)}</span>)}
               </nav>
-              <button className="btn btn-outline block" onClick={confirmLogout}>
+              {open && <ServerFundraiser />}
+              <button className="btn btn-outline block drawer-logout" onClick={confirmLogout}>
                 <Icon name="logout" size={18} />  Выйти
               </button>
             </>

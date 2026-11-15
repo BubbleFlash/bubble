@@ -12,6 +12,14 @@ import { useUnreadCount } from "../hooks/useSocial";
 /** Adds a message to a loaded conversation unless it is already there (own sends arrive twice). */
 export function appendUnique(page: ThreadPage, message: MessageDTO): ThreadPage {
   if (page.items.some((m) => m.id === message.id)) return page;
+  if (message.clientMessageId) {
+    const index = page.items.findIndex((item) => item.id.startsWith("tmp-") && item.senderId === message.senderId && item.clientMessageId === message.clientMessageId);
+    if (index !== -1) {
+      const items = [...page.items];
+      items[index] = message;
+      return { ...page, items };
+    }
+  }
   return { ...page, items: [...page.items, message] };
 }
 
@@ -37,7 +45,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     if (!userId || unread.data === undefined) { previous.current = null; return; }
     const count = unread.data.count;
     if (previous.current?.userId === userId && previous.current.count !== count) {
-      for (const key of ["relationships", "friends-access", "friends-list", "profile", "notifications"]) void qc.invalidateQueries({ queryKey: [key] });
+      for (const key of ["relationships", "friends-access", "friends-list", "profile", "profile-music", "notifications"]) void qc.invalidateQueries({ queryKey: [key] });
     }
     previous.current = { userId, count };
   }, [userId, unread.data, qc]);
@@ -46,7 +54,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     if (!userId) return;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
-      for (const key of ["thread", "conversations", "unread-messages", "notifications", "unread-count", "relationships", "friends-access", "friends-list", "profile", "feed"]) void qc.invalidateQueries({ queryKey: [key] });
+      for (const key of ["thread", "conversations", "unread-messages", "notifications", "unread-count", "relationships", "friends-access", "friends-list", "profile", "profile-music", "feed"]) void qc.invalidateQueries({ queryKey: [key] });
     };
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
@@ -74,7 +82,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           return next;
         });
-        if (fetching) void qc.invalidateQueries({ queryKey: key, exact: true });
+        if (fetching || message.hasRepost) void qc.invalidateQueries({ queryKey: key, exact: true });
         void qc.invalidateQueries({ queryKey: ["conversations"] });
         if (message.senderId !== userId) {
           void qc.invalidateQueries({ queryKey: ["unread-messages"] });
@@ -103,7 +111,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         }
         void qc.invalidateQueries({ queryKey: ["notifications"] });
         void qc.invalidateQueries({ queryKey: ["unread-count"] });
-        for (const key of ["relationships", "friends-access", "friends-list", "profile"]) void qc.invalidateQueries({ queryKey: [key] });
+        for (const key of ["relationships", "friends-access", "friends-list", "profile", "profile-music"]) void qc.invalidateQueries({ queryKey: [key] });
       },
       onResync: () => {
         // Events sent while the connection was down are gone, so ask the server what changed.
@@ -113,7 +121,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           "unread-messages",
           "notifications",
           "unread-count",
-          "relationships", "friends-access", "friends-list", "profile",
+          "relationships", "friends-access", "friends-list", "profile", "profile-music",
         ]) {
           void qc.invalidateQueries({ queryKey: [key] });
         }

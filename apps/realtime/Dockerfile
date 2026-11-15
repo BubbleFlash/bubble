@@ -4,9 +4,11 @@ WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
+COPY apps/api/package.json apps/api/package.json
 COPY apps/realtime/package.json apps/realtime/package.json
+COPY apps/web/package.json apps/web/package.json
 
-RUN npm install --workspace @commune/shared --workspace @commune/realtime --include-workspace-root
+RUN npm ci --workspace @commune/shared --workspace @commune/realtime --include-workspace-root
 
 COPY packages/shared packages/shared
 COPY apps/realtime apps/realtime

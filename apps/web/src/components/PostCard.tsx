@@ -1,18 +1,22 @@
+import OnlineStatus from "./OnlineStatus";
+import { displayNameOf } from "@commune/shared";
 import { pluralRu } from "../lib/plural";
 import { useState } from "react";
-import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import type { PostDTO } from "@commune/shared";
 import { useAuth } from "../store/auth";
 import { useDeletePost, useToggleLike } from "../hooks/usePosts";
-import { formatPrice, useCheckout } from "../hooks/usePayments";
-import { assetUrl } from "../lib/api";
-import { ProfileAvatar } from "./Avatar";
+import Avatar, { ProfileAvatar } from "./Avatar";
 import Icon from "./Icon";
 import PlusBadge from "./PlusBadge";
-import { hueFor } from "../lib/hue";
 import ReportForm from "./ReportForm";
 import InlineComments from "./InlineComments";
+import MusicAttachments from "./MusicAttachments";
+import ImageGallery from "./ImageGallery";
+import { LinkedText, LinkPreview } from "./LinkContent";
+import RepostButton from "./RepostButton";
+import RepostCard from "./RepostCard";
+import CommunityPostEditor from "./CommunityPostEditor";
 
 const relativeTime = new Intl.RelativeTimeFormat("ru", { numeric: "always" });
 export function timeAgo(iso: string): string {
@@ -27,77 +31,42 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
   const { user } = useAuth();
   const like = useToggleLike();
   const del = useDeletePost();
-  const checkout = useCheckout();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsMounted, setCommentsMounted] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const mine = user?.id === post.author.id;
   const isAdmin = user?.role === "admin";
+  const canDelete = isAdmin || (post.community ? post.communityActions?.delete : mine);
+  const canEdit = Boolean(post.communityActions?.edit);
+  const showEditor = editing && canEdit;
 
   return (
     <article className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
-      <ProfileAvatar username={post.author.username} url={post.author.avatarUrl} />
-      {!mine && <button type="button" className="btn btn-ghost post-report" title="Пожаловаться" aria-label="Пожаловаться" aria-expanded={reporting} onClick={() => setReporting((r) => !r)}><Icon name="flag" size={18} /></button>}
-      {inlineComments && mine && <button type="button" className="btn btn-ghost danger feed-delete" title="Удалить запись" aria-label="Удалить запись" disabled={del.isPending} onClick={() => window.confirm(mine ? "Удалить эту запись?" : "Удалить эту запись как администратор?") && del.mutate(post.id)}><Icon name="trash" size={18} /></button>}
+      {post.community ? <Link to={`/c/${post.community.slug}`} className="profile-avatar-link"><Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /></Link> : <ProfileAvatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} />}
+      {canDelete ? <button type="button" className="btn btn-ghost danger post-report" title="Удалить запись" aria-label="Удалить запись" disabled={del.isPending} onClick={() => window.confirm("Удалить эту запись?") && del.mutate(post.id)}><Icon name="trash" size={18} /></button> : <button type="button" className="btn btn-ghost post-report" title="Пожаловаться" aria-label="Пожаловаться" aria-expanded={reporting} onClick={() => setReporting((r) => !r)}><Icon name="flag" size={18} /></button>}
       <div className="post-main">
         <div className="post-meta">
-          <Link to={`/u/${post.author.username}`} className="user-link">
-            @{post.author.username}
-          </Link>
-          <PlusBadge plus={post.author.plus} />
+          {post.community ? <Link to={`/c/${post.community.slug}`} className="user-link">{post.community.name}</Link> : <>
+            <Link to={`/u/${post.author.username}`} className="user-link">{displayNameOf(post.author)}</Link>
+            <OnlineStatus online={mine || post.author.online} />
+            <PlusBadge plus={post.author.plus} />
+          </>}
           {inlineComments ? (
-            <span className="muted">· <Link className="feed-post-time" to={`/posts/${post.id}`} aria-label={`Открыть публикацию @${post.author.username} от ${new Date(post.createdAt).toLocaleString("ru-RU")}`}>
+            <span className="muted">· <Link className="feed-post-time" to={`/posts/${post.id}`} aria-label={`Открыть публикацию ${displayNameOf(post.author)} от ${new Date(post.createdAt).toLocaleString("ru-RU")}`}>
               <time dateTime={post.createdAt}>{timeAgo(post.createdAt)}</time>
             </Link></span>
           ) : <span className="muted">· {timeAgo(post.createdAt)}</span>}
-          {post.community && (
-            <Link
-              to={`/c/${post.community.slug}`}
-              className="community-tag"
-              style={{ "--hue": hueFor(post.community.slug).bg } as CSSProperties}
-            >
-              c/{post.community.slug}
-            </Link>
-          )}
-          {post.priceCents != null && (
-            <span className="price-badge">{formatPrice(post.priceCents)}</span>
-          )}
+          {post.visibility === "private" && <span className="repost-private"><Icon name="lock" size={14} /> Только я</span>}
+          {post.visibility === "friends" && <span className="repost-private"><Icon name="lock" size={14} /> Только друзья</span>}
         </div>
-        {post.content && <p className="post-body">{post.content}</p>}
-        {post.imageUrl && (
-          <a href={assetUrl(post.imageUrl)} target="_blank" rel="noopener noreferrer">
-            <img
-              className="post-image"
-              src={assetUrl(post.imageUrl)}
-              alt={`Изображение пользователя @${post.author.username}`}
-              loading="lazy"
-              decoding="async"
-            />
-          </a>
-        )}
-        {post.locked && post.priceCents != null && (
-          <div className="paywall">
-            <p>
-              <Icon name="lock" size={16} />  Остальная часть записи доступна после оплаты.
-            </p>
-            <button
-              className="btn"
-              disabled={checkout.isPending}
-              onClick={() => checkout.mutate(post.id)}
-            >
-              {checkout.isPending
-                ? "Открываем страницу оплаты…"
-                : `Открыть за ${formatPrice(post.priceCents)}`}
-            </button>
-            {checkout.isError && <p className="error">{checkout.error.message}</p>}
-          </div>
-        )}
-        {post.premiumContent && (
-          <div className="premium">
-            <span className="premium-label">Открытое содержимое</span>
-            <p className="post-body">{post.premiumContent}</p>
-          </div>
-        )}
+        {showEditor ? <CommunityPostEditor post={post} onClose={() => setEditing(false)} /> : <>
+          {post.content && <><p className="post-body"><LinkedText text={post.content} /></p><LinkPreview text={post.content} /></>}
+          {(post.imageUrls?.length || post.imageUrl) && <ImageGallery images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}
+          {post.musicAttachments?.length > 0 && <MusicAttachments attachments={post.musicAttachments} source={`post:${post.id}`} />}
+        </>}
+        {post.repost && <RepostCard preview={post.repost} source={`post-repost:${post.id}`} />}
+        {post.community && <p className="muted community-post-author"><Link to={`/u/${post.author.username}`}>{displayNameOf(post.author)}</Link></p>}
         <div className="post-actions">
           <button
             className={`btn btn-ghost ${post.likedByMe ? "liked" : ""}`}
@@ -112,18 +81,10 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
             <Icon name="comment" size={19} />
             <span>{post.commentCount}</span>
           </Link>}
-          {(!inlineComments || !mine) && (mine || isAdmin) && (
-            <button
-              className="btn btn-ghost danger"
-              onClick={() =>
-                window.confirm(mine ? "Удалить эту запись?" : "Удалить эту запись как администратор?") &&
-                del.mutate(post.id)
-              }
-            >
-              <Icon name="trash" size={18} /> {mine ? "Удалить" : "Удалить"}
-            </button>
-          )}
+          <RepostButton source={{ post: post.id }} count={post.repostCount ?? 0} />
+          {canEdit && !showEditor && <button type="button" className="btn btn-ghost" aria-label="Редактировать запись" title="Редактировать запись" onClick={() => setEditing(true)}><Icon name="pencil" size={18} /></button>}
         </div>
+        {del.error && <p className="error" role="alert">{del.error.message}</p>}
         {inlineComments && (
           <div className={`comments-disclosure${commentsOpen ? " is-open" : ""}`} aria-hidden={!commentsOpen} ref={(node) => { node?.toggleAttribute("inert", !commentsOpen); }}>
             <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} />}</div>

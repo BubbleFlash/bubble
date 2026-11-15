@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { NotificationDTO } from "@commune/shared";
+import { displayNameOf, type NotificationDTO } from "@commune/shared";
 import { notificationTarget, notificationText, notificationVersion } from "../lib/notifications";
 
 export default function NotificationToasts({ items, dismiss }: {
@@ -12,7 +12,7 @@ export default function NotificationToasts({ items, dismiss }: {
         const version = notificationVersion(item);
         return (
           <Link key={version} className="notification-toast" to={notificationTarget(item)} onClick={() => dismiss(version)}>
-            <strong>@{item.actor.username}</strong> {notificationText[item.type]}
+            <strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}
           </Link>
         );
       })}

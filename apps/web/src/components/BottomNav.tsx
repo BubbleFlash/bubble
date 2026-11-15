@@ -10,7 +10,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
 /** App-style tab bar for members on phones and tablets. The menu button holds everything else. */
-export default function BottomNav() {
+export default function BottomNav({ menuOpen, onToggleMenu }: {
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+}) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const location = useLocation();
@@ -43,6 +46,17 @@ export default function BottomNav() {
   return (
     <nav className="bottom-nav" aria-label="Вкладки">
       {navigationFor("member", "bottom").map((entry) => <span key={entry.id}>{tab(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" ? m : entry.id === "notifications" ? n : 0, entry.end)}</span>)}
+      <button
+        type="button"
+        className="tab-link bottom-menu-toggle"
+        aria-label={menuOpen ? "Закрыть меню" : "Открыть меню"}
+        aria-expanded={menuOpen}
+        aria-controls="mobile-menu"
+        onClick={onToggleMenu}
+      >
+        <span className="tab-icon"><NavigationIcon name="menu" size={25} /></span>
+        <span className="tab-label">Меню</span>
+      </button>
     </nav>
   );
 }

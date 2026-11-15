@@ -4,12 +4,14 @@ export const notificationLabels: Record<NotificationType, string> = {
   follow: "Заявки в друзья",
   like: "Отметки «Нравится»",
   comment: "Комментарии",
+  repost: "Репосты",
 };
 
 export const notificationText: Record<NotificationType, string> = {
   follow: "хочет добавить вас в друзья",
   like: "понравилась ваша запись",
   comment: "прокомментировал вашу запись",
+  repost: "поделился вашей записью",
 };
 
 export function notificationTarget(notification: NotificationDTO) {

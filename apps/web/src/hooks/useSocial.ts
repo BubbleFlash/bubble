@@ -9,7 +9,7 @@ import type {
   Page,
   PostDTO,
   ProfileDTO,
-  PublicUser,
+  AccountUser,
   UpdateProfileInput,
   FriendsAccessDTO,
   FriendsVisibility,
@@ -18,10 +18,13 @@ import type {
 import { api, withQuery } from "../lib/api";
 import { useAuth } from "../store/auth";
 
-export function useProfile(username: string) {
+export function useProfile(username: string, enabled = Boolean(username), live = false) {
   const { user } = useAuth();
   return useQuery({
     queryKey: ["profile", username.toLowerCase(), user?.id],
+    enabled,
+    refetchInterval: live ? 30_000 : false,
+    refetchOnWindowFocus: live,
     queryFn: () => api<ProfileDTO>(`/users/${encodeURIComponent(username)}`),
   });
 }
@@ -54,6 +57,7 @@ export function useToggleFollow(username: string) {
       void qc.invalidateQueries({ queryKey: ["friends-access"] });
       void qc.invalidateQueries({ queryKey: ["friends-list"] });
       void qc.invalidateQueries({ queryKey: ["relationships"] });
+      void qc.invalidateQueries({ queryKey: ["profile-music"] });
     },
     onError: () => {
       void qc.invalidateQueries({ queryKey: ["profile", username.toLowerCase()] });
@@ -126,13 +130,18 @@ export function useRelationshipCounts(enabled: boolean) {
 
 export function useFriendsVisibility() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   return useMutation({
     mutationFn: (friendsVisibility: FriendsVisibility) =>
       api<{ friendsVisibility: FriendsVisibility }>("/users/me/friends-visibility", {
         method: "PATCH",
         body: { friendsVisibility },
       }),
-    onSuccess: () => {
+    onSuccess: ({ friendsVisibility }) => {
+      if (user) {
+        qc.setQueryData<FriendsAccessDTO>(["friends-access", user.id, user.username.toLowerCase()],
+          (current) => current?.canView ? { ...current, friendsVisibility } : current);
+      }
       void qc.invalidateQueries({ queryKey: ["profile"] });
       void qc.invalidateQueries({ queryKey: ["friends-access"] });
       void qc.invalidateQueries({ queryKey: ["friends-list"] });
@@ -149,9 +158,14 @@ export function useUpdateProfile() {
   const { setUser } = useAuth();
   return useMutation({
     mutationFn: (input: UpdateProfileInput) =>
-      api<PublicUser>("/users/me", { method: "PATCH", body: input }),
-    onSuccess: (user) => {
+      api<AccountUser>("/users/me", { method: "PATCH", body: input }),
+    onSuccess: (user, changes) => {
       setUser(user);
+      if (changes.displayName !== undefined) {
+        for (const key of ["public", "search", "friends-list", "relationships", "conversations", "thread", "notifications", "admin-reports", "wallpapers"]) {
+          void qc.invalidateQueries({ queryKey: [key] });
+        }
+      }
       void qc.invalidateQueries({ queryKey: ["profile"] });
       // Avatars appear on posts and comments, so refresh those too.
       void qc.invalidateQueries({ queryKey: ["feed"] });

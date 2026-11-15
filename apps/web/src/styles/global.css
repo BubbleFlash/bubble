@@ -545,62 +545,9 @@ a {
   font-size: 14px;
 }
 
-/* ---- Paid posts ---- */
-.price-badge {
-  margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.paywall,
-.premium {
-  margin: 10px 0;
-  padding: 12px 14px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-}
-
-.paywall p {
-  margin: 0 0 10px;
-}
-
-.premium {
-  border-style: solid;
-  border-color: var(--accent);
-}
-
-.premium-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.paid-fields {
-  display: grid;
-  gap: 8px;
-}
-
-.paid-toggle {
+.post-visibility {
   gap: 4px;
   font-size: 14px;
-}
-
-.earnings {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
-  margin: 12px 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.earnings div {
-  display: grid;
 }
 
 /* ---- Search ---- */
@@ -1657,6 +1604,29 @@ video {
   display: flex;
   align-items: flex-end;
   gap: 8px;
+}
+
+.chat-draft-tracks {
+  display: grid;
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.chat-draft-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-form-row textarea { min-width: 0; }
+
+@media (max-width: 480px) {
+  .chat-form-row { flex-wrap: wrap; }
+  .chat-form-row textarea { flex-basis: 100%; }
 }
 
 .chat-form textarea {

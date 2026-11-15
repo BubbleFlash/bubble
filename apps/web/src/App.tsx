@@ -1,8 +1,9 @@
-import { Link, Navigate, Route, Routes, useLocation, useMatch } from "react-router-dom";
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef } from "react";
+import { Link, Navigate, Route, Routes, matchPath, useLocation } from "react-router-dom";
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { NotificationDTO } from "@commune/shared";
 import { useAuth } from "./store/auth";
+import AeroTitlebar from "./components/AeroTitlebar";
 import Header, { AUTH_PATHS } from "./components/Header";
 import FeedPage from "./pages/FeedPage";
 import VerifyBanner from "./components/VerifyBanner";
@@ -14,9 +15,13 @@ import BottomNav from "./components/BottomNav";
 import Brand from "./components/BrandMark";
 import Icon from "./components/Icon";
 import { PageSkeleton } from "./components/Skeleton";
+import { useNotificationReadSession, useProfile } from "./hooks/useSocial";
+import { useStoredFont } from "./lib/siteFont";
+import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
-import { useNotificationReadSession } from "./hooks/useSocial";
+import MusicPlayer from "./components/MusicPlayer";
 
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const PostPage = lazy(() => import("./pages/PostPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/RegisterPage"));
@@ -35,24 +40,28 @@ const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const NewsPage = lazy(() => import("./pages/NewsPage"));
 const ContactPage = lazy(() => import("./pages/ContactPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPassword"));
+const MusicPage = lazy(() => import("./pages/MusicPage"));
+const UserMusicPage = lazy(() => import("./pages/UserMusicPage"));
 
 const TITLES: Record<string, string> = {
-  "/": "Bubble — открытая платформа сообществ",
+  "/": "Bubble — открытая платформа групп",
   "/explore": "Обзор",
   "/news": "Последние новости",
   "/contact": "Связаться",
   "/plus": "Bubble Plus",
   "/insights": "Статистика",
   "/messages": "Сообщения",
-  "/communities": "Сообщества",
+  "/communities": "Группы",
   "/notifications": "Уведомления",
   "/search": "Поиск",
   "/friends": "Друзья",
+  "/settings": "Настройки",
   "/login": "Вход",
   "/register": "Регистрация",
   "/forgot-password": "Восстановление пароля",
   "/reset-password": "Сброс пароля",
   "/admin": "Администрирование",
+  "/music": "Музыка",
 };
 
 /** Per-page browser title and canonical link, so tabs, history and search engines get real names. */
@@ -64,7 +73,7 @@ function RouteMeta() {
     const name =
       TITLES[pathname] ??
       (user
-        ? `@${decodeURIComponent(user)}`
+        ? "Профиль"
         : community
           ? `c/${decodeURIComponent(community)}`
           : pathname.startsWith("/messages")
@@ -72,7 +81,7 @@ function RouteMeta() {
             : pathname.startsWith("/posts/")
               ? "Запись"
               : "Bubble");
-    document.title = pathname === "/" ? name : `${name} · Bubble`;
+    if (!user) document.title = pathname === "/" ? name : `${name} · Bubble`;
 
     let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!link) {
@@ -101,7 +110,10 @@ function Home() {
   return user ? <FeedPage /> : <ExplorePage />;
 }
 
-function AppRoutes({ onNotificationItems }: { onNotificationItems: (items: NotificationDTO[]) => void }) {
+function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
+  onNotificationItems: (items: NotificationDTO[]) => void;
+  onWallpaperPreview?: (path?: string | null) => void;
+}) {
   return (
     <Suspense fallback={<PageSkeleton />}>
       <Routes>
@@ -121,6 +133,10 @@ function AppRoutes({ onNotificationItems }: { onNotificationItems: (items: Notif
           }
         />
         <Route
+          path="/u/:username/music"
+          element={<Protected><UserMusicPage /></Protected>}
+        />
+        <Route
           path="/u/:username"
           element={
             <Protected>
@@ -128,6 +144,7 @@ function AppRoutes({ onNotificationItems }: { onNotificationItems: (items: Notif
             </Protected>
           }
         />
+        <Route path="/settings" element={<Protected><SettingsPage onWallpaperPreview={onWallpaperPreview} /></Protected>} />
         <Route path="/friends" element={<Protected><FriendsPage /></Protected>} />
         <Route path="/friends/:username" element={<Protected><FriendsPage /></Protected>} />
         <Route
@@ -168,6 +185,14 @@ function AppRoutes({ onNotificationItems }: { onNotificationItems: (items: Notif
           element={
             <Protected>
               <SearchPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/music"
+          element={
+            <Protected>
+              <MusicPage />
             </Protected>
           }
         />
@@ -220,7 +245,7 @@ function AuthArt() {
         <p className="art-title">Ваши люди и новости — в одном месте.</p>
         <ul>
           <li>
-            <Icon name="users" size={20} /> Вступайте в сообщества и подписывайтесь на людей
+            <Icon name="users" size={20} /> Вступайте в группы и подписывайтесь на людей
           </li>
           <li>
             <Icon name="mail" size={20} /> Общайтесь с друзьями в личных сообщениях
@@ -240,7 +265,7 @@ function AuthArt() {
 export default function App() {
   const { pathname } = useLocation();
   const { user } = useAuth();
-  const onNotificationsPage = Boolean(useMatch("/notifications"));
+  const onNotificationsPage = Boolean(matchPath("/notifications", pathname));
   const notificationVisit = useRef<string>();
   const { remember, finish } = useNotificationReadSession();
   const userId = user?.id;
@@ -258,10 +283,46 @@ export default function App() {
   }, [onNotificationsPage, userId, finish]);
   const authPage = AUTH_PATHS.includes(pathname);
   const signedIn = Boolean(user);
+  const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const homeRef = useRef<HTMLDivElement>(null);
+  const chromeRef = useRef<HTMLDivElement>(null);
+  const profileName = matchPath("/u/:username", pathname)?.params.username;
+  const visitingProfile = Boolean(user && profileName && profileName.toLowerCase() !== user.username.toLowerCase());
+  const { data: profile, isError: profileError } = useProfile(profileName ?? "", visitingProfile);
+  const profileTheme = visitingProfile && !profileError ? profile?.profileAppearance : undefined;
+  const appearance = profileTheme ?? user?.appearance;
+  const fontFamily = useStoredFont(appearance?.font);
+  const preview = pathname === "/settings" ? wallpaperPreview : undefined;
+  const localWallpaper = preview?.startsWith("blob:") ? preview : undefined;
+  const backgroundUrl = preview === undefined ? appearance?.backgroundUrl : preview;
   // Once signed in, quietly download the most-used pages so tapping them is instant.
   useEffect(() => {
     if (signedIn) prefetchLikelyRoutes();
   }, [signedIn]);
+
+  const primaryColor = appearance?.primaryColor;
+  useLayoutEffect(() => {
+    if (authPage || !primaryColor) return;
+    const root = document.documentElement;
+    root.style.setProperty("--aero-chosen-primary", primaryColor);
+    return () => {
+      root.style.removeProperty("--aero-chosen-primary");
+    };
+  }, [authPage, primaryColor]);
+
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    const chrome = chromeRef.current;
+    if (!home || !chrome) return;
+    const update = () => {
+      home.style.setProperty("--aero-chrome-height", `${chrome.getBoundingClientRect().height}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(chrome);
+    return () => observer.disconnect();
+  }, [authPage]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages");
 
@@ -291,35 +352,38 @@ export default function App() {
   }
 
   return (
-    <div className="aero-app aero-home" data-theme="aero-blue">
+    <div
+      className="aero-app aero-home"
+      ref={homeRef}
+      data-theme="aero-blue"
+      data-custom-font={Boolean(fontFamily) || undefined}
+      data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
+      data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
+      style={appearanceStyle({ ...appearance, backgroundUrl }, fontFamily, localWallpaper)}
+    >
       <div className="aero-fixed-frame" aria-hidden="true" />
       <div className="aero-window">
-      {(
-        <div className="aero-titlebar" aria-hidden="true">
-          <span className="aero-window-controls">
-            <span><i className="aero-control-minimize" /></span><span><i className="aero-control-maximize" /></span><span className="aero-window-close"><i className="aero-control-close" /></span>
-          </span>
+        {skip}
+        <RouteMeta />
+        <div className="aero-window-chrome" ref={chromeRef}>
+          <AeroTitlebar />
+          <Header
+            menuOpen={mobileMenuOpen}
+            setMenuOpen={setMobileMenuOpen}
+            onNavigateToNotification={() => finish([])}
+          />
+          <VerifyBanner />
         </div>
-      )}
-      {skip}
-      <RouteMeta />
-      {/* Opening one specific notification from the popup takes precedence over the page exit. */}
-      <Header onNavigateToNotification={() => finish([])} />
-      <VerifyBanner />
-      <PwaBanner />
-      <div
-        className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}
-        role="region"
-        aria-label="Содержимое окна"
-        tabIndex={0}
-      >
-        {user && <LeftNav />}
-        <main id="main" tabIndex={-1} className="container">
-          <AppRoutes onNotificationItems={remember} />
-        </main>
-        {!wide && <RightRail />}
-      </div>
-      <BottomNav />
+        <PwaBanner />
+        <div className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}>
+          {user && <LeftNav />}
+          <main id="main" tabIndex={-1} className="container">
+            <AppRoutes onWallpaperPreview={setWallpaperPreview} onNotificationItems={remember} />
+          </main>
+          {!wide && <RightRail />}
+        </div>
+        <BottomNav menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        <MusicPlayer />
       </div>
     </div>
   );

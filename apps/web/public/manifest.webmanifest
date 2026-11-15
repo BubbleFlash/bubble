@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Bubble",
   "short_name": "Bubble",
-  "description": "Открытая платформа сообществ: записи, подписки и общение.",
+  "description": "Открытая платформа групп: записи, подписки и общение.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "/?source=pwa",

@@ -33,7 +33,7 @@ export async function list(req: Request, res: Response) {
   })
     .sort({ createdAt: -1, _id: -1 })
     .limit(paginated ? pageSize + 1 : pageSize)
-    .populate("actor", "username")
+    .populate("actor", "username displayName")
     .lean()) as unknown as PopulatedNotification[];
   const selected = rows.slice(0, pageSize);
   const items = selected.filter((row) => row.actor).map(toNotificationDTO);
