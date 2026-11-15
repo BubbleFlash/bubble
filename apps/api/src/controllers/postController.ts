@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import { FREE_POST_LENGTH } from "@commune/shared";
 import type { CreateRepostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
+import { changeContent } from "../services/moderationService.js";
+import { visibleContent } from "../models/moderationFields.js";
 import { Comment } from "../models/Comment.js";
 import { Follow } from "../models/Follow.js";
 import { Community } from "../models/Community.js";
@@ -192,7 +194,7 @@ export async function createRepost(req: Request, res: Response) {
 
 export async function deletePost(req: Request, res: Response) {
   const id = param(req, "id");
-  const post = await Post.findById(id).select("author community").lean();
+  const post = await Post.findOne({ _id: id, ...visibleContent }).select("author community").lean();
   if (!post) throw notFound("Post not found");
   const mine = post.author.equals(req.userId);
   if (req.userRole !== "admin") {
@@ -207,7 +209,11 @@ export async function deletePost(req: Request, res: Response) {
     }
   }
 
-  await removePost(id, req.userId);
+  if (req.userRole === "admin" && !mine) {
+    await changeContent("post", id, "removed", { id: req.userId!, role: "admin" }, "Удаление из карточки записи");
+  } else {
+    await removePost(id, req.userId);
+  }
   res.status(204).end();
 }
 
@@ -243,7 +249,7 @@ export async function updatePost(req: Request, res: Response) {
   if (!previous) throw conflict("This post changed. Refresh and try again.");
   if (imageUrls) {
     const removed = new Set([previous.imageUrl, ...(previous.imageUrls ?? [])]);
-    await Promise.all([...removed].filter((url): url is string => Boolean(url && !imageUrls.includes(url))).map(deleteUploadIfUnused));
+    await Promise.all([...removed].filter((url): url is string => Boolean(url && !imageUrls.includes(url))).map((url) => deleteUploadIfUnused(url)));
   }
   const updated = await loadPost(id, userId);
   const [dto] = await presentPosts(userId, [updated]);
@@ -277,7 +283,7 @@ export async function toggleLike(req: Request, res: Response) {
 export async function listComments(req: Request, res: Response) {
   const id = param(req, "id");
   await loadReadablePostAuthor(id, req.userId!);
-  const comments = (await Comment.find({ post: id })
+  const comments = (await Comment.find({ post: id, ...visibleContent })
     .sort({ _id: 1 })
     .limit(200)
     .populate("author", AUTHOR_FIELDS)
@@ -285,7 +291,7 @@ export async function listComments(req: Request, res: Response) {
   const focus = req.query.comment;
   if (typeof focus === "string" && mongoose.isObjectIdOrHexString(focus) &&
       !comments.some((comment) => String(comment._id) === focus)) {
-    const linkedComment = (await Comment.findOne({ _id: focus, post: id })
+    const linkedComment = (await Comment.findOne({ _id: focus, post: id, ...visibleContent })
       .populate("author", AUTHOR_FIELDS)
       .lean()) as unknown as PopulatedComment | null;
     if (linkedComment) comments.push(linkedComment);

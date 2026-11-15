@@ -374,7 +374,7 @@ export type ResolveReportInput = z.infer<typeof resolveReportSchema>;
 export type BanUserInput = z.infer<typeof banUserSchema>;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
-export type Role = "user" | "admin";
+export type Role = "user" | "moderator" | "admin";
 
 export interface PublicUser {
   id: string;

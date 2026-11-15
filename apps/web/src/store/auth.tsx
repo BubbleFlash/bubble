@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react";
 import type { AccountUser, AuthResponse, LoginInput, RegisterInput, UpdateAppearanceInput } from "@commune/shared";
 import { releasePushOnLogout } from "../lib/push";
-import { api, bootSession, readSessionHint, SessionRestoreError, setAccessToken, writeSessionHint } from "../lib/api";
+import { api, ApiError, restrictionText, type Restriction, bootSession, readSessionHint, SessionRestoreError, setAccessToken, writeSessionHint } from "../lib/api";
 import { PageSkeleton } from "../components/Skeleton";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -50,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return hint === null || (hint === "1" && readCachedUser() === null);
   });
   const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [blocked, setBlocked] = useState<Restriction>();
   const [restoreFailed, setRestoreFailed] = useState(false);
 
   const setUser = useCallback((next: AccountUser | null) => {
@@ -64,6 +65,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cacheUser(next);
     setUserState(next);
   }, [qc]);
+
+  useEffect(() => {
+    const onBlocked = (event: Event) => {
+      setBlocked((event as CustomEvent<Restriction>).detail);
+      setAccessToken(null);
+      setUser(null);
+    };
+    window.addEventListener("account-restricted", onBlocked);
+    return () => window.removeEventListener("account-restricted", onBlocked);
+  }, [setUser]);
 
   const isCurrentAccount = useCallback((userId: string) => currentUser.current?.id === userId, []);
 
@@ -97,6 +108,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }).catch((error: unknown) => {
       if (!alive) return;
+      if (error instanceof ApiError && error.restriction?.kind === "account") {
+        setBlocked(error.restriction);
+        setAccessToken(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
       setRestoreFailed(true);
       // Honour the API's cooldown. Other transient failures get one automatic retry.
       const delay = error instanceof SessionRestoreError ? error.retryAfterMs : undefined;
@@ -163,6 +181,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({ user, loading, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount }),
     [user, loading, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount],
   );
+  if (blocked) return <main className="card" role="alert">
+    <h1>Аккаунт заблокирован</h1>
+    <p>{restrictionText(blocked)}</p>
+    <button className="btn" onClick={() => void logout().then(() => { location.assign("/login"); })}>Ко входу</button>
+  </main>;
   if (restoreFailed) return (
     <main role="alert" className="card">
       <p>Не удалось проверить сеанс. Попробуйте ещё раз чуть позже.</p>

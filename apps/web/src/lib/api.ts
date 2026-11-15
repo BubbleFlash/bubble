@@ -55,6 +55,9 @@ function takeEarly(path: string): Promise<Response> | undefined {
   return hit;
 }
 
+export type Restriction = { kind: "account" | "publishing"; reason: string; until: string | null };
+export const restrictionText = ({ reason, until }: Restriction) => reason + (until ? " · до " + new Date(until).toLocaleString("ru-RU") : " · бессрочно");
+
 export class SessionRestoreError extends Error {
   constructor(public readonly retryAfterMs?: number) {
     super("Не удалось проверить сеанс. Проверьте соединение и попробуйте ещё раз.");
@@ -68,6 +71,10 @@ async function refreshSession(): Promise<AuthResponse | null> {
   )
     .then(async (res) => {
       if (res.status === 401) return null;
+      if (res.status === 403) {
+        const body = await res.json() as { restriction?: Restriction };
+        if (body.restriction) throw new ApiError(403, restrictionText(body.restriction), undefined, body.restriction);
+      }
       if (!res.ok) {
         const seconds = Number(res.headers.get("Retry-After"));
         throw new SessionRestoreError(seconds > 0 ? seconds * 1000 : undefined);
@@ -102,6 +109,7 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     public readonly serverMessage?: string,
+    public readonly restriction?: Restriction,
   ) {
     super(message);
   }
@@ -147,7 +155,7 @@ export async function api<T>(
   }
 
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    const data = (await res.json().catch(() => ({}))) as { error?: string; restriction?: Restriction };
     // Hosting platforms answer some failures (too large, overloaded) with a plain page, not our JSON.
     const fallback =
       res.status === 413
@@ -204,7 +212,10 @@ export async function api<T>(
     };
     const safe = (data.error && known[data.error]) ||
       (res.status === 413 ? "Файл слишком большой." : res.status === 429 ? "Слишком много запросов. Попробуйте позже." : `Не удалось выполнить запрос (код ${res.status}).`);
-    throw new ApiError(res.status, safe, data.error ?? fallback);
+    if (data.restriction?.kind === "account" && !path.startsWith("/auth/")) {
+      window.dispatchEvent(new CustomEvent("account-restricted", { detail: data.restriction }));
+    }
+    throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : safe, data.error ?? fallback, data.restriction);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }

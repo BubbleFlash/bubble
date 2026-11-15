@@ -4,6 +4,7 @@ export class AppError extends Error {
   constructor(
     public status: number,
     message: string,
+    public restriction?: { kind: "account" | "publishing"; reason: string; until: string | null },
   ) {
     super(message);
   }

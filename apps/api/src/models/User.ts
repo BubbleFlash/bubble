@@ -1,4 +1,5 @@
 import { DISPLAY_NAME_MAX_LENGTH, musicSettingsSchema } from "@commune/shared";
+import { moderationFields } from "./moderationFields.js";
 import { Schema, model } from "mongoose";
 import type { InferSchemaType } from "mongoose";
 
@@ -26,7 +27,12 @@ const userSchema = new Schema(
       accentColor: { type: String },
       font: { type: String },
     },
-    role: { type: String, enum: ["user", "admin"], default: "user" },
+    ...moderationFields,
+    moderationRevision: { type: Number, default: 0 },
+    sessionVersion: { type: Number, default: 0 },
+    accountRestriction: { reason: String, until: Date },
+    publishingRestriction: { reason: String, until: Date },
+    role: { type: String, enum: ["user", "moderator", "admin"], default: "user" },
     banned: { type: Boolean, default: false },
     friendsVisibility: {
       type: String,

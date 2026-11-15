@@ -1,4 +1,4 @@
-export const navigationImages: Partial<Record<IconName, string>> = { user: "/icons/navigation/profile.png", home: "/icons/navigation/feed.png", search: "/icons/navigation/search.png", mail: "/icons/navigation/messages.png", music: "/icons/navigation/music.png", users: "/icons/navigation/communities.png", bell: "/icons/navigation/notifications.png", friends: "/icons/navigation/friends.png", settings: "/icons/navigation/settings.png", menu: "/icons/navigation/menu.png" };
+export const navigationImages: Partial<Record<IconName, string>> = { user: "/icons/navigation/profile.png", home: "/icons/navigation/feed.png", search: "/icons/navigation/search.png", mail: "/icons/navigation/messages.png", music: "/icons/navigation/music.png", users: "/icons/navigation/communities.png", bell: "/icons/navigation/notifications.png", friends: "/icons/navigation/friends.png", settings: "/icons/navigation/settings.png", menu: "/icons/navigation/menu.png", shield: "/icons/navigation/moderation.png", flag: "/icons/navigation/reports.png" };
 import type { IconName } from "../components/Icon";
 
 export type NavigationItem = { id: string; label: string; guestLabel?: string; to: (username: string) => string; icon: IconName; audience: "member" | "guest"; surfaces: readonly ("desktop" | "drawer" | "bottom" | "header")[]; end?: boolean };
@@ -21,3 +21,14 @@ export const navigation: readonly NavigationItem[] = [
 export function navigationFor(audience: NavigationItem["audience"], surface: NavigationItem["surfaces"][number]) {
   return navigation.filter((item) => item.audience === audience && item.surfaces.includes(surface));
 }
+
+export function inStaffArea(role: string | undefined, path: string) {
+  return ((role === "admin" || role === "moderator") && path === "/moderation") ||
+    (role === "admin" && (path === "/admin" || path.startsWith("/admin/")));
+}
+
+export const adminNavigation = [
+  { id: "reports", label: "Модерация", to: "/moderation", icon: "shield" },
+  { id: "errors", label: "Ошибки", to: "/admin/errors", icon: "news" },
+  { id: "site", label: "На сайт", to: "/", icon: "back" },
+] as const;

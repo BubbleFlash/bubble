@@ -1,7 +1,11 @@
+import { moderationFields } from "./moderationFields.js";
 import { Schema, model } from "mongoose";
 import { REPORT_REASONS, REPORT_STATUSES } from "@commune/shared";
 
 const reportSchema = new Schema({
+  ...moderationFields,
+  decision: String,
+  snapshot: { content: String, author: Schema.Types.ObjectId, parent: Schema.Types.ObjectId },
   reporter: { type: Schema.Types.ObjectId, ref: "User", required: true },
   post: { type: Schema.Types.ObjectId, ref: "Post", required: true },
   reason: { type: String, enum: [...REPORT_REASONS], required: true },
@@ -19,3 +23,6 @@ reportSchema.index({ status: 1, _id: -1 });
 reportSchema.index({ post: 1 });
 
 export const Report = model("Report", reportSchema);
+
+// A separate collection preserves the unique reporter/post index for existing reports.
+export const CommentReport: typeof Report = model("CommentReport", reportSchema.clone());

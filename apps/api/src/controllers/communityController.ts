@@ -1,3 +1,4 @@
+import { accountRestriction } from "../services/restrictions.js";
 import type { Request, Response } from "express";
 import { isObjectIdOrHexString, Types, type FilterQuery, type UpdateQuery } from "mongoose";
 import { communitySlugSchema } from "@commune/shared";
@@ -317,8 +318,8 @@ export async function transfer(req: Request, res: Response) {
   const { userId, confirmation } = req.body as { userId: string; confirmation: string };
   if (confirmation !== community.slug) throw badRequest("Enter the community address to confirm");
   const target = await targetMembership(community, userId);
-  const user = await User.findById(userId).select("banned emailVerified").lean();
-  if (!user || user.banned || (env.REQUIRE_VERIFIED_EMAIL && !user.emailVerified)) {
+  const user = await User.findById(userId).select("banned accountRestriction emailVerified").lean();
+  if (!user || accountRestriction(user) || (env.REQUIRE_VERIFIED_EMAIL && !user.emailVerified)) {
     throw badRequest("Choose an active community member");
   }
 

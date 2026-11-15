@@ -1,3 +1,4 @@
+import { usableAccountFilter } from "../services/restrictions.js";
 import type { Request, Response } from "express";
 import type { Page, PostDTO, UserSummaryDTO } from "@commune/shared";
 import { SEARCH_PAGE_SIZE } from "@commune/shared";
@@ -31,7 +32,7 @@ export async function users(_req: Request, res: Response) {
   const prefix = { $regex: `^${escapeRegex(q)}`, $options: "i" };
   const rows = await User.find({
     $or: [{ displayName: prefix }, { username: prefix }],
-    banned: { $ne: true },
+    ...usableAccountFilter(),
   })
     .sort({ username: 1 })
     .skip((page - 1) * SEARCH_PAGE_SIZE)

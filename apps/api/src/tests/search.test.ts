@@ -73,6 +73,7 @@ describe("GET /api/search/users", () => {
         { username: { $regex: "^sa\\.m", $options: "i" } },
       ],
       banned: { $ne: true },
+      $nor: expect.any(Array),
     });
     expect(res.body.items).toEqual([
       { id: expect.any(String), username: "sam_dev", bio: "hi", avatarUrl: null, plus: false },

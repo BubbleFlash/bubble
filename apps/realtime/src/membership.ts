@@ -24,6 +24,18 @@ export class Membership {
     private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
+  async sessionAllowed(token: string): Promise<boolean> {
+    try {
+      const response = await this.fetchImpl(this.apiUrl + "/api/internal/session", {
+        headers: { Authorization: "Bearer " + this.secret, "X-Session-Token": token },
+        signal: AbortSignal.timeout(4000),
+      });
+      return response.status === 204;
+    } catch {
+      return false;
+    }
+  }
+
   async participants(conversationId: string): Promise<string[] | null> {
     const hit = this.cache.get(conversationId);
     if (hit && hit.expires > Date.now()) return hit.participants;

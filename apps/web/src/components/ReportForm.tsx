@@ -30,7 +30,7 @@ export function ReportFields({
     error: Error | null;
   };
   onClose: () => void;
-  subject: "запись" | "фон";
+  subject: "запись" | "комментарий" | "фон";
 }) {
   const [reason, setReason] = useState<ReportReason>("spam");
   const [details, setDetails] = useState("");

@@ -1,3 +1,4 @@
+import { accountRestriction } from "./restrictions.js";
 import webpush from "web-push";
 import type { NotificationType } from "@commune/shared";
 import { env } from "../config/env.js";
@@ -51,9 +52,9 @@ export async function pushToUser(
     let silent = false;
     if (kind !== "test") {
       const user = await User.findById(userId)
-        .select("pushMessages pushSocial banned notificationPreferences")
+        .select("pushMessages pushSocial banned accountRestriction notificationPreferences")
         .lean();
-      if (!user || user.banned) return;
+      if (!user || accountRestriction(user)) return;
       if (kind === "message" && user.pushMessages === false) return;
       if (kind === "social" && user.pushSocial === false) return;
       if (kind === "social" && socialType) {
