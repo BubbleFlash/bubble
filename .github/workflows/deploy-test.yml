@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - develop
-      - feature/test-server-config
   workflow_dispatch:
 
 permissions:
@@ -97,7 +96,6 @@ jobs:
     name: Deploy test server
     runs-on: ubuntu-latest
     needs: publish
-    if: github.ref == 'refs/heads/feature/test-server-config'
 
     steps:
       - name: Configure SSH
@@ -126,9 +124,9 @@ jobs:
           cd /opt/bubble
           test -n "$DEPLOY_SHA"
 
-          git fetch origin feature/test-server-config
-          git checkout feature/test-server-config
-          git reset --hard origin/feature/test-server-config
+          git fetch origin develop
+          git checkout develop
+          git reset --hard origin/develop
 
           export API_IMAGE="ghcr.io/neucorochen/test-bubble-api:${DEPLOY_SHA}"
           export REALTIME_IMAGE="ghcr.io/neucorochen/test-bubble-realtime:${DEPLOY_SHA}"
