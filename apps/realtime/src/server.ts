@@ -170,9 +170,10 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
   }
 
   // ---- Connection authentication: a valid, unexpired access token or nothing. ----
-  io.use((socket, next) => {
-    const principal = verifyToken(socket.handshake.auth?.token, config.jwtSecret);
-    if (!principal) return next(new Error("unauthorized"));
+  io.use(async (socket, next) => {
+    const token = socket.handshake.auth?.token;
+    const principal = verifyToken(token, config.jwtSecret);
+    if (!principal || !(await members.sessionAllowed(token))) return next(new Error("unauthorized"));
     if ((online.get(principal.userId)?.size ?? 0) >= config.maxConnectionsPerUser) {
       return next(new Error("too_many_connections"));
     }
@@ -199,6 +200,19 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
     );
     expiryTimer.unref();
 
+    const verifySession = () => members.sessionAllowed(socket.handshake.auth.token);
+    const sessionTimer = setInterval(() => {
+      void verifySession().then((allowed) => { if (!allowed) socket.disconnect(true); });
+    }, 15000);
+    sessionTimer.unref();
+    const sessionChecks = new TokenBucket(30, 10);
+    socket.use((_packet, next) => {
+      if (!sessionChecks.take()) return next(new Error("rate_limited"));
+      void verifySession().then((allowed) => {
+        if (allowed) next();
+        else socket.disconnect(true);
+      });
+    });
     const bucket = new TokenBucket(20, 5);
 
     socket.on("conversation:join", async (payload: unknown, ack?: Ack) => {
@@ -249,6 +263,7 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
 
     socket.on("disconnect", () => {
       clearTimeout(expiryTimer);
+      clearInterval(sessionTimer);
       markVisible(userId, socket.id, false);
       const set = online.get(userId);
       set?.delete(socket.id);

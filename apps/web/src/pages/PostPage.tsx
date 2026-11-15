@@ -10,6 +10,7 @@ import CommentInput from "../components/CommentInput";
 import { LinkedText, LinkPreview } from "../components/LinkContent";
 import { useTrackView } from "../hooks/useBilling";
 import { useAddComment, useComments, usePost } from "../hooks/usePosts";
+import ReportComment from "../components/ReportComment";
 import RepostButton from "../components/RepostButton";
 
 export default function PostPage() {
@@ -64,6 +65,7 @@ export default function PostPage() {
               <RepostButton source={{ post: id, comment: c.id }} />
             </div>
             <p className="post-body"><LinkedText text={c.content} /></p><LinkPreview text={c.content} />
+            <ReportComment postId={id} commentId={c.id} authorId={c.author.id} />
           </div>
         </div>
       ))}

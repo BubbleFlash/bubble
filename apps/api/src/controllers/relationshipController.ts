@@ -1,3 +1,4 @@
+import { usableAccountFilter, accountRestriction } from "../services/restrictions.js";
 import type { Request, Response } from "express";
 import { Types, type PipelineStage } from "mongoose";
 import type { AvatarFrame, FriendsAccessDTO, FriendsVisibility, Page, UserSummaryDTO } from "@commune/shared";
@@ -109,7 +110,7 @@ function relationshipPipeline(
     { $unwind: "$person" },
     {
       $match: {
-        "person.banned": { $ne: true },
+        ...usableAccountFilter("person."),
         ...(q ? { $or: [
           { "person.username": { $regex: `^${escapeRegex(q)}`, $options: "i" } },
           { "person.displayName": { $regex: `^${escapeRegex(q)}`, $options: "i" } },
@@ -183,7 +184,7 @@ export async function counts(req: Request, res: Response) {
 async function authorizeFriends(username: string | undefined, viewerId: string) {
   const owner = await findByUsername(username);
   const isOwner = owner._id.toString() === viewerId;
-  if (owner.banned && !isOwner) throw notFound("User not found");
+  if (accountRestriction(owner) && !isOwner) throw notFound("User not found");
   const visibility = owner.friendsVisibility ?? "everyone";
   let canView = isOwner || visibility === "everyone";
   if (!canView && visibility === "friends") {

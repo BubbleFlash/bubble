@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import type { InsightsDTO } from "@commune/shared";
 import { Follow } from "../models/Follow.js";
+import { visibleContent } from "../models/moderationFields.js";
 import { Post } from "../models/Post.js";
 import { PostView } from "../models/PostView.js";
 
@@ -23,7 +24,7 @@ export async function get(req: Request, res: Response) {
 
   const [totals, viewRows, followers, newFollowers, top] = await Promise.all([
     Post.aggregate<{ posts: number; views: number; likes: number; comments: number }>([
-      { $match: { author, priceCents: null } },
+      { $match: { author, priceCents: null, ...visibleContent } },
       {
         $group: {
           _id: null,
@@ -40,7 +41,7 @@ export async function get(req: Request, res: Response) {
     ]),
     Follow.countDocuments({ following: author }),
     Follow.countDocuments({ following: author, createdAt: { $gte: since } }),
-    Post.find({ author, priceCents: null })
+    Post.find({ author, priceCents: null, ...visibleContent })
       .sort({ viewCount: -1, _id: -1 })
       .limit(5)
       .select("content viewCount likeCount commentCount createdAt")

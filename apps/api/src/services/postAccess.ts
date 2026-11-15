@@ -1,4 +1,5 @@
 import type { Types } from "mongoose";
+import { visibleContent } from "../models/moderationFields.js";
 import { Post } from "../models/Post.js";
 import { Follow } from "../models/Follow.js";
 import { notFound } from "../utils/errors.js";
@@ -7,21 +8,21 @@ import type { PopulatedPost } from "../utils/serializers.js";
 export const AUTHOR_FIELDS = "username displayName avatarUrl avatarFrame plusUntil";
 export const COMMUNITY_FIELDS = "slug name avatarUrl creator managers permissions departingMemberships";
 
-export const publicPostFilter = { priceCents: null, visibility: { $nin: ["private", "friends"] } };
+export const publicPostFilter = { ...visibleContent, priceCents: null, visibility: { $nin: ["private", "friends"] } };
 
 export async function readablePostFilter(userId?: string) {
   if (!userId) return publicPostFilter;
   const outgoing = await Follow.find({ follower: userId }).select("following").lean();
   const incoming = await Follow.find({ follower: { $in: outgoing.map((f) => f.following) }, following: userId }).select("follower").lean();
-  return { priceCents: null, $or: [
+  return { ...visibleContent, priceCents: null, $or: [
     { visibility: { $nin: ["private", "friends"] } },
     { author: userId },
     { visibility: "friends", author: { $in: incoming.map((f) => f.follower) } },
   ] };
 }
 
-async function canRead(post: { author: Types.ObjectId; visibility?: string; priceCents?: number | null }, userId: string) {
-  if (post.priceCents != null) return false;
+async function canRead(post: { author: Types.ObjectId; visibility?: string; priceCents?: number | null; moderationState?: string | null }, userId: string) {
+  if (visibleContent.moderationState.$nin.includes(post.moderationState ?? "") || post.priceCents != null) return false;
   if (String(post.author) === userId) return true;
   if (post.visibility === "private") return false;
   if (post.visibility !== "friends") return true;
@@ -42,7 +43,7 @@ export async function loadPost(id: string, userId: string): Promise<PopulatedPos
 }
 
 export async function loadReadablePostAuthor(id: string, userId: string): Promise<Types.ObjectId> {
-  const post = await Post.findById(id).select("author visibility priceCents").lean();
+  const post = await Post.findById(id).select("author visibility priceCents moderationState").lean();
   if (!post || !(await canRead(post, userId)))
     throw notFound("Post not found");
   return post.author;

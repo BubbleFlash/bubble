@@ -37,7 +37,7 @@ describe("GET /api/public/posts", () => {
     const find = vi.spyOn(Post, "find").mockReturnValue(queryChain([row("Hello")]) as never);
     const res = await request(app).get("/api/public/posts");
     expect(res.status).toBe(200);
-    expect(find).toHaveBeenCalledWith({ priceCents: null, visibility: { $nin: ["private", "friends"] } });
+    expect(find).toHaveBeenCalledWith({ moderationState: { $nin: ["hidden", "removed", "withdrawn"] }, priceCents: null, visibility: { $nin: ["private", "friends"] } });
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0]).toMatchObject({ content: "Hello", likedByMe: false });
     expect(res.body.nextCursor).toBeNull();

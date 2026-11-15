@@ -5,7 +5,8 @@ import type { AuthResponse, LoginInput, RegisterInput } from "@commune/shared";
 import { env } from "../config/env.js";
 import { RefreshToken } from "../models/RefreshToken.js";
 import { User } from "../models/User.js";
-import { AppError, conflict, forbidden, unauthorized } from "../utils/errors.js";
+import { assertAccountAllowed } from "./restrictions.js";
+import { AppError, conflict, unauthorized } from "../utils/errors.js";
 import { toAccountUser } from "../utils/serializers.js";
 import { verifyGoogleIdToken, type GoogleProfile } from "./googleAuth.js";
 import { sendVerificationEmailInBackground } from "./accountService.js";
@@ -39,12 +40,13 @@ async function issueSession(res: Response, user: Parameters<typeof toAccountUser
   await RefreshToken.create({
     user: user._id,
     tokenHash: hash,
+    sessionVersion: user.sessionVersion ?? 0,
     expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
   });
   setRefreshCookie(res, token);
   const body: AuthResponse = {
     user: toAccountUser(user),
-    accessToken: signAccessToken(user._id.toString()),
+    accessToken: signAccessToken(user._id.toString(), user.sessionVersion ?? 0),
   };
   return body;
 }
@@ -101,7 +103,7 @@ export async function login(input: LoginInput, res: Response) {
     await User.updateOne({ _id: user._id }, { $set: { failedLogins: 0, lockUntil: null } });
   }
   // Checked after the password so the message can't be used to discover which emails exist.
-  if (user.banned) throw forbidden("This account has been suspended");
+  assertAccountAllowed(user);
   return issueSession(res, user);
 }
 
@@ -114,7 +116,12 @@ export async function refresh(presented: string | undefined, res: Response) {
     throw unauthorized("Session expired");
   }
   const user = await User.findById(record.user);
-  if (!user || user.banned) {
+  if (!user) {
+    clearRefreshCookie(res);
+    throw unauthorized("Session expired");
+  }
+  assertAccountAllowed(user);
+  if ((record.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) {
     clearRefreshCookie(res);
     throw unauthorized("Session expired");
   }
@@ -178,6 +185,6 @@ export async function loginWithGoogle(credential: string, res: Response) {
       });
     }
   }
-  if (user.banned) throw forbidden("This account has been suspended");
+  assertAccountAllowed(user);
   return issueSession(res, user);
 }

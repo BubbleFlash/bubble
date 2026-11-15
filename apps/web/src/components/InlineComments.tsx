@@ -5,6 +5,7 @@ import { useAddComment, useComments } from "../hooks/usePosts";
 import { ProfileAvatar } from "./Avatar";
 import CommentInput from "./CommentInput";
 import { LinkedText, LinkPreview } from "./LinkContent";
+import ReportComment from "./ReportComment";
 import RepostButton from "./RepostButton";
 
 /** Mounted on first expansion; retained to preserve the draft and cached discussion. */
@@ -31,6 +32,7 @@ export default function InlineComments({ postId }: { postId: string }) {
               <RepostButton source={{ post: postId, comment: comment.id }} />
             </div>
             <p><LinkedText text={comment.content} /></p><LinkPreview text={comment.content} />
+            <ReportComment postId={postId} commentId={comment.id} authorId={comment.author.id} />
           </div>
         </div>
       ))}

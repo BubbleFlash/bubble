@@ -1,3 +1,4 @@
+import { accountRestriction } from "../services/restrictions.js";
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import type { AvatarFrame, ConversationDTO, MessageDTO, MessagePage, RepostSource, SendMessageInput } from "@commune/shared";
@@ -19,7 +20,7 @@ import { isPlusActive } from "../utils/plan.js";
 import { findByUsername } from "./userController.js";
 
 const PREVIEW_LENGTH = 120;
-const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned";
+const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned accountRestriction";
 
 interface LeanUser {
   _id: unknown;
@@ -163,13 +164,13 @@ export async function listConversations(req: Request, res: Response) {
   const otherIds = convos.map((c) => c.participants.map(str).find((p) => p !== me) ?? me);
   const users = (await User.find({ _id: { $in: otherIds } })
     .select(USER_FIELDS)
-    .lean()) as unknown as (LeanUser & { banned?: boolean })[];
+    .lean()) as unknown as (LeanUser & Parameters<typeof accountRestriction>[0])[];
   const byId = new Map(users.map((u) => [str(u._id), u]));
 
   const out: ConversationDTO[] = [];
   convos.forEach((c, i) => {
     const other = byId.get(otherIds[i]!);
-    if (other && !other.banned) out.push(toConversationDTO(c, me, other));
+    if (other && !accountRestriction(other)) out.push(toConversationDTO(c, me, other));
   });
   res.json(out);
 }
@@ -239,10 +240,8 @@ export async function getMessages(req: Request, res: Response) {
 export async function send(req: Request, res: Response) {
   const me = req.userId!;
   const { convo, otherId } = await loadConversation(req.params.id, me);
-  const other = (await User.findById(otherId).select("banned").lean()) as {
-    banned?: boolean;
-  } | null;
-  if (!other || other.banned) throw forbidden("You can't message this account");
+  const other = (await User.findById(otherId).select("banned accountRestriction").lean());
+  if (!other || accountRestriction(other)) throw forbidden("You can't message this account");
   const input = req.body as SendMessageInput;
   const source = await validateMessageAttachments(me, input);
   res.status(201).json(await saveMessage(str(convo._id), me, otherId, input, source));
@@ -254,7 +253,7 @@ export async function start(req: Request, res: Response) {
   const target = await findByUsername(req.params.username);
   const targetId = str(target._id);
   if (targetId === me) throw badRequest("You can't message yourself");
-  if (target.banned) throw forbidden("You can't message this account");
+  if (accountRestriction(target)) throw forbidden("You can't message this account");
 
   const input = req.body as SendMessageInput;
   const source = await validateMessageAttachments(me, input);

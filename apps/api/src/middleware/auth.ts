@@ -1,49 +1,64 @@
 import type { RequestHandler } from "express";
 import { env } from "../config/env.js";
 import { User } from "../models/User.js";
+import { accountRestriction, publishingRestriction, restrictionError } from "../services/restrictions.js";
 import { forbidden, unauthorized } from "../utils/errors.js";
 import { isPlusActive } from "../utils/plan.js";
 import { verifyAccessToken } from "../utils/tokens.js";
 
-/** Verifies the access token. Stateless: no database lookup. */
-export const requireAuth: RequestHandler = (req, _res, next) => {
+export async function checkSession(token: string) {
+  let principal;
+  try {
+    principal = verifyAccessToken(token);
+  } catch {
+    throw unauthorized("Invalid or expired access token");
+  }
+  const user = await User.findById(principal.userId)
+    .select("role banned emailVerified sessionVersion accountRestriction publishingRestriction").lean();
+  if (!user) throw unauthorized("Account not found");
+  const restriction = accountRestriction(user);
+  if (restriction) throw restrictionError("account", restriction);
+  if ((user.sessionVersion ?? 0) !== principal.version) throw unauthorized("Session expired");
+  return { principal, user };
+}
+
+export const requireAuth: RequestHandler = async (req, _res, next) => {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) return next(unauthorized("Missing access token"));
   try {
-    req.userId = verifyAccessToken(header.slice(7));
+    const { principal, user } = await checkSession(header.slice(7));
+    req.userId = principal.userId;
+    req.emailVerified = user.emailVerified;
+    const publishing = publishingRestriction(user);
+    req.publishingRestriction = publishing ? { reason: publishing.reason ?? "", until: publishing.until } : undefined;
+    req.userRole = user.role === "admin" || user.role === "moderator" ? user.role : "user";
     next();
-  } catch {
-    next(unauthorized("Invalid or expired access token"));
+  } catch (error) {
+    next(error);
   }
 };
 
-/**
- * Use after requireAuth on routes that change things. Looks the user up so that suspended
- * accounts are blocked immediately instead of when their access token expires, and so
- * req.userRole is available to later middleware and handlers.
- */
-export const requireActive: RequestHandler = async (req, _res, next) => {
-  try {
-    const user = await User.findById(req.userId).select("role banned emailVerified").lean();
-    if (!user) return next(unauthorized("Account not found"));
-    if (user.banned) return next(forbidden("This account has been suspended"));
-    if (env.REQUIRE_VERIFIED_EMAIL && !user.emailVerified) {
-      return next(forbidden("Verify your email address to do this"));
-    }
-    req.userRole = user.role === "admin" ? "admin" : "user";
-    next();
-  } catch (err) {
-    next(err);
+export const requireActive: RequestHandler = (req, _res, next) => {
+  if (env.REQUIRE_VERIFIED_EMAIL && !req.emailVerified) {
+    return next(forbidden("Verify your email address to do this"));
   }
+  next();
 };
 
-/** Use after requireActive. */
+export const requirePublishing: RequestHandler = (req, _res, next) => {
+  next(req.publishingRestriction ? restrictionError("publishing", req.publishingRestriction) : undefined);
+};
+
 export const requireAdmin: RequestHandler = (req, _res, next) => {
   if (req.userRole !== "admin") return next(forbidden("Admins only"));
   next();
 };
 
-/** Use after requireAuth on Commune Plus features. */
+export const requireModerator: RequestHandler = (req, _res, next) => {
+  if (req.userRole !== "admin" && req.userRole !== "moderator") return next(forbidden("Moderators only"));
+  next();
+};
+
 export const requirePlus: RequestHandler = async (req, _res, next) => {
   try {
     const user = await User.findById(req.userId).select("plusUntil").lean();

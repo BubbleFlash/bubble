@@ -1,3 +1,4 @@
+import { accountRestriction } from "./restrictions.js";
 import bcrypt from "bcryptjs";
 import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
@@ -65,8 +66,8 @@ export async function verifyEmail(raw: string) {
 
 /** Always resolves, whether or not the email belongs to an account (no account discovery). */
 export async function requestPasswordReset(email: string) {
-  const user = await User.findOne({ email }).select("email username displayName banned").lean();
-  if (!user || user.banned) return;
+  const user = await User.findOne({ email }).select("email username displayName banned accountRestriction").lean();
+  if (!user || accountRestriction(user)) return;
   const token = await createToken(user._id, "reset_password");
   const link = `${env.CLIENT_ORIGIN}/reset-password?token=${token}`;
   sendMail(resetPasswordMail(user.email, user.displayName || user.username, link)).catch((err: unknown) =>

@@ -9,6 +9,7 @@ import { createRealtimeServer } from "../server.js";
 const ALICE = "aaaaaaaaaaaaaaaaaaaaaaaa";
 const BOB = "bbbbbbbbbbbbbbbbbbbbbbbb";
 const EVE = "eeeeeeeeeeeeeeeeeeeeeeee";
+const SUSPENDED = "dddddddddddddddddddddddd";
 const CONVO = "cccccccccccccccccccccccc";
 
 const config: Config = {
@@ -21,7 +22,12 @@ const config: Config = {
 };
 
 // Stands in for the API: only ALICE and BOB are in CONVO.
-const fakeFetch = async (url: string) => {
+const fakeFetch = async (url: string, options?: RequestInit) => {
+  if (url.endsWith("/internal/session")) {
+    const credential = new Headers(options?.headers).get("X-Session-Token") ?? "";
+    const decoded = jwt.decode(credential);
+    return new Response(null, { status: typeof decoded === "object" && decoded?.sub === SUSPENDED ? 403 : 204 });
+  }
   if (url.includes(`/conversations/${CONVO}/participants`)) {
     return new Response(JSON.stringify({ participants: [ALICE, BOB] }), { status: 200 });
   }
@@ -111,6 +117,10 @@ describe("authentication", () => {
 
   it("accepts a valid token", async () => {
     await connected(client({ token: token(ALICE) }));
+  });
+
+  it("refuses a valid JWT after the API has suspended its account", async () => {
+    await expect(connected(client({ token: token(SUSPENDED) }))).rejects.toThrow("unauthorized");
   });
 
   it("limits connections per user", async () => {

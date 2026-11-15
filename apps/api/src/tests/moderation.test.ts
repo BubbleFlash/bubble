@@ -8,6 +8,7 @@ import {
 import { createApp } from "../app.js";
 import { signAccessToken } from "../utils/tokens.js";
 import { call, mockUser } from "./helpers.js";
+import { User } from "../models/User.js";
 
 const app = createApp();
 const token = signAccessToken("507f1f77bcf86cd799439011");
@@ -60,6 +61,24 @@ describe("admin routes", () => {
 });
 
 describe("suspended users", () => {
+  it("blocks authenticated reads with a reason and expiry", async () => {
+    const until = new Date(Date.now() + 60_000);
+    const account = { role: "user", accountRestriction: { reason: "Проверка", until } };
+    vi.spyOn(User, "findById").mockReturnValue({ select: () => ({ lean: async () => account }) } as never);
+    const res = await call(app, "get", "/api/users/me", token);
+    expect(res.status).toBe(403);
+    expect(res.body.restriction).toEqual({ kind: "account", reason: "Проверка", until: until.toISOString() });
+  });
+
+  it("keeps revoked tokens invalid after a temporary block expires", async () => {
+    const account = { role: "user", sessionVersion: 1, accountRestriction: { reason: "Проверка", until: new Date(0) } };
+    vi.spyOn(User, "findById").mockReturnValue({ select: () => ({ lean: async () => account }) } as never);
+    const oldSession = await call(app, "get", "/api/admin/errors", token);
+    const newSession = await call(app, "get", "/api/admin/errors", signAccessToken("507f1f77bcf86cd799439011", 1));
+    expect(oldSession.status).toBe(401);
+    expect(newSession.body.error).toBe("Admins only");
+  });
+
   it("cannot create posts", async () => {
     mockUser({ role: "user", banned: true });
     const res = await call(app, "post", "/api/posts", token).send({ content: "hello" });

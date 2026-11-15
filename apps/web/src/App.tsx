@@ -28,6 +28,10 @@ const RegisterPage = lazy(() => import("./pages/RegisterPage"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const FriendsPage = lazy(() => import("./pages/FriendsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+import { inStaffArea } from "./lib/navigation";
+import ModerationNotices from "./components/ModerationNotices";
+
+const ModerationPage = lazy(() => import("./pages/ModerationPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
@@ -61,6 +65,8 @@ const TITLES: Record<string, string> = {
   "/forgot-password": "Восстановление пароля",
   "/reset-password": "Сброс пароля",
   "/admin": "Администрирование",
+  "/moderation": "Модерация",
+  "/admin/errors": "Ошибки",
   "/music": "Музыка",
 };
 
@@ -159,10 +165,12 @@ function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
           path="/admin"
           element={
             <Protected>
-              <AdminPage />
+              <Navigate to="/moderation" replace />
             </Protected>
           }
         />
+        <Route path="/moderation" element={<Protected><ModerationPage /></Protected>} />
+        <Route path="/admin/errors" element={<Protected><AdminPage /></Protected>} />
 
         <Route
           path="/communities"
@@ -324,7 +332,7 @@ export default function App() {
     return () => observer.disconnect();
   }, [authPage]);
   // Messages need room for two panes, so that page drops the news column.
-  const wide = pathname.startsWith("/messages");
+  const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
 
   const skip = (
     <a href="#main" className="skip-link">
@@ -378,6 +386,7 @@ export default function App() {
         <div className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}>
           {user && <LeftNav />}
           <main id="main" tabIndex={-1} className="container">
+            {user && <ModerationNotices key={user.id} />}
             <AppRoutes onWallpaperPreview={setWallpaperPreview} onNotificationItems={remember} />
           </main>
           {!wide && <RightRail />}

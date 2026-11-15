@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { fontUploadUrlSchema, usernameSchema, type UpdateAppearanceInput } from "@commune/shared";
 import { Follow } from "../models/Follow.js";
 import { User } from "../models/User.js";
+import { accountRestriction } from "../services/restrictions.js";
 import { onlineUsers } from "../services/realtime.js";
 import { notify } from "../services/notificationService.js";
 import { deleteFontIfUnused, deleteUploadIfUnused } from "../services/uploadService.js";
@@ -34,7 +35,7 @@ async function buildProfile(user: Awaited<ReturnType<typeof findByUsername>>, vi
     { followerCount, followingCount },
     Boolean(follows),
     Boolean(followedBy),
-  ), online: !user.banned && online.has(user._id.toString()) };
+  ), online: !accountRestriction(user) && online.has(user._id.toString()) };
 }
 
 export async function me(req: Request, res: Response) {

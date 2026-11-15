@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { Post } from "../models/Post.js";
 import { Report } from "../models/Report.js";
 import { loadReadablePostAuthor } from "../services/postAccess.js";
 import { badRequest, conflict } from "../utils/errors.js";
@@ -11,6 +12,7 @@ export async function createReport(req: Request, res: Response) {
 
   try {
     await Report.create({
+      snapshot: { content: (await Post.findById(id).select("content").lean())?.content, author },
       reporter: req.userId,
       post: id,
       reason: req.body.reason,

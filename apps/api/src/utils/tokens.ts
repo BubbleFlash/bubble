@@ -2,19 +2,19 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 
-export function signAccessToken(userId: string): string {
-  return jwt.sign({ sub: userId }, env.JWT_ACCESS_SECRET, {
+export function signAccessToken(userId: string, version = 0): string {
+  return jwt.sign({ sub: userId, version }, env.JWT_ACCESS_SECRET, {
     algorithm: "HS256",
     expiresIn: env.ACCESS_TOKEN_TTL as jwt.SignOptions["expiresIn"],
   });
 }
 
-export function verifyAccessToken(token: string): string {
+export function verifyAccessToken(token: string) {
   const payload = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ["HS256"] });
   if (typeof payload === "string" || typeof payload.sub !== "string") {
     throw new Error("Invalid token payload");
   }
-  return payload.sub;
+  return { userId: payload.sub, version: typeof payload.version === "number" ? payload.version : 0 };
 }
 
 /** Refresh tokens are random opaque strings; only their SHA-256 hash is stored. */
