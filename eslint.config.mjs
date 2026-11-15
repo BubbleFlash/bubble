@@ -12,6 +12,7 @@ export default [
       "**/dist/**",
       "**/build/**",
       "**/coverage/**",
+      "**/.vite/**",
       "apps/api/uploads/**",
       "apps/web/public/**", // the service worker and static files are not part of the build
     ],
