@@ -3,6 +3,7 @@ import { useUploadImage } from "./useUpload";
 import { validateImage } from "../lib/images";
 import { POST_PHOTO, prepareImage } from "../lib/images";
 import { api } from "../lib/api";
+import {createId} from "../lib/uuid";
 
 type DraftImage = { id: string; file: File; preview: string; url?: string; error?: string; pending: boolean };
 
@@ -28,7 +29,7 @@ export function useImageDraft(privateMessage = false) {
     const invalid = files.map(validateImage).find(Boolean);
     if (invalid) { setError(invalid); return; }
     setError(null);
-    const next = files.map((file) => ({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file), pending: true }));
+    const next = files.map((file) => ({ id: createId(), file, preview: URL.createObjectURL(file), pending: true }));
     update((items) => [...items, ...next]);
     next.forEach(run);
   };
