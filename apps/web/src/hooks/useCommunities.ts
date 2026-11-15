@@ -1,15 +1,43 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CommunityDTO, CreateCommunityInput, Page, PostDTO } from "@commune/shared";
+import type { CommunityDTO, CommunityMemberDTO, CreateCommunityInput, Page, PostDTO } from "@commune/shared";
+import type { QueryClient } from "@tanstack/react-query";
 import { api, withQuery } from "../lib/api";
 
-export function useCommunities(filter: { q?: string; mine?: boolean }) {
+export function useCommunities(filter: { q?: string; mine?: boolean; owned?: boolean; publishable?: boolean }, enabled = true) {
   return useQuery({
     queryKey: ["communities", filter],
+    enabled,
     queryFn: () =>
       api<CommunityDTO[]>(
-        withQuery("/communities", { q: filter.q, mine: filter.mine ? "1" : undefined }),
+        withQuery("/communities", {
+          q: filter.q,
+          mine: filter.mine ? "1" : undefined,
+          owned: filter.owned ? "1" : undefined,
+          publishable: filter.publishable ? "1" : undefined,
+        }),
       ),
   });
+}
+
+export function useCommunityMembers(slug: string, scope: "members" | "managers" | "team", search: string, enabled: boolean) {
+  const q = search.trim();
+  return useInfiniteQuery({
+    queryKey: ["community-people", slug, scope, q],
+    enabled,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => api<Page<CommunityMemberDTO>>(
+      withQuery(`/communities/${slug}/${scope}`, { q, cursor: pageParam }),
+      { signal },
+    ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function refreshCommunity(qc: QueryClient, slug: string) {
+  return Promise.all([
+    ["community", slug], ["community-people", slug], ["communities"],
+    ["feed"], ["post"], ["search", "posts"], ["public", "posts"], ["thread"],
+  ].map((queryKey) => qc.invalidateQueries({ queryKey })));
 }
 
 export function useCommunity(slug: string) {
@@ -40,10 +68,7 @@ export function useCreateCommunity() {
 
 export function useMembership(slug: string) {
   const qc = useQueryClient();
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ["community", slug] });
-    void qc.invalidateQueries({ queryKey: ["communities"] });
-  };
+  const refresh = () => refreshCommunity(qc, slug);
   const join = useMutation({
     mutationFn: () => api<void>(`/communities/${slug}/join`, { method: "POST" }),
     onSuccess: refresh,

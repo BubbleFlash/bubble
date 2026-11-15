@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
-import type { ConversationDTO, MessageDTO, MessagePage } from "@commune/shared";
+import type { AvatarFrame, ConversationDTO, MessageDTO, MessagePage, RepostSource, SendMessageInput } from "@commune/shared";
 import { Conversation } from "../models/Conversation.js";
 import { Message } from "../models/Message.js";
 import { MessageImage } from "../models/MessageImage.js";
@@ -8,6 +8,9 @@ import { randomBytes } from "node:crypto";
 import { detectImageType } from "../utils/images.js";
 import { createDownloadUrl, uploadObject } from "../services/storageService.js";
 import { loadPostMusic, validateMusicTrackIds } from "../services/postMusic.js";
+import { presentReposts, validateRepostSource } from "../services/repostService.js";
+import { notifyRepost } from "../services/notificationService.js";
+import type { PopulatedPost } from "../utils/serializers.js";
 import { User } from "../models/User.js";
 import { badRequest, forbidden, notFound } from "../utils/errors.js";
 import { pushConfigured, pushToUser } from "../services/pushService.js";
@@ -16,13 +19,15 @@ import { isPlusActive } from "../utils/plan.js";
 import { findByUsername } from "./userController.js";
 
 const PREVIEW_LENGTH = 120;
-const USER_FIELDS = "username bio avatarUrl plusUntil banned";
+const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned";
 
 interface LeanUser {
   _id: unknown;
   username: string;
+  displayName?: string | null;
   bio?: string;
   avatarUrl?: string | null;
+  avatarFrame?: AvatarFrame | null;
   plusUntil?: Date | null;
 }
 interface LeanConversation {
@@ -41,13 +46,14 @@ interface LeanMessage {
   musicTrackIds?: unknown[];
   clientMessageId?: string;
   imageIds?: unknown[];
+  repost?: { post: mongoose.Types.ObjectId; comment?: mongoose.Types.ObjectId };
   createdAt: Date;
 }
 
 const str = (v: unknown) => String(v);
 const pairKey = (a: string, b: string) => [a, b].sort().join(":");
 
-function toMessageDTO(m: LeanMessage, musicAttachments: MessageDTO["musicAttachments"] = []): MessageDTO {
+function toMessageDTO(m: LeanMessage, musicAttachments: MessageDTO["musicAttachments"] = [], repost?: MessageDTO["repost"]): MessageDTO {
   return {
     id: str(m._id),
     conversationId: str(m.conversation),
@@ -55,6 +61,7 @@ function toMessageDTO(m: LeanMessage, musicAttachments: MessageDTO["musicAttachm
     text: m.text,
     musicAttachments,
     imageIds: (m.imageIds ?? []).map(str),
+    ...(m.repost ? { hasRepost: true, repost } : {}),
     ...(m.clientMessageId ? { clientMessageId: m.clientMessageId } : {}),
     createdAt: m.createdAt.toISOString(),
   };
@@ -69,8 +76,10 @@ function toConversationDTO(c: LeanConversation, me: string, other: LeanUser): Co
     other: {
       id: str(other._id),
       username: other.username,
+      displayName: other.displayName ?? undefined,
       bio: other.bio ?? "",
       avatarUrl: other.avatarUrl ?? null,
+      avatarFrame: other.avatarFrame ?? undefined,
       plus: isPlusActive(other.plusUntil),
     },
     lastMessage: c.lastMessageText
@@ -101,20 +110,23 @@ async function loadConversation(id: string | undefined, me: string) {
 /** Push notification for the recipient when they are not looking at the site. Never throws. */
 async function notifyByPush(convoId: string, me: string, otherId: string, text: string) {
   if (!pushConfigured()) return;
-  const sender = (await User.findById(me).select("username").lean()) as {
+  const sender = (await User.findById(me).select("username displayName").lean()) as {
     username?: string;
+    displayName?: string;
   } | null;
   await pushToUser(otherId, "message", {
-    title: `@${sender?.username ?? "Someone"}`,
+    title: sender?.displayName || sender?.username || "Someone",
     body: text,
     url: `/messages/${convoId}`,
     tag: `msg-${convoId}`,
   });
 }
 
-async function saveMessage(convoId: string, me: string, otherId: string, text: string, musicTrackIds: string[], clientMessageId?: string, imageIds: string[] = []) {
-  const message = await Message.create({ conversation: convoId, sender: me, text, musicTrackIds, clientMessageId, imageIds });
-  const preview = text || (imageIds.length ? "Фото" : "Музыка");
+async function saveMessage(convoId: string, me: string, otherId: string, input: SendMessageInput, source?: PopulatedPost) {
+  const { text, musicTrackIds = [], clientMessageId, imageIds = [], repost } = input;
+  const repostAncestors = source ? [...(source.repostAncestors ?? []), source._id] : undefined;
+  const message = await Message.create({ conversation: convoId, sender: me, text, musicTrackIds, clientMessageId, imageIds, repost, repostAncestors });
+  const preview = text || (repost ? "Репост" : imageIds.length ? "Фото" : "Музыка");
   await Conversation.updateOne(
     { _id: convoId },
     {
@@ -128,13 +140,16 @@ async function saveMessage(convoId: string, me: string, otherId: string, text: s
   );
   const row = message.toObject() as unknown as LeanMessage;
   const music = await loadPostMusic([row]);
+  // Live events carry no repost preview. Each participant fetches their own accessible version.
   const dto = toMessageDTO(row, music.get(str(row._id)) ?? []);
   // Live delivery to the recipient, and to the sender's other tabs and devices.
-  await Promise.all([
+  const [, , [repostPreview]] = await Promise.all([
     emitToUsers([me, otherId], "message:new", { message: dto }),
     notifyByPush(convoId, me, otherId, preview),
+    presentReposts([row.repost], me),
+    source && notifyRepost(source, me),
   ]);
-  return dto;
+  return { ...dto, ...(repostPreview ? { repost: repostPreview } : {}) };
 }
 
 /** GET /messages: your conversations, most recent first. */
@@ -207,9 +222,13 @@ export async function getMessages(req: Request, res: Response) {
   const other = (await User.findById(otherId)
     .select(USER_FIELDS)
     .lean()) as unknown as LeanUser | null;
-  const music = await loadPostMusic(page);
+  page.reverse(); // oldest first for display
+  const [music, reposts] = await Promise.all([
+    loadPostMusic(page),
+    presentReposts(page.map((row) => row.repost), me),
+  ]);
   const result: MessagePage & { conversation?: ConversationDTO } = {
-    items: page.reverse().map((row) => toMessageDTO(row, music.get(str(row._id)) ?? [])), // oldest first for display
+    items: page.map((row, index) => toMessageDTO(row, music.get(str(row._id)) ?? [], reposts[index])),
     nextCursor,
   };
   if (!cursor && other) result.conversation = toConversationDTO(convo, me, other);
@@ -224,11 +243,9 @@ export async function send(req: Request, res: Response) {
     banned?: boolean;
   } | null;
   if (!other || other.banned) throw forbidden("You can't message this account");
-  const musicTrackIds = req.body.musicTrackIds ?? [];
-  await validateMusicTrackIds(musicTrackIds);
-  const imageIds = req.body.imageIds ?? [];
-  await validateImages(me, imageIds);
-  res.status(201).json(await saveMessage(str(convo._id), me, otherId, req.body.text, musicTrackIds, req.body.clientMessageId, imageIds));
+  const input = req.body as SendMessageInput;
+  const source = await validateMessageAttachments(me, input);
+  res.status(201).json(await saveMessage(str(convo._id), me, otherId, input, source));
 }
 
 /** POST /messages/with/:username: send to a person, creating the conversation if needed. */
@@ -239,10 +256,8 @@ export async function start(req: Request, res: Response) {
   if (targetId === me) throw badRequest("You can't message yourself");
   if (target.banned) throw forbidden("You can't message this account");
 
-  const musicTrackIds = req.body.musicTrackIds ?? [];
-  await validateMusicTrackIds(musicTrackIds);
-  const imageIds = req.body.imageIds ?? [];
-  await validateImages(me, imageIds);
+  const input = req.body as SendMessageInput;
+  const source = await validateMessageAttachments(me, input);
   const key = pairKey(me, targetId);
   const convo = (await Conversation.findOneAndUpdate(
     { key },
@@ -250,8 +265,21 @@ export async function start(req: Request, res: Response) {
     { upsert: true, new: true },
   ).lean()) as unknown as LeanConversation;
 
-  const message = await saveMessage(str(convo._id), me, targetId, req.body.text, musicTrackIds, req.body.clientMessageId, imageIds);
+  const message = await saveMessage(str(convo._id), me, targetId, input, source);
   res.status(201).json({ conversationId: str(convo._id), message });
+}
+
+async function validateMessageAttachments(userId: string, { musicTrackIds = [], imageIds = [], repost }: {
+  musicTrackIds?: string[];
+  imageIds?: string[];
+  repost?: RepostSource;
+}) {
+  const [, , source] = await Promise.all([
+    validateMusicTrackIds(musicTrackIds),
+    validateImages(userId, imageIds),
+    repost ? validateRepostSource(repost, userId) : undefined,
+  ]);
+  return source;
 }
 
 async function validateImages(userId: string, ids: string[]) {

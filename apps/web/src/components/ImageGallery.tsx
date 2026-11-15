@@ -94,7 +94,14 @@ export default function ImageGallery({ images, alt }: { images: string[]; alt: s
       if (event.key === "ArrowLeft") { event.preventDefault(); move(-1); }
       if (event.key === "ArrowRight") { event.preventDefault(); move(1); }
     }}>
-      <div className="image-viewer__header"><span>{index === null ? "" : `${index + 1} / ${images.length}`}</span><span className="aero-window-controls"><span className="aero-window-close"><button type="button" aria-label="Закрыть просмотр" title="Закрыть" onClick={() => dialog.current?.close()}><i className="aero-control-close" aria-hidden="true" /></button></span></span></div>
+      <div className="image-viewer__header">
+        <span>{index === null ? "" : `${index + 1} / ${images.length}`}</span>
+        <span className="aero-window-controls">
+          <button className="aero-window-control aero-window-close" type="button" aria-label="Закрыть просмотр" title="Закрыть" onClick={() => dialog.current?.close()}>
+            <i className="aero-control-close" aria-hidden="true" />
+          </button>
+        </span>
+      </div>
       <div className="image-viewer__content" onPointerDown={images.length > 1 ? mouseDown : undefined} onPointerMove={images.length > 1 ? mouseMove : undefined} onPointerUp={images.length > 1 ? (event) => mouseUp(event, move) : undefined} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={(event) => { showTemporarily(true); startSwipe(event); }} onTouchEnd={(event) => { showTemporarily(true); if (images.length > 1) endSwipe(event, move); }} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
         {index !== null && <img src={src(images[index])} alt={`${alt}, ${index + 1} из ${images.length}`} draggable={false} />}
         {images.length > 1 && <><button type="button" className="image-viewer__zone image-viewer__zone--previous" aria-label="Предыдущее изображение" onClick={() => move(-1)}><span className="image-viewer__arrow" aria-hidden="true">‹</span></button><button type="button" className="image-viewer__zone image-viewer__zone--next" aria-label="Следующее изображение" onClick={() => move(1)}><span className="image-viewer__arrow" aria-hidden="true">›</span></button></>}

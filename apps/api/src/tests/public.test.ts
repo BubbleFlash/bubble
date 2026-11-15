@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import request from "supertest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
+import * as realtime from "../services/realtime.js";
 import { Post } from "../models/Post.js";
 
 const app = createApp();
@@ -18,6 +19,9 @@ function queryChain(result: unknown) {
 }
 
 describe("GET /api/public/posts", () => {
+  beforeEach(() => {
+    vi.spyOn(Post, "aggregate").mockResolvedValue([] as never);
+  });
   const author = { _id: new mongoose.Types.ObjectId(), username: "sam", avatarUrl: null };
   const row = (content: string) => ({
     _id: new mongoose.Types.ObjectId(),
@@ -33,11 +37,21 @@ describe("GET /api/public/posts", () => {
     const find = vi.spyOn(Post, "find").mockReturnValue(queryChain([row("Hello")]) as never);
     const res = await request(app).get("/api/public/posts");
     expect(res.status).toBe(200);
-    expect(find).toHaveBeenCalledWith({ priceCents: null });
+    expect(find).toHaveBeenCalledWith({ priceCents: null, visibility: { $nin: ["private", "friends"] } });
     expect(res.body.items).toHaveLength(1);
-    expect(res.body.items[0]).toMatchObject({ content: "Hello", likedByMe: false, locked: false });
+    expect(res.body.items[0]).toMatchObject({ content: "Hello", likedByMe: false });
     expect(res.body.nextCursor).toBeNull();
-    expect(res.headers["cache-control"]).toMatch(/public/);
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("returns the current author presence and display name", async () => {
+    const online = vi.spyOn(realtime, "onlineUsers").mockResolvedValue(new Set([author._id.toString()]));
+    vi.spyOn(Post, "find").mockReturnValue(queryChain([
+      { ...row("Hello"), author: { ...author, displayName: "Сэм" } },
+    ]) as never);
+    const res = await request(app).get("/api/public/posts");
+    expect(res.body.items[0].author).toMatchObject({ displayName: "Сэм", username: "sam", online: true });
+    expect(online).toHaveBeenCalledWith([author._id.toString()]);
   });
 
   it("paginates with a cursor", async () => {

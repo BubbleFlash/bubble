@@ -64,7 +64,7 @@ export default function MusicAttachmentPicker({
     >
       <header className="music-attachment-picker__header">
         <h2 id="music-picker-title">Выбрать музыку</h2>
-        <span className="aero-window-controls music-player__window-controls"><span className="aero-window-close"><button type="button" className="music-player__close" aria-label="Закрыть" title="Закрыть" onClick={closePicker}><i className="aero-control-close" aria-hidden="true" /></button></span></span>
+        <span className="aero-window-controls music-player__window-controls"><span className="aero-window-control aero-window-close"><button type="button" className="music-player__close" aria-label="Закрыть" title="Закрыть" onClick={closePicker}><i className="aero-control-close" aria-hidden="true" /></button></span></span>
       </header>
       <div className="music-attachment-picker__body">
         <input

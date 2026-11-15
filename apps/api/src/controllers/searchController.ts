@@ -6,6 +6,7 @@ import { User } from "../models/User.js";
 import { isPlusActive } from "../utils/plan.js";
 import { escapeRegex } from "../utils/regex.js";
 import type { PopulatedPost } from "../utils/serializers.js";
+import { AUTHOR_FIELDS, COMMUNITY_FIELDS, readablePostFilter } from "../services/postAccess.js";
 import { presentPosts } from "./postController.js";
 
 interface SearchQuery {
@@ -24,17 +25,18 @@ function paginate<T>(rows: T[], page: number) {
   };
 }
 
-/** People whose username starts with the text (case-insensitive). Suspended accounts are hidden. */
+/** People whose display name or username starts with the text (case-insensitive). Suspended accounts are hidden. */
 export async function users(_req: Request, res: Response) {
   const { q, page } = readQuery(res);
+  const prefix = { $regex: `^${escapeRegex(q)}`, $options: "i" };
   const rows = await User.find({
-    username: { $regex: `^${escapeRegex(q)}`, $options: "i" },
+    $or: [{ displayName: prefix }, { username: prefix }],
     banned: { $ne: true },
   })
     .sort({ username: 1 })
     .skip((page - 1) * SEARCH_PAGE_SIZE)
     .limit(SEARCH_PAGE_SIZE + 1)
-    .select("username bio avatarUrl plusUntil")
+    .select("username displayName bio avatarUrl avatarFrame plusUntil")
     .lean();
 
   const { items, nextCursor } = paginate(rows, page);
@@ -42,8 +44,10 @@ export async function users(_req: Request, res: Response) {
     items: items.map((u) => ({
       id: u._id.toString(),
       username: u.username,
+      displayName: u.displayName ?? undefined,
       bio: u.bio ?? "",
       avatarUrl: u.avatarUrl ?? null,
+      avatarFrame: u.avatarFrame ?? undefined,
       plus: isPlusActive(u.plusUntil),
     })),
     nextCursor,
@@ -54,12 +58,12 @@ export async function users(_req: Request, res: Response) {
 /** Posts matching the words, best match first. Only free text is searched, never paid content. */
 export async function posts(req: Request, res: Response) {
   const { q, page } = readQuery(res);
-  const rows = (await Post.find({ $text: { $search: q } }, { score: { $meta: "textScore" } })
+  const rows = (await Post.find({ $text: { $search: q }, ...await readablePostFilter(req.userId) }, { score: { $meta: "textScore" } })
     .sort({ score: { $meta: "textScore" } })
     .skip((page - 1) * SEARCH_PAGE_SIZE)
     .limit(SEARCH_PAGE_SIZE + 1)
-    .populate("author", "username avatarUrl plusUntil")
-    .populate("community", "slug name")
+    .populate("author", AUTHOR_FIELDS)
+    .populate("community", COMMUNITY_FIELDS)
     .lean()) as unknown as PopulatedPost[];
 
   const { items, nextCursor } = paginate(rows, page);

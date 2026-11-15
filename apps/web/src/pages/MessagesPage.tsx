@@ -1,3 +1,5 @@
+import { useProfile } from "../hooks/useSocial";
+import { displayNameOf } from "@commune/shared";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RowsSkeleton, ThreadSkeleton } from "../components/Skeleton";
 import type { FormEvent, KeyboardEvent } from "react";
@@ -7,6 +9,7 @@ import Avatar from "../components/Avatar";
 import MusicAttachmentPicker from "../components/MusicAttachmentPicker";
 import MusicAttachments from "../components/MusicAttachments";
 import MessageImages from "../components/MessageImages";
+import RepostCard from "../components/RepostCard";
 import { LinkedText, LinkPreview, splitLinks } from "../components/LinkContent";
 import { useImageDraft } from "../hooks/useImageDraft";
 import { useImageDrop } from "../hooks/useImageDrop";
@@ -149,7 +152,6 @@ function Thread({ id }: { id: string }) {
   const [older, setOlder] = useState<MessageDTO[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -174,7 +176,8 @@ function Thread({ id }: { id: string }) {
 
   // Stay at the bottom for new messages, unless the person scrolled up to read.
   useLayoutEffect(() => {
-    if (stick.current) bottomRef.current?.scrollIntoView({ block: "end" });
+    const list = listRef.current;
+    if (stick.current && list) list.scrollTop = list.scrollHeight;
   }, [messages.length, typing]);
 
   // A message from the other person arrived while this conversation is open and visible: mark
@@ -236,10 +239,10 @@ function Thread({ id }: { id: string }) {
         </Link>
         {other && (
           <Link to={`/u/${other.username}`} className="person">
-            <Avatar username={other.username} url={other.avatarUrl} size={36} />
+            <Avatar username={other.username} displayName={other.displayName} url={other.avatarUrl} frame={other.avatarFrame} size={36} />
             <span className="person-text">
               <strong>
-                @{other.username} <PlusBadge plus={other.plus} />
+                {displayNameOf(other)} <PlusBadge plus={other.plus} />
               </strong>
               {typing ? (
                 <span className="chat-status typing-label">печатает…</span>
@@ -272,10 +275,12 @@ function Thread({ id }: { id: string }) {
               key={m.id}
               className={`bubble-row${mine ? " mine" : ""}${pending ? " pending" : ""}`}
             >
-              <div className={`bubble${m.musicAttachments?.length || m.imageIds?.length || splitLinks(m.text).some((part) => part.href) ? " bubble--music" : ""}`}>
+              <div className={`bubble${m.hasRepost || m.musicAttachments?.length || m.imageIds?.length || splitLinks(m.text).some((part) => part.href) ? " bubble--music" : ""}`}>
                 {m.text && <><span><LinkedText text={m.text} /></span><LinkPreview text={m.text} /></>}
                 {(m.imageIds?.length ?? 0) > 0 && <MessageImages ids={m.imageIds!} />}
                 {(m.musicAttachments?.length ?? 0) > 0 && <MusicAttachments attachments={m.musicAttachments!} source={`message:${m.senderId}:${m.clientMessageId ?? m.id}`} />}
+                {m.repost && <RepostCard preview={m.repost} source={`message-repost:${m.id}`} />}
+                {m.hasRepost && !m.repost && <p className="muted">Загрузка репоста…</p>}
                 <time
                   className="bubble-time"
                   dateTime={m.createdAt}
@@ -302,7 +307,6 @@ function Thread({ id }: { id: string }) {
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <Composer
@@ -324,19 +328,21 @@ function Thread({ id }: { id: string }) {
 function NewChat({ username }: { username: string }) {
   const navigate = useNavigate();
   const start = useStartChat(username);
+  const { data: recipient } = useProfile(username);
+  const name = recipient ? displayNameOf(recipient) : "";
   return (
     <>
       <div className="chat-head">
         <Link to="/messages" className="icon-btn chat-back" aria-label="К списку переписок">
           ←
         </Link>
-        <strong>Новое сообщение для @{username}</strong>
+        <strong>{name ? `Новое сообщение для ${name}` : "Новое сообщение"}</strong>
       </div>
       <div className="chat-messages">
-        <p className="muted center">Поздоровайтесь с @{username}. Соблюдайте правила общения: пользователи могут пожаловаться на нарушения.</p>
+        <p className="muted center">{name && `Поздоровайтесь с ${name}. `} Соблюдайте правила общения: пользователи могут пожаловаться на нарушения.</p>
       </div>
       <Composer
-        placeholder={`Сообщение для @${username}…`}
+        placeholder={name ? `Сообщение для ${name}…` : "Сообщение…"}
         busy={start.isPending}
         error={start.isError ? start.error.message : null}
         onSend={async (text) => {
@@ -386,11 +392,11 @@ export default function MessagesPage() {
             to={`/messages/${c.id}`}
             className={`convo${c.id === id ? " active" : ""}${c.unread > 0 ? " unread" : ""}`}
           >
-            <Avatar username={c.other.username} url={c.other.avatarUrl} size={44} />
+            <Avatar username={c.other.username} displayName={c.other.displayName} url={c.other.avatarUrl} frame={c.other.avatarFrame} size={44} />
             <span className="convo-main">
               <span className="convo-top">
                 <strong>
-                  @{c.other.username} <PlusBadge plus={c.other.plus} />
+                  {displayNameOf(c.other)} <PlusBadge plus={c.other.plus} />
                 </strong>
                 <span className="muted small">{timeAgo(c.lastMessageAt)}</span>
               </span>

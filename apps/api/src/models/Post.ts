@@ -1,4 +1,6 @@
 import { Schema, model } from "mongoose";
+import { postVisibilitySchema } from "@commune/shared";
+import { repostSource } from "./repostSource.js";
 
 const postSchema = new Schema(
   {
@@ -9,9 +11,13 @@ const postSchema = new Schema(
     musicTrackIds: { type: [{ type: Schema.Types.ObjectId, ref: "MusicTrack" }], default: [] },
     // Set when the post was made inside a community.
     community: { type: Schema.Types.ObjectId, ref: "Community", default: null, index: true },
-    // Paid posts: price in US cents and the content that is hidden until purchase.
+    visibility: { type: String, enum: postVisibilitySchema.options, default: "public" },
+    repost: { type: repostSource },
+    // Oldest first. These ids survive deletion of an ancestor so descendants remain countable.
+    repostAncestors: { type: [Schema.Types.ObjectId], default: undefined, index: true },
+    // Legacy records are kept for historical sales but are excluded from the site.
     priceCents: { type: Number, default: null, min: 100 },
-    premiumContent: { type: String, default: null, maxlength: 5000 },
+    premiumContent: { type: String, select: false },
     viewCount: { type: Number, default: 0, min: 0 },
     likeCount: { type: Number, default: 0, min: 0 },
     commentCount: { type: Number, default: 0, min: 0 },

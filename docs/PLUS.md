@@ -1,7 +1,6 @@
 # Commune Plus (subscription) and payments
 
-Plus unlocks: creator Insights, 10% instead of 20% fee on paid posts, 2000-character posts (free: 500),
-20 communities (free: 5) and a ✦ badge.
+Plus includes creator Insights, 2000-character posts (free: 500), 20 communities (free: 5) and a ✦ badge.
 
 Payments run through **Lemon Squeezy**, a merchant of record: it charges the card, collects and pays sales
 tax/VAT, sends receipts and hosts the customer portal. We never see card details.
@@ -29,7 +28,7 @@ tax/VAT, sends receipts and hosts the customer portal. We never see card details
 | Variable | Meaning |
 | --- | --- |
 | `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET` | from Lemon Squeezy |
-| `LEMONSQUEEZY_VARIANT_ID` | the "unlock a post" product variant |
+| `LEMONSQUEEZY_VARIANT_ID` | legacy product variant required by the existing provider configuration |
 | `LEMONSQUEEZY_PLUS_VARIANT_ID` | the Plus subscription variant |
 | `LEMONSQUEEZY_ACCEPT_TEST_MODE` | `true` while testing, `false` (or unset) on the real site |
 | `PLUS_PRICE_LABEL` | optional text, e.g. `$5 / month` |
@@ -49,7 +48,7 @@ tax/VAT, sends receipts and hosts the customer portal. We never see card details
 4. Vercel (API project) → set the live `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`,
    `LEMONSQUEEZY_VARIANT_ID`, `LEMONSQUEEZY_PLUS_VARIANT_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, and
    `LEMONSQUEEZY_ACCEPT_TEST_MODE=false`. Redeploy the API.
-5. **Remove test data** (otherwise test buyers keep Plus and unlocked posts). Run once in mongosh, before
+5. **Remove test data** (otherwise test buyers keep Plus). Run once in mongosh, before
    real sales start:
    ```js
    const ids = db.subscriptions.find({ provider: "lemonsqueezy" }).map((s) => s.user);

@@ -5,7 +5,7 @@ const notificationSchema = new Schema({
   user: { type: Schema.Types.ObjectId, ref: "User", required: true },
   // Who caused it.
   actor: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  type: { type: String, enum: ["like", "comment", "follow"], required: true },
+  type: { type: String, enum: ["like", "comment", "follow", "repost"], required: true },
   post: { type: Schema.Types.ObjectId, ref: "Post", default: null },
   read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },

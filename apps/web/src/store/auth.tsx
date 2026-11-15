@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AuthResponse, LoginInput, PublicUser, RegisterInput } from "@commune/shared";
+import type { AccountUser, AuthResponse, LoginInput, RegisterInput, UpdateAppearanceInput } from "@commune/shared";
 import { releasePushOnLogout } from "../lib/push";
 import { api, bootSession, readSessionHint, SessionRestoreError, setAccessToken, writeSessionHint } from "../lib/api";
 import { PageSkeleton } from "../components/Skeleton";
@@ -8,16 +8,16 @@ import { useQueryClient } from "@tanstack/react-query";
 
 // The last known profile, shown instantly on the next visit while the session is re-checked.
 const USER_KEY = "commune_user";
-function readCachedUser(): PublicUser | null {
+function readCachedUser(): AccountUser | null {
   if (readSessionHint() !== "1") return null;
   try {
     const raw = localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as PublicUser) : null;
+    return raw ? (JSON.parse(raw) as AccountUser) : null;
   } catch {
     return null;
   }
 }
-function cacheUser(user: PublicUser | null) {
+function cacheUser(user: AccountUser | null) {
   try {
     if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
     else localStorage.removeItem(USER_KEY);
@@ -27,22 +27,23 @@ function cacheUser(user: PublicUser | null) {
 }
 
 interface AuthState {
-  user: PublicUser | null;
+  user: AccountUser | null;
   loading: boolean;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   loginWithGoogle: (credential: string) => Promise<void>;
   logout: () => Promise<void>;
-  setUser: (user: PublicUser | null) => void;
+  setUser: (user: AccountUser | null) => void;
+  isCurrentAccount: (userId: string) => boolean;
+  applyAppearance: (userId: string, changes: UpdateAppearanceInput) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const [user, setUserState] = useState<PublicUser | null>(readCachedUser);
-  const queryClient = useQueryClient();
-  const previousUserId = useRef(user?.id);
+  const [user, setUserState] = useState<AccountUser | null>(readCachedUser);
+  const currentUser = useRef(user);
   // Wait only when there is nothing to show yet: first visit (unknown) or a session without a cached profile.
   const [loading, setLoading] = useState(() => {
     const hint = readSessionHint();
@@ -51,18 +52,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [restoreFailed, setRestoreFailed] = useState(false);
 
-  const setUser = useCallback((next: PublicUser | null) => {
-    if (previousUserId.current !== next?.id) {
-      queryClient.removeQueries({ queryKey: ["profile-music"] });
-      queryClient.removeQueries({ queryKey: ["music-settings"] });
-      queryClient.removeQueries({ queryKey: ["music"] });
-      queryClient.removeQueries({ queryKey: ["music-picker"] });
-      queryClient.removeQueries({ queryKey: ["link-preview"] });
-      previousUserId.current = next?.id;
+  const setUser = useCallback((next: AccountUser | null) => {
+    if (currentUser.current?.id !== next?.id) {
+      qc.removeQueries({ queryKey: ["profile-music"] });
+      qc.removeQueries({ queryKey: ["music-settings"] });
+      qc.removeQueries({ queryKey: ["music"] });
+      qc.removeQueries({ queryKey: ["music-picker"] });
+      qc.removeQueries({ queryKey: ["link-preview"] });
     }
+    currentUser.current = next;
     cacheUser(next);
     setUserState(next);
-  }, [queryClient]);
+  }, [qc]);
+
+  const isCurrentAccount = useCallback((userId: string) => currentUser.current?.id === userId, []);
+
+  const applyAppearance = useCallback((userId: string, changes: UpdateAppearanceInput) => {
+    const active = currentUser.current;
+    if (active?.id !== userId) return;
+    setUser({
+      ...active,
+      appearance: { ...active.appearance, ...changes.appearance },
+      profileAppearanceVisibility: changes.profileAppearanceVisibility ?? active.profileAppearanceVisibility,
+      avatarFrame: changes.avatarFrame === undefined ? active.avatarFrame : changes.avatarFrame ?? undefined,
+    });
+  }, [setUser]);
 
   useEffect(() => {
     let alive = true;
@@ -146,8 +160,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setUser, qc]);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, loginWithGoogle, logout, setUser }),
-    [user, loading, login, register, loginWithGoogle, logout, setUser],
+    () => ({ user, loading, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount }),
+    [user, loading, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount],
   );
   if (restoreFailed) return (
     <main role="alert" className="card">
