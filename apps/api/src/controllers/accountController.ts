@@ -1,7 +1,8 @@
+import { assertAccountAllowed } from "../services/restrictions.js";
 import type { Request, Response } from "express";
 import * as accountService from "../services/accountService.js";
 import { User } from "../models/User.js";
-import { forbidden, notFound } from "../utils/errors.js";
+import { notFound } from "../utils/errors.js";
 
 export async function forgotPassword(req: Request, res: Response) {
   await accountService.requestPasswordReset((req.body as { email: string }).email);
@@ -21,9 +22,9 @@ export async function verifyEmail(req: Request, res: Response) {
 }
 
 export async function resendVerification(req: Request, res: Response) {
-  const user = await User.findById(req.userId).select("email username displayName emailVerified banned").lean();
+  const user = await User.findById(req.userId).select("email username displayName emailVerified banned accountRestriction").lean();
   if (!user) throw notFound("User not found");
-  if (user.banned) throw forbidden("This account has been suspended");
+  assertAccountAllowed(user);
   if (!user.emailVerified) await accountService.sendVerificationEmail(user);
   res.status(204).end();
 }

@@ -201,6 +201,8 @@
   color: var(--gold-ink);
   font-weight: 700;
 }
+.appearance-opacity { display: grid; gap: 6px; margin-top: 12px; }
+.appearance-opacity input { width: min(340px, 100%); accent-color: var(--gold); }
 
 .appearance-save [role="alert"], .appearance-section [role="alert"] {
   color: var(--danger);

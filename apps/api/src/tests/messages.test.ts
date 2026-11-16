@@ -58,7 +58,7 @@ describe("message routes", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("sends music-only messages and uses a music preview", async () => {
+  it("sends music-only messages and records conversation activity", async () => {
     findOne({ _id: OTHER, username: "sam", banned: false });
     const convoId = oid();
     const trackId = oid();
@@ -71,7 +71,7 @@ describe("message routes", () => {
     expect(res.status).toBe(201);
     expect(res.body.message.text).toBe("");
     expect(res.body.message.musicAttachments).toEqual([{ id: trackId.toString(), title: "Song", artist: "Artist", duration: 20, unavailable: false }]);
-    expect((update.mock.calls[0] as unknown as [unknown, unknown])[1]).toMatchObject({ $set: { lastMessageText: "Музыка" } });
+    expect((update.mock.calls[0] as unknown as [unknown, unknown])[1]).toMatchObject({ $max: { lastMessageAt: expect.any(Date) } });
   });
 
   it("sends mixed content in an existing conversation and retains the client identifier", async () => {
@@ -87,7 +87,7 @@ describe("message routes", () => {
     const res = await request(app).post(`/api/messages/${convoId}`).set(auth).send({ text: "hello", musicTrackIds: [trackId.toString()], clientMessageId });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ text: "hello", clientMessageId, musicAttachments: [{ id: trackId.toString() }] });
-    expect((update.mock.calls[0] as unknown as [unknown, unknown])[1]).toMatchObject({ $set: { lastMessageText: "hello" } });
+    expect((update.mock.calls[0] as unknown as [unknown, unknown])[1]).toMatchObject({ $max: { lastMessageAt: expect.any(Date) } });
   });
 
   it("loads music once for a history page and preserves order and missing tracks", async () => {
@@ -203,7 +203,7 @@ describe("message routes", () => {
     const res = await request(app).get(`/api/messages/${convoId}?limit=2`).set(auth);
     expect(res.status).toBe(200);
     expect(res.body.items.map((m: { text: string }) => m.text)).toEqual(["m2", "m3"]);
-    expect(res.body.nextCursor).toBe(new Date(base + 2000).toISOString());
+    expect(res.body.nextCursor).toBe(`${new Date(base + 2000).toISOString()}~${rows[1]!._id}`);
     // reading the latest page clears the unread counter
     expect(update).toHaveBeenCalledWith(
       { _id: convoId.toString(), [`unread.${ME}`]: 2, lastMessageAt: expect.any(Date) },

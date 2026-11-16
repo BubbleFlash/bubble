@@ -67,6 +67,32 @@ export default function MusicPlayer() {
   const { playerRef, style, handleEvents, prepareModeSwitch } = useMusicPlayerPosition(compact, Boolean(track));
 
   const previousVolume = useRef(volume > 0 ? volume : 0.5);
+  const volumeControl = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    const slider = volumeControl.current;
+    if (!slider) return;
+    const wheel = (event: WheelEvent) => {
+      if (!event.deltaY || event.ctrlKey) return;
+      event.preventDefault();
+      const current = Number(slider.value);
+      const next = Math.min(1, Math.max(0, Math.round(current * 100 - Math.sign(event.deltaY) * 5) / 100));
+      if (next > 0 || current > 0) previousVolume.current = next || current;
+      slider.value = String(next);
+      setVolume(next);
+    };
+    slider.addEventListener("wheel", wheel, { passive: false });
+    return () => slider.removeEventListener("wheel", wheel);
+  }, [track?.id, setVolume]);
+  useLayoutEffect(() => {
+    const player = playerRef.current;
+    const host = player?.parentElement;
+    if (!player || !host) return;
+    const resize = () => host.style.setProperty("--aero-player-height", `${player.getBoundingClientRect().height}px`);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(player);
+    return () => { observer.disconnect(); host.style.removeProperty("--aero-player-height"); };
+  }, [playerRef, Boolean(track)]);
   const titleRef = useRef<HTMLDivElement>(null);
   const titleTextRef = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
@@ -195,6 +221,7 @@ export default function MusicPlayer() {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d={volume === 0 ? "M4 9h4l5-4v14l-5-4H4z M17 9l5 6m0-6-5 6" : "M4 9h4l5-4v14l-5-4H4z M16 9c2 2 2 4 0 6M19 6c4 4 4 8 0 12"} /></svg>
           </button>
           <input
+            ref={volumeControl}
             type="range"
             min={0}
             max={1}

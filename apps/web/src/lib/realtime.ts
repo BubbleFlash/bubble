@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { io, type Socket } from "socket.io-client";
 import type {
   MessageNewEvent,
+  MessageChangedEvent,
   MessageReadEvent,
   NotificationNewEvent,
   PresenceEvent,
@@ -55,6 +56,7 @@ export const isRealtimeConnected = () => state.connected;
 export interface RealtimeHandlers {
   onMessage: (e: MessageNewEvent) => void;
   onRead: (e: MessageReadEvent) => void;
+  onMessageChanged: (e: MessageChangedEvent) => void;
   onNotification: (event?: NotificationNewEvent) => void;
   /** After a reconnect, so anything missed while offline can be refetched. */
   onResync: () => void;
@@ -128,6 +130,7 @@ export function startRealtime(handlers: RealtimeHandlers): void {
 
   s.on("message:new", handlers.onMessage);
   s.on("message:read", handlers.onRead);
+  s.on("message:changed", handlers.onMessageChanged);
   s.on("notification:new", handlers.onNotification);
   s.on("typing", (e: TypingEvent) => {
     window.clearTimeout(typingTimers.get(e.conversationId));

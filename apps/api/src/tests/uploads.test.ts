@@ -1,6 +1,7 @@
 
 import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
+import { Types } from "mongoose";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -19,6 +20,10 @@ const storage = vi.hoisted(() => ({
 
 vi.mock("../services/storageService.js", () => storage);
 
+import { Post } from "../models/Post.js";
+import { User } from "../models/User.js";
+import { Community } from "../models/Community.js";
+import { Wallpaper } from "../models/Wallpaper.js";
 import { createApp } from "../app.js";
 import { detectImageType } from "../utils/images.js";
 import { signAccessToken } from "../utils/tokens.js";
@@ -149,6 +154,8 @@ describe("POST /api/uploads", () => {
   });
 
   it("serves an image from S3", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValueOnce(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValueOnce(null);
     storage.getObject.mockResolvedValue({
       Body: {
         transformToWebStream: () =>
@@ -170,6 +177,31 @@ describe("POST /api/uploads", () => {
     expect(storage.getObject).toHaveBeenCalledWith(
       `uploads/${"a".repeat(32)}.png`,
     );
+  });
+
+  it("does not fetch an image referenced only by moderated content", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValueOnce({ _id: new Types.ObjectId() }).mockResolvedValueOnce(null);
+    vi.spyOn(User, "exists").mockResolvedValueOnce(null);
+    vi.spyOn(Community, "exists").mockResolvedValueOnce(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockClear();
+
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png`);
+    expect(response.status).toBe(404);
+    expect(storage.getObject).not.toHaveBeenCalled();
+  });
+
+  it("does not serve a hidden wallpaper even if it is still selected as a background", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValueOnce({ _id: new Types.ObjectId() }).mockResolvedValueOnce(null);
+    const user = vi.spyOn(User, "exists").mockResolvedValue(null);
+    vi.spyOn(Community, "exists").mockResolvedValue(null);
+    storage.getObject.mockClear();
+
+    const response = await request(app).get(`/uploads/${"b".repeat(32)}.png`);
+    expect(response.status).toBe(404);
+    expect(storage.getObject).not.toHaveBeenCalled();
+    expect(user).toHaveBeenCalledWith({ avatarUrl: `/uploads/${"b".repeat(32)}.png` });
   });
 
   it("does not read files outside the upload folder", async () => {

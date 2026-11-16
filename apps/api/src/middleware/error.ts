@@ -13,7 +13,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof AppError) {
-    return res.status(err.status).json({ error: err.message });
+    return res.status(err.status).json({ error: err.message, restriction: err.restriction });
   }
   // Malformed JSON body
   if (err instanceof SyntaxError && "body" in err) {

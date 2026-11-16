@@ -1,47 +1,24 @@
-
-import request from "supertest";
 import { describe, expect, it } from "vitest";
+import request from "supertest";
 import { createApp } from "../app.js";
-import { signAccessToken } from "../utils/tokens.js";
+import { confirmDirectUpload, createUploadTicket } from "../services/uploadService.js";
 
-const app = createApp();
-
-const auth = {
-  Authorization: `Bearer ${signAccessToken("507f1f77bcf86cd799439011")}`,
-};
-
-describe("POST /api/uploads/sign", () => {
-  it("requires authentication", async () => {
-    const res = await request(app).post("/api/uploads/sign");
-
-    expect(res.status).toBe(401);
+describe("image upload mode", () => {
+  it("selects the API upload route", () => {
+    expect(createUploadTicket()).toEqual({ mode: "server" });
   });
 
-  it("returns a server upload ticket", async () => {
-    const res = await request(app).post("/api/uploads/sign").set(auth);
-
-    expect(res.status).toBe(200);
-    expect(res.headers["cache-control"]).toBe("no-store");
-    expect(res.body).toEqual({ mode: "server" });
-  });
-});
-
-describe("POST /api/uploads/complete", () => {
-  it("requires authentication", async () => {
-    const res = await request(app)
-      .post("/api/uploads/complete")
-      .send({ id: "a".repeat(32), format: "png" });
-
-    expect(res.status).toBe(401);
+  it("rejects confirmation of direct image uploads", async () => {
+    await expect(confirmDirectUpload("a".repeat(32), "png")).rejects.toMatchObject({
+      status: 400,
+      message: "Direct uploads are not enabled",
+    });
   });
 
-  it("rejects direct uploads", async () => {
-    const res = await request(app)
-      .post("/api/uploads/complete")
-      .set(auth)
-      .send({ id: "a".repeat(32), format: "png" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/direct uploads are not enabled/i);
-  });
+  it.each(["/api/uploads/sign", "/api/uploads/complete"])(
+    "does not expose the obsolete direct upload route %s",
+    async (path) => {
+      expect((await request(createApp()).post(path)).status).toBe(404);
+    },
+  );
 });

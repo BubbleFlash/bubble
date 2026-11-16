@@ -68,15 +68,13 @@ export function MusicPlayerProvider({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(() => {
-    const savedVolume = localStorage.getItem("music-volume");
-
-    if (savedVolume === null) return 0.5;
-
-    const parsedVolume = Number(savedVolume);
-
-    if (!Number.isFinite(parsedVolume)) return 0.5;
-
-    return Math.min(1, Math.max(0, parsedVolume));
+    try {
+      const savedVolume = localStorage.getItem("music-volume");
+      const parsedVolume = savedVolume?.trim() ? Number(savedVolume) : NaN;
+      return Number.isFinite(parsedVolume) ? Math.min(1, Math.max(0, parsedVolume)) : 0.5;
+    } catch {
+      return 0.5;
+    }
   });
   const [error, setError] = useState<string | null>(null);
   const [isShuffled, setIsShuffled] = useState(false);
@@ -127,7 +125,6 @@ export function MusicPlayerProvider({
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "metadata";
-    audio.volume = volume;
     audioRef.current = audio;
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
@@ -179,9 +176,13 @@ export function MusicPlayerProvider({
 
   // Keep the actual audio volume synchronized with React state.
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
+    const mobile = window.matchMedia("(hover: none) and (pointer: coarse)");
+    const syncVolume = () => {
+      if (audioRef.current) audioRef.current.volume = mobile.matches ? 1 : volume;
+    };
+    syncVolume();
+    mobile.addEventListener("change", syncVolume);
+    return () => mobile.removeEventListener("change", syncVolume);
   }, [volume]);
 
   // Stop playback when the user logs out.
@@ -439,13 +440,13 @@ export function MusicPlayerProvider({
   }, []);
 
   const setVolume = useCallback((nextVolume: number) => {
+    if (!Number.isFinite(nextVolume)) return;
     const normalizedVolume = Math.min(1, Math.max(0, nextVolume));
-
     setVolumeState(normalizedVolume);
-    localStorage.setItem("music-volume", String(normalizedVolume));
-
-    if (audioRef.current) {
-      audioRef.current.volume = normalizedVolume;
+    try {
+      localStorage.setItem("music-volume", String(normalizedVolume));
+    } catch {
+      // A blocked storage backend only prevents saving the preference across visits.
     }
   }, []);
 

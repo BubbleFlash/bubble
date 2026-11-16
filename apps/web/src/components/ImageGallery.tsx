@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, TouchEvent } from "react";
 import { assetUrl } from "../lib/api";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 export default function ImageGallery({ images, alt }: { images: string[]; alt: string }) {
   const [index, setIndex] = useState<number | null>(null);
   const [slide, setSlide] = useState(0);
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 600px)").matches);
   const [showArrows, setShowArrows] = useState(true);
+  const [fullSize, setFullSize] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const imageScroll = useRef<HTMLDivElement>(null);
+  const backdrop = useDialogBackdrop(() => dialog.current?.close());
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
   const touch = useRef<{ x: number; y: number } | null>(null);
   const mouseDrag = useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
@@ -28,6 +32,9 @@ export default function ImageGallery({ images, alt }: { images: string[]; alt: s
   useEffect(() => {
     if (index !== null && !dialog.current?.open) { dialog.current?.showModal(); showTemporarily(); }
   }, [index]);
+  useEffect(() => {
+    imageScroll.current?.scrollTo(0, 0);
+  }, [index, fullSize]);
   if (!images.length) return null;
   const move = (offset: number) => setIndex((current) => current === null ? null : (current + offset + images.length) % images.length);
   const activeSlide = slide % images.length;
@@ -88,22 +95,27 @@ export default function ImageGallery({ images, alt }: { images: string[]; alt: s
     </div> : <div className={`image-gallery image-gallery--${images.length}`}>
       {images.map((url, i) => <button type="button" className="image-gallery__item" key={`${url}-${i}`} onClick={() => setIndex(i)} aria-label={`Открыть изображение ${i + 1} из ${images.length}`}><img src={src(url)} alt={alt} loading="lazy" decoding="async" /></button>)}
     </div>}
-    <dialog ref={dialog} className={`image-viewer${showArrows ? "" : " image-viewer--idle"}`} aria-label="Просмотр изображения" onClose={() => { clearTimeout(hideTimer.current); setIndex(null); }} onPointerMove={(event) => showTemporarily(event.pointerType === "touch")} onPointerDown={(event) => showTemporarily(event.pointerType === "touch")} onKeyDown={(event) => {
+    <dialog ref={dialog} {...backdrop} className={`image-viewer${showArrows ? "" : " image-viewer--idle"}`} aria-label="Просмотр изображения" onClose={() => { clearTimeout(hideTimer.current); setIndex(null); setFullSize(false); }} onPointerMove={(event) => showTemporarily(event.pointerType === "touch")} onKeyDown={(event) => {
       showTemporarily(false);
-      if (images.length < 2) return;
+      if (images.length < 2 || (fullSize && event.target === imageScroll.current)) return;
       if (event.key === "ArrowLeft") { event.preventDefault(); move(-1); }
       if (event.key === "ArrowRight") { event.preventDefault(); move(1); }
     }}>
       <div className="image-viewer__header">
         <span>{index === null ? "" : `${index + 1} / ${images.length}`}</span>
+        <button className="btn btn-ghost image-viewer__fit" type="button" aria-pressed={fullSize} onClick={() => setFullSize((value) => !value)}>
+          {fullSize ? "Вместить" : "Исходный размер"}
+        </button>
         <span className="aero-window-controls">
           <button className="aero-window-control aero-window-close" type="button" aria-label="Закрыть просмотр" title="Закрыть" onClick={() => dialog.current?.close()}>
             <i className="aero-control-close" aria-hidden="true" />
           </button>
         </span>
       </div>
-      <div className="image-viewer__content" onPointerDown={images.length > 1 ? mouseDown : undefined} onPointerMove={images.length > 1 ? mouseMove : undefined} onPointerUp={images.length > 1 ? (event) => mouseUp(event, move) : undefined} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={(event) => { showTemporarily(true); startSwipe(event); }} onTouchEnd={(event) => { showTemporarily(true); if (images.length > 1) endSwipe(event, move); }} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
-        {index !== null && <img src={src(images[index])} alt={`${alt}, ${index + 1} из ${images.length}`} draggable={false} />}
+      <div className={`image-viewer__content${fullSize ? " image-viewer__content--full" : ""}`} onPointerDown={!fullSize && images.length > 1 ? mouseDown : undefined} onPointerMove={!fullSize && images.length > 1 ? mouseMove : undefined} onPointerUp={!fullSize && images.length > 1 ? (event) => mouseUp(event, move) : undefined} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={(event) => { showTemporarily(true); if (!fullSize) startSwipe(event); }} onTouchEnd={(event) => { showTemporarily(true); if (!fullSize && images.length > 1) endSwipe(event, move); }} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
+        <div className="image-viewer__scroll" ref={imageScroll} tabIndex={fullSize ? 0 : undefined} aria-label={fullSize ? "Прокрутка изображения" : undefined}>
+          {index !== null && <img src={src(images[index])} alt={`${alt}, ${index + 1} из ${images.length}`} draggable={false} />}
+        </div>
         {images.length > 1 && <><button type="button" className="image-viewer__zone image-viewer__zone--previous" aria-label="Предыдущее изображение" onClick={() => move(-1)}><span className="image-viewer__arrow" aria-hidden="true">‹</span></button><button type="button" className="image-viewer__zone image-viewer__zone--next" aria-label="Следующее изображение" onClick={() => move(1)}><span className="image-viewer__arrow" aria-hidden="true">›</span></button></>}
       </div>
     </dialog>

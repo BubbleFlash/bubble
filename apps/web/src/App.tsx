@@ -20,6 +20,7 @@ import { useStoredFont } from "./lib/siteFont";
 import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
 import MusicPlayer from "./components/MusicPlayer";
+import BackToTop from "./components/BackToTop";
 
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const PostPage = lazy(() => import("./pages/PostPage"));
@@ -28,6 +29,10 @@ const RegisterPage = lazy(() => import("./pages/RegisterPage"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const FriendsPage = lazy(() => import("./pages/FriendsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+import { inStaffArea } from "./lib/navigation";
+import ModerationNotices from "./components/ModerationNotices";
+
+const ModerationPage = lazy(() => import("./pages/ModerationPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
@@ -61,6 +66,8 @@ const TITLES: Record<string, string> = {
   "/forgot-password": "Восстановление пароля",
   "/reset-password": "Сброс пароля",
   "/admin": "Администрирование",
+  "/moderation": "Модерация",
+  "/admin/errors": "Ошибки",
   "/music": "Музыка",
 };
 
@@ -159,10 +166,12 @@ function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
           path="/admin"
           element={
             <Protected>
-              <AdminPage />
+              <Navigate to="/moderation" replace />
             </Protected>
           }
         />
+        <Route path="/moderation" element={<Protected><ModerationPage /></Protected>} />
+        <Route path="/admin/errors" element={<Protected><AdminPage /></Protected>} />
 
         <Route
           path="/communities"
@@ -287,6 +296,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const homeRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const profileName = matchPath("/u/:username", pathname)?.params.username;
   const visitingProfile = Boolean(user && profileName && profileName.toLowerCase() !== user.username.toLowerCase());
   const { data: profile, isError: profileError } = useProfile(profileName ?? "", visitingProfile);
@@ -323,8 +333,18 @@ export default function App() {
     observer.observe(chrome);
     return () => observer.disconnect();
   }, [authPage]);
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    const nav = navRef.current;
+    if (!home || !nav) return;
+    const update = () => home.style.setProperty("--aero-bottom-nav-height", `${nav.getBoundingClientRect().height}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [authPage, signedIn]);
   // Messages need room for two panes, so that page drops the news column.
-  const wide = pathname.startsWith("/messages");
+  const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
 
   const skip = (
     <a href="#main" className="skip-link">
@@ -359,7 +379,8 @@ export default function App() {
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
       data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
-      style={appearanceStyle({ ...appearance, backgroundUrl }, fontFamily, localWallpaper)}
+      data-custom-opacity={user?.appearance?.windowOpacity !== undefined || undefined}
+      style={appearanceStyle({ ...appearance, backgroundUrl, windowOpacity: user?.appearance?.windowOpacity }, fontFamily, localWallpaper)}
     >
       <div className="aero-fixed-frame" aria-hidden="true" />
       <div className="aero-window">
@@ -378,11 +399,13 @@ export default function App() {
         <div className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}>
           {user && <LeftNav />}
           <main id="main" tabIndex={-1} className="container">
+            {user && <ModerationNotices key={user.id} />}
             <AppRoutes onWallpaperPreview={setWallpaperPreview} onNotificationItems={remember} />
           </main>
           {!wide && <RightRail />}
         </div>
-        <BottomNav menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        {!wide && <BackToTop route={pathname} />}
         <MusicPlayer />
       </div>
     </div>

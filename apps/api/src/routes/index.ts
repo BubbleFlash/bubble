@@ -11,6 +11,7 @@ import {
   readNotificationsSchema,
   contactSchema,
   messagesQuerySchema,
+  editMessageSchema,
   linkPreviewSchema,
   musicUploadSignSchema,
   musicUploadCompleteSchema,
@@ -77,7 +78,8 @@ import * as uploads from "../controllers/uploadController.js";
 import * as wallpapers from "../controllers/wallpaperController.js";
 import * as users from "../controllers/userController.js";
 import * as relationships from "../controllers/relationshipController.js";
-import { requireActive, requireAdmin, requireAuth, requirePlus } from "../middleware/auth.js";
+import * as moderation from "../controllers/moderationController.js";
+import { requireActive, requireAdmin, requireAuth, requireModerator, requirePlus, requirePublishing } from "../middleware/auth.js";
 import {
   authLimiter,
   clientErrorLimiter,
@@ -114,11 +116,13 @@ const privateMusicResponse: RequestHandler = (_req, res, next) => {
  * rejected cheaply. Reads only need requireAuth. Admin routes check the role first.
  */
 const adminOnly = [requireAuth, requireActive, requireAdmin];
+const staff = [requireAuth, requireActive, requireModerator];
 
 // Health checks. /health only says the process is up; /health/ready also checks the database
 // and is the one for an uptime monitor. Neither reveals versions, paths or settings.
 router.get("/health", monitor.live);
 router.get("/health/ready", monitor.ready);
+router.get("/internal/session", asyncHandler(internal.verifySession));
 router.post("/link-preview", requireAuth, linkPreviewLimiter, validate(linkPreviewSchema), asyncHandler(async (req, res) => {
   res.set("Cache-Control", "private, no-store");
   res.json({ preview: await loadLinkPreview(req.body.url) });
@@ -358,6 +362,7 @@ router.post("/billing/portal", requireAuth, checkoutLimiter, asyncHandler(billin
 router.get("/insights", requireAuth, requirePlus, asyncHandler(insights.get));
 
 // Search
+router.get("/search/people", requireAuth, searchLimiter, validate(friendsQuerySchema, "query"), asyncHandler(search.people));
 router.get(
   "/search/users",
   requireAuth,
@@ -425,6 +430,7 @@ router.post(
   requireAuth,
   validate(createPostSchema),
   requireActive,
+  requirePublishing,
   asyncHandler(posts.createPost),
 );
 router.post(
@@ -432,12 +438,15 @@ router.post(
   requireAuth,
   validate(createRepostSchema),
   requireActive,
+  requirePublishing,
   asyncHandler(posts.createRepost),
 );
 router.get("/posts/:id", requireAuth, asyncHandler(posts.getPost));
-router.patch("/posts/:id", requireAuth, requireActive, validate(updateCommunityPostSchema), asyncHandler(posts.updatePost));
+router.patch("/posts/:id", requireAuth, requireActive, requirePublishing, validate(updateCommunityPostSchema), asyncHandler(posts.updatePost));
 router.delete("/posts/:id", requireAuth, requireActive, asyncHandler(posts.deletePost));
-router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.toggleLike));
+router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.setPostLike));
+router.put("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.setPostLike));
+router.delete("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.setPostLike));
 router.post("/posts/:id/view", requireAuth, viewLimiter, asyncHandler(posts.trackView));
 router.get("/posts/:id/comments", requireAuth, asyncHandler(posts.listComments));
 router.post(
@@ -445,8 +454,12 @@ router.post(
   requireAuth,
   validate(createCommentSchema),
   requireActive,
+  requirePublishing,
   asyncHandler(posts.addComment),
 );
+router.put("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
+router.delete("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
+router.post("/posts/:id/comments/:commentId/report", requireAuth, reportLimiter, validate(createReportSchema), requireActive, asyncHandler(reports.createCommentReport));
 router.post(
   "/posts/:id/report",
   requireAuth,
@@ -457,12 +470,26 @@ router.post(
 );
 
 // Admin / moderation
+router.get("/admin/comment-reports", ...adminOnly, validate(reportQuerySchema, "query"), asyncHandler(admin.listCommentReports));
+router.post("/admin/comment-reports/:id/dismiss", ...adminOnly, asyncHandler(admin.dismissCommentReport));
 router.get(
   "/admin/reports",
   ...adminOnly,
   validate(reportQuerySchema, "query"),
   asyncHandler(admin.listReports),
 );
+router.get("/moderation/notices", requireAuth, asyncHandler(moderation.ownNotices));
+router.get("/moderation/reports", ...staff, asyncHandler(moderation.listReports));
+router.post("/moderation/reports/:kind/:id", ...staff, asyncHandler(moderation.decideReport));
+router.get("/moderation/content", ...staff, asyncHandler(moderation.listContent));
+router.get("/moderation/content/:kind/:id/images/:index", ...staff, asyncHandler(moderation.contentImage));
+router.post("/moderation/content/:kind/:id", ...staff, asyncHandler(moderation.moderateContent));
+router.get("/moderation/users", ...staff, asyncHandler(moderation.listUsers));
+router.get("/moderation/users/:id", ...staff, asyncHandler(moderation.getUser));
+router.post("/moderation/users/:id/warnings/:warningId/lift", ...staff, asyncHandler(moderation.liftWarning));
+router.post("/moderation/users/:id/measures", ...staff, asyncHandler(moderation.applyMeasure));
+router.patch("/moderation/users/:id/role", ...adminOnly, asyncHandler(moderation.changeRole));
+router.get("/moderation/history", ...staff, asyncHandler(moderation.history));
 router.get("/admin/errors", ...adminOnly, asyncHandler(monitor.listErrors));
 router.post("/admin/errors/:id/resolve", ...adminOnly, asyncHandler(monitor.resolveError));
 router.post("/admin/reports/:id/dismiss", ...adminOnly, asyncHandler(admin.dismissReport));
@@ -533,6 +560,8 @@ router.get(
 );
 // After /messages/with/:username, so a user named "read" can still be messaged.
 router.post("/messages/:id/read", requireAuth, readLimiter, asyncHandler(messages.markRead));
+router.patch("/messages/:id/items/:messageId", requireAuth, requireActive, messageLimiter, validate(editMessageSchema), asyncHandler(messages.editMessage));
+router.delete("/messages/:id/items/:messageId", requireAuth, requireActive, messageLimiter, asyncHandler(messages.deleteMessage));
 router.post(
   "/messages/:id",
   requireAuth,

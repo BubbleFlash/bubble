@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { WallpaperDTO } from "@commune/shared";
 import AeroTitlebar from "./AeroTitlebar";
 import WallpaperReport from "./WallpaperReport";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 export default function WallpaperReportDialog({
   item,
@@ -13,6 +14,7 @@ export default function WallpaperReportDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const backdrop = useDialogBackdrop(onClose);
   useEffect(() => {
     const element = dialog.current!;
     element.showModal();
@@ -26,6 +28,7 @@ export default function WallpaperReportDialog({
   return (
     <dialog
       ref={dialog}
+      {...backdrop}
       className="wallpaper-workshop wallpaper-upload"
       aria-labelledby="favorite-report-title"
       onCancel={(event) => {

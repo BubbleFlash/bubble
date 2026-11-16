@@ -2,7 +2,9 @@ declare global {
   namespace Express {
     interface Request {
       userId?: string;
-      userRole?: "user" | "admin";
+      emailVerified?: boolean;
+      publishingRestriction?: { reason: string; until?: Date | null };
+      userRole?: import("@commune/shared").Role;
     }
   }
 }

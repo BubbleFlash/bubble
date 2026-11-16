@@ -17,9 +17,10 @@ const messageSchema = new Schema({
   repostAncestors: { type: [Schema.Types.ObjectId], default: undefined },
   clientMessageId: { type: String },
   createdAt: { type: Date, default: Date.now },
+  editedAt: { type: Date },
 });
 
-messageSchema.index({ conversation: 1, createdAt: -1 });
+messageSchema.index({ conversation: 1, createdAt: -1, _id: -1 });
 messageSchema.index({ imageIds: 1 });
 messageSchema.index({ repostAncestors: 1 });
 messageSchema.index({ "repost.post": 1 });

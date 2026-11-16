@@ -12,6 +12,8 @@ import { noStore, originGuard } from "./middleware/security.js";
 import { globalLimiter } from "./middleware/rateLimit.js";
 import { lemonSqueezyWebhook, rawBody } from "./controllers/paymentController.js";
 import { router } from "./routes/index.js";
+import { hasRealtimeSecret, verifySession } from "./controllers/internalController.js";
+import { uploadIsModerated } from "./services/uploadService.js";
 import { getObject } from "./services/storageService.js";
 import { Readable } from "node:stream";
 
@@ -50,6 +52,11 @@ export function createApp() {
     }),
   );
   app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After"] }));
+  app.get("/api/internal/session", asyncHandler(async (req, res, next) => {
+    if (!hasRealtimeSecret(req)) return next();
+    res.set("Cache-Control", "no-store");
+    await verifySession(req, res);
+  }));
   app.use(globalLimiter);
 
   // Uploaded images and fonts. File names are random, so they can be cached for a long time.
@@ -63,6 +70,11 @@ export function createApp() {
       if (!uploadUrlSchema.safeParse(`/uploads/${file}`).success &&
           !fontUploadUrlSchema.safeParse(`/uploads/${file}`).success) {
         res.status(404).json({ error: "Not found" });
+        return;
+      }
+
+      if (uploadUrlSchema.safeParse("/uploads/" + file).success && await uploadIsModerated("/uploads/" + file)) {
+        res.status(404).set("Cache-Control", "no-store").json({ error: "Not found" });
         return;
       }
 
@@ -100,7 +112,7 @@ export function createApp() {
         res.setHeader("Content-Length", String(object.ContentLength));
       }
 
-      res.setHeader("Cache-Control", "public, max-age=2592000, immutable");
+      res.setHeader("Cache-Control", "no-store");
 
       Readable.fromWeb(
         object.Body.transformToWebStream() as unknown as import("node:stream/web").ReadableStream,

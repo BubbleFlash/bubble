@@ -1,6 +1,7 @@
 import { displayNameOf } from "@commune/shared";
 import NavigationIcon from "./NavigationIcon";
 import ServerFundraiser from "./ServerFundraiser";
+import TelegramWidget from "./TelegramWidget";
 import { useEffect } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
@@ -13,6 +14,7 @@ import Icon, { type IconName } from "./Icon";
 import PlusBadge from "./PlusBadge";
 import SearchBox from "./SearchBox";
 import NotificationMenu from "./NotificationMenu";
+import ReportMenu from "./ReportMenu";
 import { navigationFor } from "../lib/navigation";
 
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
@@ -83,6 +85,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
         )}
 
         <div className="header-actions">
+          {(user?.role === "admin" || user?.role === "moderator") && <ReportMenu key={user.id} />}
           {user && <NotificationMenu key={user.id} count={count} onNavigateToItem={onNavigateToNotification} />}
           <nav className="header-right nav-desktop" aria-label="Основная навигация">
             {!user && navigationFor("guest", "header").map((entry) => <NavLink key={entry.id} to={entry.to("")} className={navClass}>{entry.label}</NavLink>)}
@@ -137,8 +140,11 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             <>
               <nav className="drawer-links" aria-label="Меню">
                 {navigationFor("member", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" && msgCount > 0 ? <span className="pill">{msgCount}</span> : entry.id === "notifications" && count > 0 ? <span className="pill">{countLabel}</span> : undefined, entry.end)}</span>)}
+                {user.role === "admin" && item("/admin", "shield", "Админка")}
+                {user.role === "moderator" && item("/moderation", "shield", "Модерация")}
               </nav>
               {open && <ServerFundraiser />}
+              {open && <TelegramWidget />}
               <button className="btn btn-outline block drawer-logout" onClick={confirmLogout}>
                 <Icon name="logout" size={18} />  Выйти
               </button>

@@ -196,7 +196,7 @@ describe("deleting posts in a community", () => {
   const postId = oid().toString();
 
   it("lets the community owner remove someone else's post", async () => {
-    vi.spyOn(Post, "findById").mockReturnValue(chain({ author: oid(), community: oid() }) as never);
+    vi.spyOn(Post, "findOne").mockReturnValue(chain({ author: oid(), community: oid() }) as never);
     vi.spyOn(Community, "findById").mockReturnValue(chain(community({ creator: new mongoose.Types.ObjectId(ME) })) as never);
     const res = await request(app).delete(`/api/posts/${postId}`).set(auth);
     expect(res.status).toBe(204);
@@ -205,7 +205,7 @@ describe("deleting posts in a community", () => {
 
   it("still refuses everyone else", async () => {
     vi.mocked(removePost).mockClear();
-    vi.spyOn(Post, "findById").mockReturnValue(chain({ author: oid(), community: oid() }) as never);
+    vi.spyOn(Post, "findOne").mockReturnValue(chain({ author: oid(), community: oid() }) as never);
     vi.spyOn(Community, "findById").mockReturnValue(chain(community()) as never);
     vi.spyOn(Membership, "findOne").mockReturnValue(chain({ _id: oid(), role: "owner" }) as never);
     const res = await request(app).delete(`/api/posts/${postId}`).set(auth);

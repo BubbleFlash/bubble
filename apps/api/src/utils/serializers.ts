@@ -1,3 +1,4 @@
+import { accountRestriction } from "../services/restrictions.js";
 import type { Types } from "mongoose";
 import { isPlusActive } from "./plan.js";
 import type {
@@ -27,7 +28,9 @@ interface UserLike {
   avatarUrl?: string | null;
   avatarFrame?: AvatarFrame | null;
   role?: string | null;
+  sessionVersion?: number | null;
   banned?: boolean | null;
+  accountRestriction?: { reason?: string | null; until?: Date | null } | null;
   emailVerified?: boolean | null;
   plusUntil?: Date | null;
   createdAt: Date;
@@ -43,6 +46,7 @@ export interface PopulatedAuthor {
 }
 
 export interface PopulatedPost {
+  moderationState?: string | null;
   _id: Types.ObjectId;
   content: string;
   imageUrl?: string | null;
@@ -63,6 +67,8 @@ export interface PopulatedPost {
 export interface PopulatedComment {
   _id: Types.ObjectId;
   post: Types.ObjectId;
+  parent?: Types.ObjectId;
+  mention?: { name?: string | null; username?: string | null } | null;
   content: string;
   author: PopulatedAuthor;
   createdAt: Date;
@@ -110,7 +116,7 @@ export function toPublicUser(u: UserLike): PublicUser {
     bio: u.bio ?? "",
     avatarUrl: u.avatarUrl ?? null,
     avatarFrame: u.avatarFrame ?? undefined,
-    role: u.role === "admin" ? "admin" : "user",
+    role: u.role === "admin" || u.role === "moderator" ? u.role : "user",
     plus: isPlusActive(u.plusUntil),
     emailVerified: Boolean(u.emailVerified),
     createdAt: u.createdAt.toISOString(),
@@ -118,7 +124,7 @@ export function toPublicUser(u: UserLike): PublicUser {
 }
 
 type UserWithAppearance = UserLike & {
-  appearance?: Partial<SiteAppearance> | null;
+  appearance?: (Omit<Partial<SiteAppearance>, "windowOpacity"> & { windowOpacity?: number | null }) | null;
   shareProfileAppearance?: boolean | null;
   profileAppearanceVisibility?: FriendsVisibility | null;
 };
@@ -128,12 +134,12 @@ function profileAppearanceVisibility(u: UserWithAppearance): FriendsVisibility {
 }
 
 export function toAccountUser(u: UserWithAppearance): AccountUser {
-  const { backgroundUrl, primaryColor, accentColor, font } = u.appearance ?? {};
+  const { backgroundUrl, primaryColor, accentColor, font, windowOpacity } = u.appearance ?? {};
   return {
     ...toPublicUser(u),
     profileAppearanceVisibility: profileAppearanceVisibility(u),
-    appearance: backgroundUrl !== undefined || primaryColor !== undefined || accentColor !== undefined || font !== undefined
-      ? { backgroundUrl, primaryColor, accentColor, font }
+    appearance: backgroundUrl !== undefined || primaryColor !== undefined || accentColor !== undefined || font !== undefined || windowOpacity != null
+      ? { backgroundUrl, primaryColor, accentColor, font, windowOpacity: windowOpacity ?? undefined }
       : undefined,
   };
 }
@@ -146,7 +152,8 @@ export function toProfileDTO(
 ): ProfileDTO {
   const { backgroundUrl, primaryColor, accentColor, font } = u.appearance ?? {};
   const visibility = profileAppearanceVisibility(u);
-  const shareAppearance = !u.banned &&
+  const blocked = Boolean(accountRestriction(u));
+  const shareAppearance = !blocked &&
     (visibility === "everyone" || (visibility === "friends" && followedByMe && followsMe));
   const profileAppearance = shareAppearance &&
     (backgroundUrl || primaryColor || accentColor || font)
@@ -154,7 +161,7 @@ export function toProfileDTO(
     : undefined;
   const publicUser = toPublicUser(u);
   if (!shareAppearance) delete publicUser.avatarFrame;
-  return { ...publicUser, ...counts, followedByMe, followsMe, banned: Boolean(u.banned), profileAppearance };
+  return { ...publicUser, ...counts, followedByMe, followsMe, banned: blocked, profileAppearance };
 }
 
 export function toPostDTO(p: PopulatedPost, likedByMe: boolean, musicAttachments: PostDTO["musicAttachments"] = [], online = false): PostDTO {
@@ -174,10 +181,15 @@ export function toPostDTO(p: PopulatedPost, likedByMe: boolean, musicAttachments
   };
 }
 
-export function toCommentDTO(c: PopulatedComment): CommentDTO {
+export function toCommentDTO(c: PopulatedComment, likeCount = 0, likedByMe = false, replyCount = 0): CommentDTO {
   return {
     id: c._id.toString(),
     postId: c.post.toString(),
+    parentId: c.parent?.toString() ?? null,
+    ...(c.mention?.name && c.mention.username ? { mention: { name: c.mention.name, username: c.mention.username } } : {}),
+    likeCount,
+    likedByMe,
+    replyCount,
     content: c.content,
     author: toAuthor(c.author),
     createdAt: c.createdAt.toISOString(),

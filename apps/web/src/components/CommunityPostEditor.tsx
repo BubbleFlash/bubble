@@ -1,44 +1,50 @@
 import { useRef, useState } from "react";
-import { FREE_POST_LENGTH, PLUS_POST_LENGTH, type MusicTrackDTO, type PostDTO } from "@commune/shared";
+import { COMMUNITY_POST_LENGTH, type MusicTrackDTO, type PostDTO } from "@commune/shared";
 import { useUpdateCommunityPost } from "../hooks/usePosts";
 import { useImageDraft } from "../hooks/useImageDraft";
 import { assetUrl } from "../lib/api";
-import { useAuth } from "../store/auth";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
+import EmojiInputButton from "./EmojiInputButton";
 
 export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; onClose: () => void }) {
-  const { user } = useAuth();
   const [content, setContent] = useState(post.content);
   const [images, setImages] = useState(post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
   const [music, setMusic] = useState(post.musicAttachments ?? []);
   const [newMusic, setNewMusic] = useState<MusicTrackDTO[]>([]);
   const [musicOpen, setMusicOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const imageDraft = useImageDraft();
   const [attachmentError, setAttachmentError] = useState("");
   const update = useUpdateCommunityPost(post.id);
-  const maxLength = user?.plus ? PLUS_POST_LENGTH : FREE_POST_LENGTH;
+  const maxLength = COMMUNITY_POST_LENGTH;
   const musicCount = music.length + newMusic.length;
   const imageCount = images.length + imageDraft.images.length;
   const valid = (content.trim() === post.content || content.trim().length <= maxLength)
     && Boolean(content.trim() || imageCount || musicCount || post.repost)
     && imageDraft.ready && !imageDraft.busy;
+  const contentChanged = content.trim() !== post.content;
+  const imagesChanged = images.length !== (post.imageUrls?.length || Number(Boolean(post.imageUrl))) || Boolean(imageDraft.images.length);
+  const musicChanged = music.length !== (post.musicAttachments?.length ?? 0) || Boolean(newMusic.length);
+  const changed = contentChanged || imagesChanged || musicChanged;
 
   return (
     <form className="community-post-editor" onSubmit={(event) => {
       event.preventDefault();
-      if (!valid || update.isPending) return;
+      if (!valid || !changed || update.isPending) return;
       const nextImages = [...images, ...imageDraft.images.map((image) => image.url!)];
       const nextTracks = [...music, ...newMusic].map(({ id }) => id);
       update.mutate({
-        content,
-        ...(images.length !== (post.imageUrls?.length || Number(Boolean(post.imageUrl))) || imageDraft.images.length ? { imageUrls: nextImages } : {}),
-        ...(music.length !== post.musicAttachments?.length || newMusic.length ? { musicTrackIds: nextTracks } : {}),
+        ...(contentChanged ? { content } : {}),
+        ...(imagesChanged ? { imageUrls: nextImages } : {}),
+        ...(musicChanged ? { musicTrackIds: nextTracks } : {}),
       }, { onSuccess: onClose });
     }}>
       <label>
         Текст записи
-        <textarea className="aero-input" rows={4} value={content} maxLength={Math.max(maxLength, post.content.length)} onChange={(event) => setContent(event.target.value)} disabled={update.isPending} />
+        <div className="emoji-input-field"><textarea ref={textRef} className="aero-input" rows={4} value={content} maxLength={Math.max(maxLength, post.content.length)} onChange={(event) => setContent(event.target.value)} disabled={update.isPending} />
+          <EmojiInputButton field={textRef} value={content} onChange={setContent} maxLength={Math.max(maxLength, post.content.length)} disabled={update.isPending} />
+        </div>
       </label>
       {content.trim() !== post.content && content.trim().length > maxLength && <p className="error">Текст должен содержать не более {maxLength} символов.</p>}
       {imageCount > 0 && <div className="image-draft">
@@ -94,7 +100,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
         <button className="aero-button" type="button" disabled={imageCount >= 10 || update.isPending} onClick={() => fileInput.current?.click()}>Добавить фото</button>
         <button className="aero-button" type="button" disabled={musicCount >= 10 || update.isPending} onClick={() => setMusicOpen(true)}>Добавить музыку</button>
         <button className="aero-button" type="button" disabled={update.isPending} onClick={onClose}>Отмена</button>
-        <button className="aero-button" disabled={!valid || update.isPending}>{update.isPending ? "Сохранение…" : "Сохранить запись"}</button>
+        <button className="aero-button" disabled={!valid || !changed || update.isPending}>{update.isPending ? "Сохранение…" : "Сохранить запись"}</button>
       </div>
     </form>
   );

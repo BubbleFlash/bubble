@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query";
 import type { MessageDTO, NotificationDTO } from "@commune/shared";
 import NotificationToasts from "../components/NotificationToasts";
-import type { ThreadPage } from "../hooks/useMessages";
+import { refreshMessageQueries, updateLatestThreadPage, type ThreadPage } from "../hooks/useMessages";
 import { realtimeEnabled, startRealtime, stopRealtime } from "../lib/realtime";
 import { hideNotificationToasts, notificationVersion } from "../lib/notifications";
 import { isViewingConversation, playSound } from "../lib/sound";
@@ -73,8 +73,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         // An older REST snapshot must never overwrite this event. This also covers
         // the first GET, when there is no conversation in the cache to append to yet.
         if (fetching) void qc.cancelQueries({ queryKey: key, exact: true });
-        qc.setQueryData<ThreadPage>(key, (old) => {
-          if (!old) return old;
+        updateLatestThreadPage(qc, message.conversationId, (old) => {
           const next = appendUnique(old, message);
           // A new message from me means the other person has not seen it yet.
           if (message.senderId === userId && old.conversation) {
@@ -91,18 +90,21 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         }
       },
       onRead: ({ conversationId }) => {
-        qc.setQueryData<ThreadPage>(["thread", conversationId], (old) =>
-          old?.conversation
+        updateLatestThreadPage(qc, conversationId, (old) =>
+          old.conversation
             ? { ...old, conversation: { ...old.conversation, seenByOther: true } }
             : old,
         );
         void qc.invalidateQueries({ queryKey: ["conversations"] });
       },
+      onMessageChanged: ({ conversationId }) => {
+        void refreshMessageQueries(qc, conversationId);
+      },
       onNotification: (event) => {
         if (event?.notification) {
           const item = event.notification;
           const visible = document.visibilityState === "visible";
-          if (event.sound !== false) playSound("notification");
+          if (event.sound !== false) playSound(item.type);
           const version = notificationVersion(item);
           if (visible && !hideToasts.matches && !toastTimers.has(version)) {
             setToasts((current) => [...current, { userId, item }]);

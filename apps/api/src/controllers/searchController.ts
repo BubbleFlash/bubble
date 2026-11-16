@@ -1,3 +1,5 @@
+import { usableAccountFilter } from "../services/restrictions.js";
+import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import type { Page, PostDTO, UserSummaryDTO } from "@commune/shared";
 import { SEARCH_PAGE_SIZE } from "@commune/shared";
@@ -8,6 +10,7 @@ import { escapeRegex } from "../utils/regex.js";
 import type { PopulatedPost } from "../utils/serializers.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, readablePostFilter } from "../services/postAccess.js";
 import { presentPosts } from "./postController.js";
+import { badRequest } from "../utils/errors.js";
 
 interface SearchQuery {
   q: string;
@@ -31,7 +34,7 @@ export async function users(_req: Request, res: Response) {
   const prefix = { $regex: `^${escapeRegex(q)}`, $options: "i" };
   const rows = await User.find({
     $or: [{ displayName: prefix }, { username: prefix }],
-    banned: { $ne: true },
+    ...usableAccountFilter(),
   })
     .sort({ username: 1 })
     .skip((page - 1) * SEARCH_PAGE_SIZE)
@@ -51,6 +54,27 @@ export async function users(_req: Request, res: Response) {
       plus: isPlusActive(u.plusUntil),
     })),
     nextCursor,
+  };
+  res.json(body);
+}
+
+/** Browse all available profiles, with an optional name prefix and stable cursor. */
+export async function people(_req: Request, res: Response) {
+  const { q, cursor, limit } = res.locals.query as { q: string; cursor?: string; limit: number };
+  if (cursor && !mongoose.isObjectIdOrHexString(cursor)) throw badRequest("Invalid cursor");
+  const prefix = { $regex: `^${escapeRegex(q)}`, $options: "i" };
+  const rows = await User.find({
+    ...usableAccountFilter(),
+    ...(q ? { $or: [{ displayName: prefix }, { username: prefix }] } : {}),
+    ...(cursor ? { _id: { $lt: new mongoose.Types.ObjectId(cursor) } } : {}),
+  }).sort({ _id: -1 }).limit(limit + 1)
+    .select("username displayName bio avatarUrl avatarFrame plusUntil").lean();
+  const items = rows.slice(0, limit);
+  const body: Page<UserSummaryDTO> = {
+    items: items.map((u) => ({ id: u._id.toString(), username: u.username,
+      displayName: u.displayName ?? undefined, bio: u.bio ?? "", avatarUrl: u.avatarUrl ?? null,
+      avatarFrame: u.avatarFrame ?? undefined, plus: isPlusActive(u.plusUntil) })),
+    nextCursor: rows.length > limit ? String(items[items.length - 1]!._id) : null,
   };
   res.json(body);
 }

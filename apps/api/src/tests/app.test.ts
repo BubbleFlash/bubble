@@ -53,7 +53,7 @@ describe("unknown routes", () => {
 describe("tokens", () => {
   it("round-trips an access token", () => {
     const token = signAccessToken("user-123");
-    expect(verifyAccessToken(token)).toBe("user-123");
+    expect(verifyAccessToken(token)).toEqual({ userId: "user-123", version: 0 });
   });
 
   it("hashes refresh tokens deterministically", () => {

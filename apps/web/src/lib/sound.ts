@@ -1,32 +1,30 @@
 import { useSyncExternalStore } from "react";
+import type { NotificationType } from "@commune/shared";
+import singleSound from "../assets/sounds/single.mp3";
+import doubleSound from "../assets/sounds/double.mp3";
+import tripleSound from "../assets/sounds/triple.mp3";
 
 /**
- * Commune's notification sounds.
- *
- * Two short, soft glass-bell chimes (about 20 KB each): one for a new message, one for a like,
- * comment or follower. They are played with the Web Audio API so they start instantly.
+ * Notification sounds share the same device-local volume and mute setting.
  *
  * Browsers only allow sound after the person has touched the page once, so the audio engine wakes up
  * on the first tap or key press. Until then a chime is skipped silently (never an error).
  */
-export type SoundKind = "message" | "notification";
+export type SoundKind = "message" | NotificationType;
 
 interface SoundPrefs {
   enabled: boolean;
+  messageEnabled: boolean;
   /** 0 to 1 */
   volume: number;
 }
 
 const STORAGE_KEY = "commune.sound";
-const FILES: Record<SoundKind, string> = {
-  message: "/sounds/message.mp3",
-  notification: "/sounds/notification.mp3",
-};
 /** A burst of messages should sound like one chime, not a machine gun. */
 const MIN_GAP_MS = 900;
 
 // ---- Preferences (kept on this device only) ----
-const DEFAULTS: SoundPrefs = { enabled: true, volume: 0.7 };
+const DEFAULTS: SoundPrefs = { enabled: true, messageEnabled: true, volume: 0.7 };
 
 function load(): SoundPrefs {
   try {
@@ -34,9 +32,11 @@ function load(): SoundPrefs {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<SoundPrefs>;
     return {
-      enabled: typeof parsed.enabled === "boolean" ? parsed.enabled : DEFAULTS.enabled,
+      // The old master mute is represented by zero volume in the new interface.
+      enabled: true,
+      messageEnabled: typeof parsed.messageEnabled === "boolean" ? parsed.messageEnabled : true,
       volume:
-        typeof parsed.volume === "number" && Number.isFinite(parsed.volume)
+        parsed.enabled === false ? 0 : typeof parsed.volume === "number" && Number.isFinite(parsed.volume)
           ? Math.min(1, Math.max(0, parsed.volume))
           : DEFAULTS.volume,
     };
@@ -78,32 +78,30 @@ const Ctor: AudioContextCtor | undefined =
       (window as unknown as { webkitAudioContext?: AudioContextCtor }).webkitAudioContext);
 
 let ctx: AudioContext | null = null;
-const buffers = new Map<SoundKind, AudioBuffer>();
-const loading = new Map<SoundKind, Promise<AudioBuffer | null>>();
-let lastPlayed = 0;
+const soundUrls: Record<SoundKind, string> = {
+  message: doubleSound,
+  follow: tripleSound,
+  like: singleSound,
+  comment: singleSound,
+  repost: singleSound,
+};
+const buffers = new Map<string, Promise<AudioBuffer>>();
+let lastPlayed = -Infinity;
+let previewId = 0;
 
-function load1(kind: SoundKind): Promise<AudioBuffer | null> {
-  const existing = loading.get(kind);
-  if (existing) return existing;
-  const p = (async () => {
-    if (!ctx) return null;
-    try {
-      const res = await fetch(FILES[kind]);
-      if (!res.ok) return null;
-      const data = await res.arrayBuffer();
-      // The callback form works on older Safari as well.
-      const buf = await new Promise<AudioBuffer>((resolve, reject) =>
-        ctx!.decodeAudioData(data, resolve, reject),
-      );
-      buffers.set(kind, buf);
-      return buf;
-    } catch {
-      loading.delete(kind); // try again next time
-      return null;
-    }
-  })();
-  loading.set(kind, p);
-  return p;
+function loadBuffer(context: AudioContext, url: string): Promise<AudioBuffer> {
+  let pending = buffers.get(url);
+  if (!pending) {
+    pending = fetch(url).then((response) => {
+      if (!response.ok) throw new Error("Sound could not be loaded");
+      return response.arrayBuffer();
+    }).then((bytes) => context.decodeAudioData(bytes)).catch((error: unknown) => {
+      buffers.delete(url);
+      throw error;
+    });
+    buffers.set(url, pending);
+  }
+  return pending;
 }
 
 /** Wakes the audio engine. Must run from a tap, click or key press. Safe to call many times. */
@@ -111,9 +109,8 @@ export function unlockAudio() {
   if (!Ctor) return;
   try {
     if (!ctx) ctx = new Ctor();
-    if (ctx.state === "suspended") void ctx.resume();
-    void load1("message");
-    void load1("notification");
+    if (ctx.state !== "running") void ctx.resume().catch(() => undefined);
+    for (const url of new Set(Object.values(soundUrls))) void loadBuffer(ctx, url).catch(() => undefined);
   } catch {
     // No audio device: stay silent.
   }
@@ -138,28 +135,24 @@ export function armSoundUnlock() {
  * or the browser has not allowed sound yet). `force` is for the preview buttons.
  */
 export function playSound(kind: SoundKind, opts: { force?: boolean } = {}): boolean {
-  if (!ctx || ctx.state !== "running") return false;
-  if (!opts.force && !prefs.enabled) return false;
+  if (!ctx) return false;
+  if ((!opts.force && (!prefs.enabled || (kind === "message" && !prefs.messageEnabled))) || prefs.volume <= 0) return false;
   const now = performance.now();
   if (!opts.force && now - lastPlayed < MIN_GAP_MS) return false;
-
-  const buffer = buffers.get(kind);
-  if (!buffer) {
-    void load1(kind); // ready for next time
-    return false;
-  }
-  lastPlayed = now;
-  try {
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    const gain = ctx.createGain();
-    gain.gain.value = prefs.volume * prefs.volume; // squared so the slider feels even to the ear
-    source.connect(gain).connect(ctx.destination);
-    source.start();
-    return true;
-  } catch {
-    return false;
-  }
+  const context = ctx;
+  const currentPreview = opts.force ? ++previewId : 0;
+  if (!opts.force) lastPlayed = now;
+  void Promise.all([loadBuffer(context, soundUrls[kind]), context.state === "running" ? Promise.resolve() : context.resume()])
+    .then(([buffer]) => {
+      if ((!opts.force && (!prefs.enabled || (kind === "message" && !prefs.messageEnabled))) || prefs.volume <= 0 || (opts.force && currentPreview !== previewId)) return;
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      const gain = context.createGain();
+      gain.gain.value = prefs.volume * prefs.volume;
+      source.connect(gain).connect(context.destination);
+      source.start();
+    }).catch(() => undefined);
+  return true;
 }
 
 /** True when the person is already looking at this conversation, so a chime would just be noise. */

@@ -10,6 +10,7 @@ import AeroTitlebar from "./AeroTitlebar";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
 import ProfileAction, { ProfileActionIcon } from "./ProfileAction";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 type Section = "permissions" | "members" | "managers";
 type MemberRole = Exclude<CommunityRole, "owner">;
@@ -38,6 +39,7 @@ const PERMISSION_FIELDS = [
 
 function MemberDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const backdrop = useDialogBackdrop(onClose);
   const titleId = useId();
   useEffect(() => {
     const element = dialog.current;
@@ -49,7 +51,7 @@ function MemberDialog({ title, onClose, children }: { title: string; onClose: ()
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
     };
   }, []);
-  return <dialog ref={dialog} className="aero-dialog community-member-dialog" aria-labelledby={titleId} onCancel={(event) => {
+  return <dialog ref={dialog} {...backdrop} className="aero-dialog community-member-dialog" aria-labelledby={titleId} onCancel={(event) => {
     event.preventDefault();
     event.stopPropagation();
     onClose();
@@ -294,6 +296,7 @@ export default function CommunityManagement({ community, onClose, onEditAppearan
 }) {
   const [section, setSection] = useState<Section>("permissions");
   const dialog = useRef<HTMLDialogElement>(null);
+  const backdrop = useDialogBackdrop(onClose);
   const id = useId();
   useEffect(() => {
     const element = dialog.current;
@@ -305,7 +308,7 @@ export default function CommunityManagement({ community, onClose, onEditAppearan
     };
   }, []);
   return (
-    <dialog ref={dialog} className="aero-dialog community-management" aria-labelledby={id} onCancel={(event) => {
+    <dialog ref={dialog} {...backdrop} className="aero-dialog community-management" aria-labelledby={id} onCancel={(event) => {
       event.preventDefault();
       onClose();
     }}>

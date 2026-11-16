@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import AeroTitlebar from "./AeroTitlebar";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 export default function UnsavedAppearanceDialog({
   busy,
@@ -18,6 +19,7 @@ export default function UnsavedAppearanceDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const stay = useRef<HTMLButtonElement>(null);
+  const backdrop = useDialogBackdrop(() => { if (!busy) onStay(); });
   useEffect(() => {
     const element = dialog.current!;
     const trigger = document.activeElement;
@@ -32,6 +34,7 @@ export default function UnsavedAppearanceDialog({
   return (
     <dialog
       ref={dialog}
+      {...backdrop}
       className="wallpaper-workshop wallpaper-upload"
       aria-labelledby="unsaved-appearance-title"
       onCancel={(event) => {

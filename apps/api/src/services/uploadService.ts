@@ -76,6 +76,7 @@ export async function confirmDirectUpload(
  */
 export async function deleteUploadIfUnused(
   url: string | null | undefined,
+  throwOnError = false,
 ): Promise<void> {
   if (!url || !uploadUrlSchema.safeParse(url).success) return;
 
@@ -92,5 +93,23 @@ export async function deleteUploadIfUnused(
     await deleteObject(`${STORAGE_PREFIX}/${path.basename(url)}`);
   } catch (err) {
     logger.warn({ err, url }, "Failed to delete upload");
+    if (throwOnError) throw err;
   }
+}
+
+/** Unlisted files stay readable for uploads in progress. A moderated-only attachment is withheld. */
+export async function uploadIsModerated(url: string): Promise<boolean> {
+  const reference = { $or: [{ imageUrl: url }, { imageUrls: url }] };
+  const [moderatedPost, moderatedWallpaper] = await Promise.all([
+    Post.exists({ $or: [{ ...reference, moderationState: { $in: ["hidden", "removed"] } }, { deletionPendingImages: url }] }),
+    Wallpaper.exists({ $or: [{ imageUrl: url, moderationState: { $in: ["hidden", "removed"] } }, { deletionPendingImages: url }] }),
+  ]);
+  if (!moderatedPost && !moderatedWallpaper) return false;
+  const shared = await Promise.all([
+    Post.exists({ ...reference, moderationState: { $nin: ["hidden", "removed"] }, priceCents: null, visibility: { $nin: ["private", "friends"] } }),
+    User.exists(moderatedWallpaper ? { avatarUrl: url } : { $or: [{ avatarUrl: url }, { "appearance.backgroundUrl": url }] }),
+    Wallpaper.exists({ imageUrl: url, moderationState: { $nin: ["hidden", "removed", "withdrawn"] } }),
+    Community.exists({ avatarUrl: url }),
+  ]);
+  return !shared.some(Boolean);
 }

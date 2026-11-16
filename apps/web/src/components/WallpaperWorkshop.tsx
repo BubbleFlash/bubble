@@ -9,6 +9,7 @@ import AeroTitlebar from "./AeroTitlebar";
 import WallpaperPagination from "./WallpaperPagination";
 import WallpaperReport from "./WallpaperReport";
 import WallpaperTile from "./WallpaperTile";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 type WorkshopView = Exclude<WallpaperView, "favorites">;
 
@@ -32,6 +33,9 @@ export default function WallpaperWorkshop({
   const [published, setPublished] = useState(false);
   const uploadTrigger = useRef<HTMLButtonElement>(null);
   const [reportTarget, setReportTarget] = useState<WallpaperDTO>();
+  const backdrop = useDialogBackdrop(() => {
+    if (!uploadOpen) onClose();
+  });
   const reportTriggerId = useRef<string>();
   const query = useWallpapers(userId, view, searchQuery);
   const queryClient = useQueryClient();
@@ -80,6 +84,7 @@ export default function WallpaperWorkshop({
     <>
       <dialog
         ref={dialog}
+        {...backdrop}
         className="wallpaper-workshop"
         aria-labelledby="workshop-title"
         onCancel={(event) => {

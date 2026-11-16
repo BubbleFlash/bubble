@@ -1,3 +1,4 @@
+import { usableAccountFilter } from "../services/restrictions.js";
 import type { Request, Response } from "express";
 import { Types, type PipelineStage } from "mongoose";
 import {
@@ -11,6 +12,7 @@ import type { z } from "zod";
 import { Follow } from "../models/Follow.js";
 import { User } from "../models/User.js";
 import { Wallpaper, WallpaperReaction, WallpaperReport } from "../models/Wallpaper.js";
+import { visibleContent } from "../models/moderationFields.js";
 import { deleteUploadIfUnused } from "../services/uploadService.js";
 import { badRequest, conflict, notFound } from "../utils/errors.js";
 import { escapeRegex } from "../utils/regex.js";
@@ -36,7 +38,7 @@ async function mutualFriends(viewer: Types.ObjectId) {
         localField: "following",
         foreignField: "_id",
         pipeline: [
-          { $match: { banned: { $ne: true } } },
+          { $match: { ...usableAccountFilter() } },
           { $project: { "appearance.backgroundUrl": 1 } },
         ],
         as: "friend",
@@ -54,6 +56,7 @@ export async function list(req: Request, res: Response) {
   const pageSize = view === "favorites" ? 8 : 15;
   const pipeline: PipelineStage[] = [];
   if (q) pipeline.push({ $match: { name: { $regex: escapeRegex(q), $options: "i" } } });
+  pipeline.push({ $match: visibleContent });
 
   const usedImages = new Set<string>();
   if (view === "friends") {
@@ -74,7 +77,7 @@ export async function list(req: Request, res: Response) {
         from: User.collection.name,
         localField: "author",
         foreignField: "_id",
-        pipeline: [{ $match: { banned: { $ne: true } } }, { $project: { username: 1, displayName: 1 } }],
+        pipeline: [{ $match: { ...usableAccountFilter() } }, { $project: { username: 1, displayName: 1 } }],
         as: "owner",
       },
     },
@@ -165,8 +168,9 @@ export async function publish(req: Request, res: Response) {
 }
 
 async function availableWallpaper(req: Request) {
-  const wallpaper = await Wallpaper.findById(idParam(req, "id")).select("author").lean();
-  if (!wallpaper || !(await User.exists({ _id: wallpaper.author, banned: { $ne: true } }))) {
+  const wallpaper = await Wallpaper.findById(idParam(req, "id")).select("author moderationState").lean();
+  if (!wallpaper || visibleContent.moderationState.$nin.includes(wallpaper.moderationState ?? "") ||
+      !(await User.exists({ _id: wallpaper.author, ...usableAccountFilter() }))) {
     throw notFound("Wallpaper not found");
   }
   return wallpaper;

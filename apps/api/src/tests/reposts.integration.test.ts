@@ -4,6 +4,8 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { Comment } from "../models/Comment.js";
+import { CommentLike } from "../models/CommentLike.js";
+import { CommentReport } from "../models/CommentReport.js";
 import { Community } from "../models/Community.js";
 import { Like } from "../models/Like.js";
 import { Follow } from "../models/Follow.js";
@@ -35,16 +37,22 @@ integration("reposts on isolated MongoDB", () => {
   };
   const repost = (person: Person, post: string, fields = {}, comment?: string) =>
     api.post("/api/posts/reposts").set(auth(person)).send({ source: { post, comment }, ...fields });
-  const like = (person: Person, id: string) => api.post(`/api/posts/${id}/like`).set(auth(person));
+  const like = (person: Person, id: string) => api.put(`/api/posts/${id}/like`).set(auth(person));
+  const unlike = (person: Person, id: string) => api.delete(`/api/posts/${id}/like`).set(auth(person));
   const remove = (person: Person, id: string) => api.delete(`/api/posts/${id}`).set(auth(person));
   let ownsDatabase = false;
 
   beforeAll(async () => {
-    await mongoose.connect(`mongodb://127.0.0.1:${port}/${dbName}`, { serverSelectionTimeoutMS: 3000 });
+    await mongoose.connect(`mongodb://127.0.0.1:${port}/${dbName}`, {
+      serverSelectionTimeoutMS: 3000,
+      socketTimeoutMS: 5000,
+      autoCreate: false,
+      autoIndex: false,
+    });
     if ((await mongoose.connection.db!.listCollections().toArray()).length)
       throw new Error("Expected a new test database");
     ownsDatabase = true;
-    await Promise.all([Post.init(), Like.init()]);
+    await Promise.all([Post.createIndexes(), Like.createIndexes(), CommentLike.createIndexes(), CommentReport.createIndexes()]);
     const docs = await User.create(users.map((username) => ({
       username, email: `${username}@example.invalid`, passwordHash: "test",
     })));
@@ -59,7 +67,7 @@ integration("reposts on isolated MongoDB", () => {
     await mongoose.disconnect();
   });
 
-  it("shares independently, propagates counts, and deduplicates all likes at the original", async () => {
+  it("keeps repost likes independent while liking the original when a repost is liked", async () => {
     const original = await newPost("alice", "Корневая запись", { imageUrls: ["/uploads/0123456789abcdef0123456789abcdef.webp"] });
     const first = await repost("boris", original, { content: "Подпись Бориса" });
     expect(first.status, JSON.stringify(first.body)).toBe(201);
@@ -78,15 +86,23 @@ integration("reposts on isolated MongoDB", () => {
     expect((await get("vera", `/posts/${middle}`)).body.repostCount).toBe(1);
     expect((await get("vera", `/posts/${original}`)).body.repostCount).toBe(3);
 
+    expect((await like("vera", original)).status).toBe(200);
+    expect((await get("vera", `/posts/${middle}`)).body).toMatchObject({ likeCount: 0, likedByMe: false });
+    expect((await unlike("vera", original)).status).toBe(200);
     const likes = await Promise.all([
       like("vera", original), like("vera", middle), like("vera", end), like("alice", end),
     ]);
     expect(likes.every((res) => res.status === 200)).toBe(true);
     expect((await get("vera", `/posts/${original}`)).body).toMatchObject({ likeCount: 2, likedByMe: true });
+    expect((await get("vera", `/posts/${middle}`)).body).toMatchObject({ likePostId: original, likeCount: 1, likedByMe: true });
+    expect(await Like.countDocuments({ post: original })).toBe(2);
+    expect(await Like.countDocuments({ post: { $in: [middle, end] } })).toBe(3);
+    expect((await unlike("vera", original)).status).toBe(200);
+    expect((await get("vera", `/posts/${original}`)).body).toMatchObject({ likeCount: 1, likedByMe: false });
     expect((await get("vera", `/posts/${middle}`)).body).toMatchObject({ likeCount: 1, likedByMe: true });
-    await like("vera", original);
-    expect((await get("vera", `/posts/${original}`)).body).toMatchObject({ likeCount: 2, likedByMe: false });
-    await like("vera", end);
+    expect((await get("vera", `/posts/${end}`)).body).toMatchObject({ likeCount: 2, likedByMe: true });
+    expect((await unlike("vera", end)).status).toBe(200);
+    expect((await get("vera", `/posts/${original}`)).body).toMatchObject({ likeCount: 1, likedByMe: false });
     expect((await get("vera", `/posts/${end}`)).body).toMatchObject({ likeCount: 1, likedByMe: false });
     const comments = await api.post(`/api/posts/${middle}/comments`).set(auth("vera")).send({ content: "Ответ репосту" });
     expect(comments.status).toBe(201);
@@ -364,5 +380,86 @@ integration("reposts on isolated MongoDB", () => {
     expect(result.body).toMatchObject({ name: "Новое имя", description: "Описание" });
     const id = await newPost("boris", "Запись группы", { community: "editgroup" });
     expect((await get("vera", `/posts/${id}`)).body.community).toMatchObject({ name: "Новое имя", creatorId: String(ids.get("alice")) });
+  });
+
+  it("persists replies and deduplicates comment likes by viewer", async () => {
+    const post = await newPost("alice", "Обсуждение");
+    const unrelated = await newPost("alice", "Другая запись");
+    const add = (postId: string, person: Person, body: object) =>
+      api.post(`/api/posts/${postId}/comments`).set(auth(person)).send(body);
+    const parent = await add(post, "alice", { content: "Комментарий" });
+    const reply = await add(post, "boris", { content: "Ответ", parentId: parent.body.id });
+    expect(reply.status).toBe(201);
+    expect(reply.body.parentId).toBe(parent.body.id);
+    const mentioned = await add(post, "boris", { content: "alice, привет", parentId: parent.body.id, mention: "alice" });
+    expect(mentioned.body.mention).toEqual({ name: "alice", username: "alice" });
+    const withoutMention = await add(post, "boris", { content: "Привет без обращения", parentId: parent.body.id });
+    expect(withoutMention.body.parentId).toBe(parent.body.id);
+    expect(withoutMention.body.mention).toBeUndefined();
+    expect((await add(unrelated, "boris", { content: "Другой пост", parentId: parent.body.id })).status).toBe(404);
+    const url = `/api/posts/${post}/comments/${reply.body.id}/like`;
+    const reactions = await Promise.all([api.put(url).set(auth("vera")), api.put(url).set(auth("vera"))]);
+    expect(reactions.map((result) => result.status)).toEqual([204, 204]);
+    expect((await get("vera", `/posts/${post}/comments`)).body).toMatchObject([
+      { id: parent.body.id, replyCount: 3 },
+      { id: reply.body.id, likeCount: 1, likedByMe: true },
+      { id: mentioned.body.id, mention: { name: "alice", username: "alice" } },
+      { id: withoutMention.body.id, parentId: parent.body.id },
+    ]);
+    expect((await get("boris", `/posts/${post}/comments`)).body[1]).toMatchObject({ likeCount: 1, likedByMe: false });
+    expect((await api.delete(url).set(auth("vera"))).status).toBe(204);
+    expect((await get("vera", `/posts/${post}/comments`)).body[1]).toMatchObject({ likeCount: 0, likedByMe: false });
+  });
+
+  it("accepts one report per comment and rejects self reports and unrelated posts", async () => {
+    const post = await newPost("alice", "Обсуждение для жалобы");
+    const other = await newPost("alice", "Другая запись");
+    const comment = await api.post(`/api/posts/${post}/comments`).set(auth("boris")).send({ content: "Комментарий" });
+    const url = (id: string) => `/api/posts/${id}/comments/${comment.body.id}/report`;
+    expect((await api.post(url(post)).set(auth("boris")).send({ reason: "spam" })).status).toBe(400);
+    expect((await api.post(url(other)).set(auth("vera")).send({ reason: "spam" })).status).toBe(404);
+    expect((await api.post(url(post)).set(auth("vera")).send({ reason: "spam" })).status).toBe(201);
+    expect((await api.post(url(post)).set(auth("vera")).send({ reason: "spam" })).status).toBe(409);
+    expect(await CommentReport.countDocuments({ comment: comment.body.id })).toBe(1);
+  });
+
+  it("updates both conversation previews after authorized edits and deletion", async () => {
+    const opened = await api.post("/api/messages/with/boris").set(auth("alice")).send({ text: "Первое сообщение" });
+    expect(opened.status).toBe(201);
+    const { conversationId } = opened.body;
+    const thread = `/messages/${conversationId}`;
+    const sent = await api.post(`/api${thread}`).set(auth("alice")).send({ text: "Следующее сообщение" });
+    const item = `/api${thread}/items/${sent.body.id}`;
+    expect((await api.patch(item).set(auth("boris")).send({ text: "Чужая правка" })).status).toBe(404);
+    expect((await api.delete(item).set(auth("vera"))).status).toBe(404);
+    expect((await api.patch(item).set(auth("alice")).send({ text: "Правка автора" })).status).toBe(204);
+    for (const person of ["alice", "boris"] as const) {
+      const { body } = await get(person, thread);
+      expect(body.items.at(-1)).toMatchObject({ text: "Правка автора", editedAt: expect.any(String) });
+      expect((await get(person, "/messages")).body).toEqual(expect.arrayContaining([expect.objectContaining({
+        id: conversationId, lastMessage: expect.objectContaining({ text: "Правка автора" }),
+      })]));
+    }
+    expect((await api.delete(item).set(auth("alice"))).status).toBe(204);
+    const { body } = await get("boris", thread);
+    expect(body.items.some((message: { id: string }) => message.id === sent.body.id)).toBe(false);
+    expect((await get("boris", "/messages")).body).toEqual(expect.arrayContaining([expect.objectContaining({
+      id: conversationId, lastMessage: expect.objectContaining({ text: "Первое сообщение" }),
+    })]));
+  });
+
+  it("applies community limits to create and edit without changing the personal limit", async () => {
+    const community = "limitscheck";
+    await Community.create({ name: "Лимит публикаций", slug: community, creator: ids.get("alice") });
+    const id = await newPost("alice", "Старая запись", { community });
+    for (const length of [999, 1000, 1001]) {
+      const content = "a".repeat(length);
+      const create = await api.post("/api/posts").set(auth("alice")).send({ content, community });
+      const edit = await api.patch(`/api/posts/${id}`).set(auth("alice")).send({ content });
+      expect(create.status).toBe(length > 1000 ? 400 : 201);
+      expect(edit.status).toBe(length > 1000 ? 400 : 200);
+    }
+    await newPost("alice", "a".repeat(500));
+    expect((await api.post("/api/posts").set(auth("alice")).send({ content: "a".repeat(501) })).status).toBe(403);
   });
 });

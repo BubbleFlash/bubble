@@ -3,14 +3,15 @@ import type { ServerFundraiserDTO } from "@commune/shared";
 import { api } from "../lib/api";
 
 const formatAmount = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+const FRESH_MS = 15 * 60 * 1000;
 
 export default function ServerFundraiser() {
   const goal = useQuery({
     queryKey: ["server-fundraiser"],
     queryFn: () => api<ServerFundraiserDTO>("/server-fundraiser"),
-    refetchInterval: 15 * 1000,
+    refetchInterval: (query) => query.state.status === "error" ? 60 * 1000 : FRESH_MS,
     refetchOnWindowFocus: true,
-    staleTime: 15 * 1000,
+    staleTime: FRESH_MS,
   });
   const percentage = goal.data ? Math.min(100, Math.max(0, goal.data.current / goal.data.target * 100)) : 0;
 

@@ -12,7 +12,7 @@
  *
  * Bump VERSION to force every client to drop its old caches.
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `commune-static-${VERSION}`;
 const SHELL_CACHE = `commune-shell-${VERSION}`;
 const KNOWN_CACHES = [STATIC_CACHE, SHELL_CACHE];

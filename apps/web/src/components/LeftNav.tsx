@@ -4,7 +4,7 @@ import { useAuth } from "../store/auth";
 import { useUnreadCount } from "../hooks/useSocial";
 import { useUnreadMessages } from "../hooks/useMessages";
 import Brand from "./BrandMark";
-import { navigationFor } from "../lib/navigation";
+import { adminNavigation, inStaffArea, navigationFor } from "../lib/navigation";
 import type { IconName } from "./Icon";
 import NavigationIcon from "./NavigationIcon";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ export default function LeftNav() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const location = useLocation();
+  const inAdmin = inStaffArea(user?.role, location.pathname);
   const notifications = useUnreadCount(Boolean(user));
   const messages = useUnreadMessages(Boolean(user));
   if (!user) return null;
@@ -49,7 +50,11 @@ export default function LeftNav() {
         <Brand size={34} />
       </Link>
       <nav>
-        {navigationFor("member", "desktop").map((item) => <span key={item.id}>{link(item.to(user.username), item.icon, item.label, item.id === "messages" ? m : item.id === "notifications" ? n : 0, item.end)}</span>)}
+        {inAdmin ? adminNavigation.filter((item) => item.id !== "errors" || user.role === "admin").map((item) => <span key={item.id}>{link(item.to, item.icon, item.label, 0, true)}</span>) : <>
+          {navigationFor("member", "desktop").map((item) => <span key={item.id}>{link(item.to(user.username), item.icon, item.label, item.id === "messages" ? m : item.id === "notifications" ? n : 0, item.end)}</span>)}
+          {user.role === "admin" && link("/admin", "shield", "Админка")}
+          {user.role === "moderator" && link("/moderation", "shield", "Модерация")}
+        </>}
       </nav>
     </aside>
   );
