@@ -8,7 +8,7 @@ import { log } from "./log.js";
 import { Membership } from "./membership.js";
 
 /** Events the API is allowed to push to users. Anything else is refused. */
-const PUSHABLE_EVENTS = new Set(["message:new", "message:read", "notification:new"]);
+const PUSHABLE_EVENTS = new Set(["message:new", "message:read", "message:changed", "notification:new"]);
 
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
 const MAX_ACTIVE_LOOKUP = 50;

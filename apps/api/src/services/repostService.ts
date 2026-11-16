@@ -1,8 +1,7 @@
-import type { Types } from "mongoose";
+import { Types } from "mongoose";
 import type { RepostPreviewDTO, RepostSource } from "@commune/shared";
 import { visibleContent } from "../models/moderationFields.js";
 import { Comment } from "../models/Comment.js";
-import { Like } from "../models/Like.js";
 import { Post } from "../models/Post.js";
 import { Message } from "../models/Message.js";
 import { notFound } from "../utils/errors.js";
@@ -129,26 +128,6 @@ export async function repostCounts(ids: Types.ObjectId[]) {
 }
 
 /** The root includes direct likes and each distinct account that liked any surviving descendant. */
-export async function combinedLikeCounts(rootIds: Types.ObjectId[]) {
-  if (!rootIds.length) return new Map<string, number>();
-  const rows = await Post.aggregate<{ _id: Types.ObjectId; count: number }>([
-    { $match: { ...visibleContent, $or: [{ _id: { $in: rootIds } }, { repostAncestors: { $in: rootIds } }] } },
-    { $project: { root: { $ifNull: [{ $arrayElemAt: ["$repostAncestors", 0] }, "$_id"] } } },
-    { $match: { root: { $in: rootIds } } },
-    {
-      $lookup: {
-        from: Like.collection.name,
-        localField: "_id",
-        foreignField: "post",
-        pipeline: [{ $project: { _id: 0, user: 1 } }],
-        as: "likes",
-      },
-    },
-    { $unwind: "$likes" },
-    { $group: { _id: { root: "$root", user: "$likes.user" } } },
-    { $group: { _id: "$_id.root", count: { $sum: 1 } } },
-  ]).allowDiskUse(true);
-  const counts = new Map(rootIds.map((id) => [String(id), 0]));
-  for (const row of rows) counts.set(String(row._id), row.count);
-  return counts;
+export function reactionSource(post: Pick<PopulatedPost, "_id" | "repostAncestors" | "repost">) {
+  return post.repost ? post.repostAncestors?.[0] ?? post.repost.post : post._id;
 }

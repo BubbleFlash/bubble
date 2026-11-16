@@ -1,10 +1,26 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import type { ConversationDTO, MessageDTO, MessagePage, MusicTrackDTO } from "@commune/shared";
 import { api } from "../lib/api";
 import { isRealtimeConnected } from "../lib/realtime";
 import { useAuth } from "../store/auth";
 
 export type ThreadPage = MessagePage & { conversation?: ConversationDTO };
+type CachedThread = InfiniteData<ThreadPage>;
+
+export function updateLatestThreadPage(qc: QueryClient, id: string, update: (page: ThreadPage) => ThreadPage) {
+  qc.setQueryData<CachedThread>(["thread", id], (old) => {
+    const latest = old?.pages[0];
+    return latest ? { ...old, pages: [update(latest), ...old.pages.slice(1)] } : old;
+  });
+}
+
+export function refreshMessageQueries(qc: QueryClient, id: string) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: ["thread", id], exact: true }),
+    qc.invalidateQueries({ queryKey: ["conversations"] }),
+    qc.invalidateQueries({ queryKey: ["unread-messages"] }),
+  ]);
+}
 
 export function useConversations(enabled = true) {
   return useQuery({
@@ -31,12 +47,15 @@ export function useUnreadMessages(enabled: boolean) {
 /** Only the open conversation needs the shorter fallback interval. */
 export function useThread(id: string | undefined) {
   const qc = useQueryClient();
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["thread", id],
     enabled: Boolean(id),
     refetchOnWindowFocus: true,
-    queryFn: async ({ signal }) => {
-      const page = await api<ThreadPage>(`/messages/${id}`, { signal });
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page: ThreadPage) => page.nextCursor ?? undefined,
+    queryFn: async ({ pageParam, signal }): Promise<ThreadPage> => {
+      const query = pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : "";
+      const page = await api<ThreadPage>(`/messages/${id}${query}`, { signal });
       // Opening a thread marks it read on the server, so refresh the badges when it mattered.
       if ((page.conversation?.unread ?? 0) > 0) {
         void qc.invalidateQueries({ queryKey: ["unread-messages"] });
@@ -48,10 +67,6 @@ export function useThread(id: string | undefined) {
     refetchIntervalInBackground: false,
     staleTime: 0,
   });
-}
-
-export function loadOlder(id: string, cursor: string) {
-  return api<MessagePage>(`/messages/${id}?cursor=${encodeURIComponent(cursor)}`);
 }
 
 /** Ids of messages that are still being sent start with this. */
@@ -88,34 +103,40 @@ export function useSendMessage(id: string) {
         musicAttachments: draft.tracks.map(({ id, title, artist, duration }) => ({ id, title, artist, duration, unavailable: false })),
         createdAt: new Date().toISOString(),
       };
-      qc.setQueryData<ThreadPage>(key, (old) =>
-        old
-          ? {
+      updateLatestThreadPage(qc, id, (old) => ({
               ...old,
               items: [...old.items, temp],
               conversation: old.conversation && { ...old.conversation, seenByOther: false },
-            }
-          : old,
-      );
+      }));
       return { tempId };
     },
     onSuccess: (saved, _text, ctx) => {
-      qc.setQueryData<ThreadPage>(key, (old) => {
-        if (!old) return old;
+      updateLatestThreadPage(qc, id, (old) => {
         // The live event may already have delivered the saved message; then just drop the temp one.
         const already = old.items.some((m) => m.id === saved.id);
         const items = already
           ? old.items.filter((m) => m.id !== ctx?.tempId)
-          : old.items.map((m) => (m.id === ctx?.tempId ? saved : m));
+          : old.items.some((m) => m.id === ctx?.tempId)
+            ? old.items.map((m) => (m.id === ctx?.tempId ? saved : m))
+            : [...old.items, saved];
         return { ...old, items };
       });
       void qc.invalidateQueries({ queryKey: ["conversations"] });
     },
     onError: (_err, _text, ctx) => {
-      qc.setQueryData<ThreadPage>(key, (old) =>
-        old ? { ...old, items: old.items.filter((m) => m.id !== ctx?.tempId) } : old,
-      );
+      updateLatestThreadPage(qc, id, (old) => ({ ...old, items: old.items.filter((m) => m.id !== ctx?.tempId) }));
     },
+  });
+}
+
+export function useChangeMessage(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { messageId: string; text?: string }) =>
+      api<void>(`/messages/${id}/items/${input.messageId}`, input.text === undefined
+        ? { method: "DELETE" }
+        : { method: "PATCH", body: { text: input.text } }),
+    onSuccess: () => refreshMessageQueries(qc, id),
   });
 }
 

@@ -30,7 +30,7 @@ export default function RepostButton({ source, count }: { source: RepostSource; 
         title={count === undefined ? label : "Поделиться записью"}
         onClick={() => { setSuccess(""); setOpen(true); }}
       >
-        <Icon name="repost" size={19} />
+        <Icon name="repost" size={count === undefined ? 15 : 19} />
         {count !== undefined && <span>{count}</span>}
       </button>
       {success && <span className="repost-success" role="status">{success}</span>}

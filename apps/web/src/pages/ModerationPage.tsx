@@ -11,6 +11,7 @@ import ImageGallery from "../components/ImageGallery";
 import MusicAttachments from "../components/MusicAttachments";
 import Icon, { type IconName } from "../components/Icon";
 import AeroTitlebar from "../components/AeroTitlebar";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 type Kind = "post" | "comment" | "wallpaper";
 type State = "published" | "hidden" | "removed" | "withdrawn";
@@ -103,16 +104,28 @@ const entities: Record<string, string> = {
   wallpaperReport: "Жалоба на фон",
 };
 
+const reasonOptions = {
+  violation: ["Спам", "Оскорбления или травля", "Разжигание ненависти", "Насилие или угрозы", "Нарушение правил сообщества"],
+  restore: ["Пересмотр решения", "Ошибка модерации", "Нарушение устранено"],
+  dismiss: ["Жалоба необоснованна", "Нарушение не обнаружено", "Недостаточно данных"],
+  resolve: ["Приняты меры", "Нарушение устранено", "Обращение рассмотрено"],
+  appoint: ["Назначение в команду модерации", "Расширение команды модерации", "Испытательный срок"],
+  removeRole: ["По просьбе модератора", "Изменение состава команды", "Невыполнение обязанностей", "Нарушение правил модерации"],
+} as const;
+type ReasonKind = keyof typeof reasonOptions;
+
 function ActionForm({
   label,
   onAction,
   timed = false,
   icon,
+  reasonKind,
 }: {
   label: string;
   onAction: (reason: string, minutes?: number) => Promise<void>;
   timed?: boolean;
   icon?: IconName;
+  reasonKind: ReasonKind;
 }) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
@@ -126,6 +139,7 @@ function ActionForm({
       onAction(reason, minutes),
     onSuccess: () => setOpen(false),
   });
+  const backdrop = useDialogBackdrop(() => { if (!mutation.isPending) setOpen(false); });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
@@ -143,6 +157,7 @@ function ActionForm({
         title={icon ? label : undefined}
         onClick={() => {
           mutation.reset();
+          setSelectedReason("");
           setOpen(true);
         }}
       >
@@ -151,6 +166,7 @@ function ActionForm({
       {open && (
         <dialog
           ref={dialog}
+          {...backdrop}
           className="aero-dialog moderation-dialog"
           aria-labelledby={titleId}
           onCancel={(event) => {
@@ -177,13 +193,7 @@ function ActionForm({
                 onChange={(event) => setSelectedReason(event.target.value)}
               >
                 <option value="">Выберите причину</option>
-                <option value="Спам">Спам</option>
-                <option value="Оскорбления или травля">Оскорбления или травля</option>
-                <option value="Разжигание ненависти">Разжигание ненависти</option>
-                <option value="Насилие или угрозы">Насилие или угрозы</option>
-                <option value="Нарушение правил сообщества">Нарушение правил сообщества</option>
-                <option value="Жалоба необоснованна">Жалоба необоснованна</option>
-                <option value="Пересмотр решения">Пересмотр решения</option>
+                {reasonOptions[reasonKind].map((reason) => <option key={reason} value={reason}>{reason}</option>)}
                 <option value="other">Другая причина</option>
               </select>
             </label>
@@ -256,6 +266,7 @@ function UserActions({
         <ActionForm
           key={action}
           label={measures[action]}
+          reasonKind={action === "liftPublishing" || action === "liftAccount" ? "restore" : "violation"}
           timed={action === "publishing" || action === "temporary"}
           onAction={(reason, minutes) =>
             send("/moderation/users/" + target._id + "/measures", { action, reason, minutes })
@@ -265,6 +276,7 @@ function UserActions({
       {admin && (
         <ActionForm
           label={target.role === "moderator" ? "Снять роль модератора" : "Назначить модератором"}
+          reasonKind={target.role === "moderator" ? "removeRole" : "appoint"}
           onAction={(reason) =>
             send(
               "/moderation/users/" + target._id + "/role",
@@ -527,6 +539,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                   {contentState === "published" && (
                     <ActionForm
                       label="Скрыть"
+                      reasonKind="violation"
                       icon="eye"
                       onAction={(reason) =>
                         send(path, { state: "hidden", reason, reportId: report._id })
@@ -536,6 +549,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                   {(contentState !== "removed" || !report.target?.purgedAt || report.target?.deletionPending) && (
                     <ActionForm
                       label="Удалить"
+                      reasonKind="violation"
                       icon="trash"
                       onAction={(reason) =>
                         send(path, { state: "removed", reason, reportId: report._id })
@@ -545,6 +559,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                   {contentState === "hidden" && (
                     <ActionForm
                       label="Восстановить"
+                      reasonKind="restore"
                       icon="back"
                       onAction={(reason) =>
                         send(path, { state: "published", reason, reportId: report._id })
@@ -557,6 +572,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                 <>
                   <ActionForm
                     label="Отклонить"
+                    reasonKind="dismiss"
                     icon="close"
                     onAction={(reason) =>
                       send("/moderation/reports/" + reportKind + "/" + report._id, {
@@ -567,6 +583,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                   />
                   <ActionForm
                     label="Закрыть как решённую"
+                    reasonKind="resolve"
                     icon="check"
                     onAction={(reason) =>
                       send("/moderation/reports/" + reportKind + "/" + report._id, {
@@ -750,18 +767,21 @@ function Content({ send }: { send: Send }) {
               {state === "published" && (
                 <ActionForm
                   label="Скрыть"
+                  reasonKind="violation"
                   onAction={(reason) => send(path, { state: "hidden", reason })}
                 />
               )}
               {(state === "published" || state === "hidden" || (state === "removed" && (!item.purgedAt || item.deletionPending))) && (
                 <ActionForm
                   label="Удалить"
+                  reasonKind="violation"
                   onAction={(reason) => send(path, { state: "removed", reason })}
                 />
               )}
               {state === "hidden" && (
                 <ActionForm
                   label="Восстановить"
+                  reasonKind="restore"
                   onAction={(reason) => send(path, { state: "published", reason })}
                 />
               )}
@@ -892,7 +912,7 @@ export default function ModerationPage() {
                     <p><strong>Предупреждение</strong> · {warning.reason} · {new Date(warning.time).toLocaleString("ru-RU")}</p>
                     {user.id !== detail.data!._id && detail.data!.role !== "admin" &&
                       (user.role === "admin" || detail.data!.role !== "moderator") && (
-                      <ActionForm label="Снять предупреждение"
+                      <ActionForm label="Снять предупреждение" reasonKind="restore"
                         onAction={(reason) => send("/moderation/users/" + detail.data!._id + "/warnings/" + warning._id + "/lift", { reason })} />
                     )}
                   </div>

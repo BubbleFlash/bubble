@@ -46,15 +46,39 @@ export default function MusicAttachmentPicker({
       event.preventDefault();
       onCloseRef.current();
     };
+    let outsidePointer: number | undefined;
+    const outside = (event: PointerEvent) => {
+      const element = dialog.current;
+      return element && event.target instanceof Node && !element.contains(event.target)
+        && !(event.target instanceof Element && event.target.closest(".music-player"))
+        && !document.querySelector("dialog:modal");
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      outsidePointer = event.isPrimary && event.button === 0 && outside(event) ? event.pointerId : undefined;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const dismiss = outsidePointer === event.pointerId && outside(event);
+      outsidePointer = undefined;
+      if (dismiss) onCloseRef.current();
+    };
+    const onPointerCancel = () => { outsidePointer = undefined; };
     document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onPointerCancel);
     return () => {
       document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
     };
   }, []);
   const tracks = query.data?.pages.flatMap((page) => page.tracks) ?? [];
   const portalTarget = document.querySelector(".aero-home .aero-window");
   if (!portalTarget) return null;
   return createPortal(
+    <>
+    <div className="music-attachment-picker__backdrop" aria-hidden="true" />
     <dialog
       ref={dialog}
       open
@@ -124,6 +148,7 @@ export default function MusicAttachmentPicker({
           Готово
         </button>
       </div>
-    </dialog>, portalTarget,
+    </dialog>
+    </>, portalTarget,
   );
 }

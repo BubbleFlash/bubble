@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateReportInput,
+  CommentReportDTO,
   Page,
   ReportDTO,
   ReportStatus,
@@ -12,6 +13,30 @@ export function useReportPost(postId: string) {
   return useMutation({
     mutationFn: (input: CreateReportInput) =>
       api<{ ok: true }>(`/posts/${postId}/report`, { method: "POST", body: input }),
+  });
+}
+
+export function useReportComment(postId: string, commentId: string) {
+  return useMutation({
+    mutationFn: (input: CreateReportInput) =>
+      api<{ ok: true }>(`/posts/${postId}/comments/${commentId}/report`, { method: "POST", body: input }),
+  });
+}
+
+export function useAdminCommentReports(status: ReportStatus) {
+  return useInfiniteQuery({
+    queryKey: ["admin-comment-reports", status],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => api<Page<CommentReportDTO>>(withQuery("/admin/comment-reports", { status, cursor: pageParam })),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useDismissCommentReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/admin/comment-reports/${id}/dismiss`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-comment-reports"] }),
   });
 }
 

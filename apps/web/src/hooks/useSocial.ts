@@ -119,6 +119,18 @@ export function useFriendRequests(type: "incoming" | "outgoing", q: string, enab
   });
 }
 
+export function usePeople(q: string, enabled: boolean) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ["people", user?.id, q],
+    enabled: Boolean(user && enabled),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => api<Page<UserSummaryDTO>>(withQuery("/search/people", { q, cursor: pageParam })),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    retry: false,
+  });
+}
+
 export function useRelationshipCounts(enabled: boolean) {
   const { user } = useAuth();
   return useQuery({

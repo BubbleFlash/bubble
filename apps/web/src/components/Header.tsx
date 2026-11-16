@@ -1,6 +1,7 @@
 import { displayNameOf } from "@commune/shared";
 import NavigationIcon from "./NavigationIcon";
 import ServerFundraiser from "./ServerFundraiser";
+import TelegramWidget from "./TelegramWidget";
 import { useEffect } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
@@ -143,6 +144,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
                 {user.role === "moderator" && item("/moderation", "shield", "Модерация")}
               </nav>
               {open && <ServerFundraiser />}
+              {open && <TelegramWidget />}
               <button className="btn btn-outline block drawer-logout" onClick={confirmLogout}>
                 <Icon name="logout" size={18} />  Выйти
               </button>

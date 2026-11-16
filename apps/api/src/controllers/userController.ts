@@ -107,6 +107,7 @@ export async function updateAppearance(req: Request, res: Response) {
   if (appearance?.backgroundUrl !== undefined) update["appearance.backgroundUrl"] = appearance.backgroundUrl;
   if (appearance?.primaryColor !== undefined) update["appearance.primaryColor"] = appearance.primaryColor;
   if (appearance?.accentColor !== undefined) update["appearance.accentColor"] = appearance.accentColor;
+  if (appearance?.windowOpacity !== undefined) update["appearance.windowOpacity"] = appearance.windowOpacity;
   if (appearance?.font !== undefined) {
     if (fontUploadUrlSchema.safeParse(appearance.font).success &&
         !appearance.font?.startsWith(`/uploads/${req.userId}-`)) {

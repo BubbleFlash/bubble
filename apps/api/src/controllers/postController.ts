@@ -1,10 +1,11 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
-import { FREE_POST_LENGTH } from "@commune/shared";
-import type { CreateRepostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
+import { COMMENTS_PAGE_SIZE, FREE_POST_LENGTH } from "@commune/shared";
+import type { CreateCommentInput, CreateRepostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { changeContent } from "../services/moderationService.js";
 import { visibleContent } from "../models/moderationFields.js";
 import { Comment } from "../models/Comment.js";
+import { CommentLike } from "../models/CommentLike.js";
 import { Follow } from "../models/Follow.js";
 import { Community } from "../models/Community.js";
 import { Like } from "../models/Like.js";
@@ -19,7 +20,7 @@ import { PostView } from "../models/PostView.js";
 import { User } from "../models/User.js";
 import { loadPostMusic, validateMusicTrackIds } from "../services/postMusic.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, loadPost, loadReadablePostAuthor, readablePostFilter } from "../services/postAccess.js";
-import { combinedLikeCounts, presentReposts, repostCounts, validateRepostSource } from "../services/repostService.js";
+import { presentReposts, reactionSource, repostCounts, validateRepostSource } from "../services/repostService.js";
 import { isPlusActive } from "../utils/plan.js";
 import { badRequest, conflict, forbidden, notFound } from "../utils/errors.js";
 import {
@@ -48,7 +49,11 @@ export async function presentPosts(userId: string | undefined, posts: PopulatedP
   const ids = posts.map((post) => post._id);
   const communityIds = new Map(posts.flatMap((post) => post.community?._id && !post.community.creator?.equals(userId)
     ? [[String(post.community._id), post.community._id] as const] : []));
-  const [liked, online, counts, previews, music, memberships] = await Promise.all([
+  const shareTargets = [...new Map(posts.filter((post) => post.repost).map((post) => {
+    const target = reactionSource(post);
+    return [String(target), target] as const;
+  })).values()];
+  const [liked, online, counts, previews, music, memberships, readableTargets] = await Promise.all([
     userId ? likedSet(userId, ids) : new Set<string>(),
     onlineUsers(posts.map((post) => post.author._id.toString())),
     repostCounts(ids),
@@ -57,16 +62,23 @@ export async function presentPosts(userId: string | undefined, posts: PopulatedP
     userId && communityIds.size
       ? Membership.find({ user: userId, community: { $in: [...communityIds.values()] } }).select("community").lean()
       : [],
+    shareTargets.length ? readablePostFilter(userId).then(async (filter) => {
+      const rows = await Post.find({ ...filter, _id: { $in: shareTargets } }).select("_id").lean();
+      return rows.map((row) => row._id);
+    }) : [],
   ]);
   const membershipIds = new Map(memberships.map((row) => [String(row.community), row._id]));
-  const combined = await combinedLikeCounts(posts.filter((post) => !post.repost && counts.has(String(post._id))).map((post) => post._id));
+  const readable = new Set(readableTargets.map(String));
   return posts.map((p, index) => {
     const key = p._id.toString();
+    const root = String(reactionSource(p));
+    const accessible = !p.repost || readable.has(root);
     const role = p.community && userId ? communityRole(p.community, userId, membershipIds.get(String(p.community._id))) : null;
     const canManage = p.community && canManageCommunityPost(p.community, role, p.author._id.equals(userId));
     return {
-      ...toPostDTO(p, liked.has(key), music.get(key), online.has(p.author._id.toString())),
-      likeCount: combined.get(key) ?? p.likeCount,
+      ...toPostDTO(p, accessible && liked.has(key), music.get(key), online.has(p.author._id.toString())),
+      likeCount: accessible ? p.likeCount : 0,
+      ...(p.repost ? { likePostId: accessible ? root : null } : {}),
       repostCount: counts.get(key) ?? 0,
       repost: previews[index],
       ...(userId && p.community ? { communityActions: { edit: Boolean(canManage), delete: Boolean(canManage) } } : {}),
@@ -143,7 +155,7 @@ async function postingCommunity(userId: string, slug?: string | null) {
 }
 
 export async function createPost(req: Request, res: Response) {
-  await requirePostLength(req.userId!, req.body.content);
+  if (!req.body.community) await requirePostLength(req.userId!, req.body.content);
   const communityId = await postingCommunity(req.userId!, req.body.community);
   const musicTrackIds: string[] = req.body.musicTrackIds ?? [];
   await validateMusicTrackIds(musicTrackIds);
@@ -173,7 +185,7 @@ export async function createPost(req: Request, res: Response) {
 export async function createRepost(req: Request, res: Response) {
   const userId = req.userId!;
   const { source, content, community } = req.body as CreateRepostInput;
-  await requirePostLength(userId, content);
+  if (!community) await requirePostLength(userId, content);
   const [original, communityId] = await Promise.all([
     validateRepostSource(source, userId),
     postingCommunity(userId, community),
@@ -229,10 +241,9 @@ export async function updatePost(req: Request, res: Response) {
   const { content, imageUrls, musicTrackIds } = req.body as UpdateCommunityPostInput;
   const images = imageUrls ?? (post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
   const music = musicTrackIds ?? post.musicTrackIds ?? [];
-  if (!content && !images.length && !music.length && !post.repost) {
+  if (!(content ?? post.content) && !images.length && !music.length && !post.repost) {
     throw badRequest("Write something or attach a file");
   }
-  if (content !== post.content) await requirePostLength(userId, content);
   if (musicTrackIds) {
     const existing = new Set(post.musicTrackIds?.map(String));
     await validateMusicTrackIds(musicTrackIds.filter((trackId) => !existing.has(trackId)));
@@ -240,7 +251,7 @@ export async function updatePost(req: Request, res: Response) {
   const previous = await Post.findOneAndUpdate(
     { _id: id, community: post.community._id, updatedAt: post.updatedAt ?? { $exists: false } },
     { $set: {
-      content,
+      ...(content === undefined ? {} : { content }),
       ...(imageUrls ? { imageUrls, imageUrl: imageUrls[0] ?? null } : {}),
       ...(musicTrackIds ? { musicTrackIds } : {}),
     } },
@@ -256,54 +267,100 @@ export async function updatePost(req: Request, res: Response) {
   res.json(dto);
 }
 
-/** Toggles the current user's like. The unique index makes this safe under concurrent clicks. */
-export async function toggleLike(req: Request, res: Response) {
-  const id = param(req, "id");
-  const author = await loadReadablePostAuthor(id, req.userId!);
-
-  const removed = await Like.findOneAndDelete({ post: id, user: req.userId });
-  if (removed) {
-    await Post.updateOne({ _id: id }, { $inc: { likeCount: -1 } });
-  } else {
+/** Each post has its own reaction; liking a repost also likes the original. */
+export async function setPostLike(req: Request, res: Response) {
+  const user = req.userId!;
+  const requested = await loadPost(param(req, "id"), user);
+  const root = reactionSource(requested);
+  const originalAuthor = requested.repost ? await loadReadablePostAuthor(String(root), user) : requested.author._id;
+  const addLike = async (post: mongoose.Types.ObjectId, author: mongoose.Types.ObjectId) => {
+    const direct = { post, user };
     try {
-      await Like.create({ post: id, user: req.userId });
-      await Post.updateOne({ _id: id }, { $inc: { likeCount: 1 } });
-      await notify({ user: author, actor: req.userId!, type: "like", post: id });
+      const result = await Like.updateOne(direct, { $setOnInsert: direct }, { upsert: true });
+      if (result.upsertedCount) {
+        await Post.updateOne({ _id: post }, { $inc: { likeCount: 1 } });
+        await notify({ user: author, actor: user, type: "like", post: String(post) });
+      }
     } catch (err) {
       // A concurrent request already created the like; treat as success.
       if ((err as { code?: number }).code !== 11000) throw err;
     }
+  };
+  const direct = { post: requested._id, user };
+  if (req.method === "DELETE") {
+    const result = await Like.deleteOne(direct);
+    if (result.deletedCount) await Post.updateOne({ _id: requested._id }, { $inc: { likeCount: -1 } });
+  } else if (req.method === "PUT") {
+    await addLike(requested._id, requested.author._id);
+    if (requested.repost) await addLike(root, originalAuthor);
+  } else if (await Like.exists(direct)) {
+    const result = await Like.deleteOne(direct);
+    if (result.deletedCount) await Post.updateOne({ _id: requested._id }, { $inc: { likeCount: -1 } });
+  } else {
+    await addLike(requested._id, requested.author._id);
+    if (requested.repost) await addLike(root, originalAuthor);
   }
 
-  const post = await loadPost(id, req.userId!);
-  const [dto] = await presentPosts(req.userId, [post]);
+  const post = await loadPost(String(requested._id), user);
+  const [dto] = await presentPosts(user, [post]);
   res.json(dto);
 }
 
 export async function listComments(req: Request, res: Response) {
   const id = param(req, "id");
   await loadReadablePostAuthor(id, req.userId!);
-  const comments = (await Comment.find({ post: id, ...visibleContent })
-    .sort({ _id: 1 })
-    .limit(200)
+  const { before } = req.query;
+  if (before !== undefined && (typeof before !== "string" || !mongoose.isObjectIdOrHexString(before))) {
+    throw badRequest("Invalid comment cursor");
+  }
+  const comments = (await Comment.find({ post: id, ...visibleContent, ...(before ? { _id: { $lt: before } } : {}) })
+    .sort({ _id: -1 })
+    .limit(COMMENTS_PAGE_SIZE)
     .populate("author", AUTHOR_FIELDS)
     .lean()) as unknown as PopulatedComment[];
   const focus = req.query.comment;
-  if (typeof focus === "string" && mongoose.isObjectIdOrHexString(focus) &&
+  if (!before && typeof focus === "string" && mongoose.isObjectIdOrHexString(focus) &&
       !comments.some((comment) => String(comment._id) === focus)) {
     const linkedComment = (await Comment.findOne({ _id: focus, post: id, ...visibleContent })
       .populate("author", AUTHOR_FIELDS)
       .lean()) as unknown as PopulatedComment | null;
     if (linkedComment) comments.push(linkedComment);
   }
-  res.json(comments.map(toCommentDTO));
+  const ids = comments.map(({ _id }) => _id);
+  const viewer = new mongoose.Types.ObjectId(req.userId!);
+  const [likes, replies] = ids.length ? await Promise.all([
+    CommentLike.aggregate<{ _id: mongoose.Types.ObjectId; count: number; mine: number }>([
+      { $match: { comment: { $in: ids } } },
+      { $group: { _id: "$comment", count: { $sum: 1 }, mine: { $max: { $cond: [{ $eq: ["$user", viewer] }, 1, 0] } } } },
+    ]),
+    Comment.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
+      { $match: { post: new mongoose.Types.ObjectId(id), parent: { $in: ids } } },
+      { $group: { _id: "$parent", count: { $sum: 1 } } },
+    ]),
+  ]) : [[], []];
+  const likesById = new Map(likes.map((like) => [String(like._id), like]));
+  const repliesById = new Map(replies.map((reply) => [String(reply._id), reply.count]));
+  comments.sort((a, b) => String(a._id).localeCompare(String(b._id)));
+  res.json(comments.map((comment) => {
+    const key = String(comment._id);
+    const like = likesById.get(key);
+    return toCommentDTO(comment, like?.count, Boolean(like?.mine), repliesById.get(key));
+  }));
 }
 
 export async function addComment(req: Request, res: Response) {
   const id = param(req, "id");
   const author = await loadReadablePostAuthor(id, req.userId!);
 
-  const created = await Comment.create({ post: id, author: req.userId, content: req.body.content });
+  const { content, parentId, mention } = req.body as CreateCommentInput;
+  const parent = parentId ? await Comment.findOne({ _id: parentId, post: id, ...visibleContent }).select("author").lean() : null;
+  if (parentId && !parent) throw notFound("Comment not found");
+  let recipient: { name: string; username: string } | undefined;
+  if (mention && parent && content.startsWith(`${mention},`)) {
+    const user = await User.findById(parent.author).select("username displayName").lean();
+    if (user && mention === (user.displayName || user.username)) recipient = { name: mention, username: user.username };
+  }
+  const created = await Comment.create({ post: id, author: req.userId, content, parent: parentId, mention: recipient });
   await Post.updateOne({ _id: id }, { $inc: { commentCount: 1 } });
   await notify({ user: author, actor: req.userId!, type: "comment", post: id });
 
@@ -311,6 +368,26 @@ export async function addComment(req: Request, res: Response) {
     .populate("author", AUTHOR_FIELDS)
     .lean()) as unknown as PopulatedComment;
   res.status(201).json(toCommentDTO(comment));
+}
+
+export async function setCommentLike(req: Request, res: Response) {
+  const post = param(req, "id");
+  const comment = param(req, "commentId");
+  await loadReadablePostAuthor(post, req.userId!);
+  if (!await Comment.exists({ _id: comment, post, ...visibleContent })) throw notFound("Comment not found");
+  const filter = { post, comment, user: req.userId! };
+  if (req.method === "DELETE") {
+    await CommentLike.deleteOne(filter);
+  } else {
+    try {
+      await CommentLike.updateOne(filter, { $setOnInsert: filter }, { upsert: true });
+    } catch (err) {
+      if ((err as { code?: number }).code !== 11000) throw err;
+    }
+    // A post deletion racing with the upsert must not leave an orphan reaction.
+    if (!await Comment.exists({ _id: comment, post })) await CommentLike.deleteOne(filter);
+  }
+  res.status(204).end();
 }
 
 /**

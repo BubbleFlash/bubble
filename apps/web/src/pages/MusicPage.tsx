@@ -6,6 +6,7 @@ import type { MusicTrackDTO, MusicUploadTicket } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 import MusicTrackList from "../components/MusicTrackList";
 import { useAuth } from "../store/auth";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 type MusicScope = "all" | "mine";
 
 const MUSIC_TABS = [
@@ -190,6 +191,7 @@ export default function MusicPage() {
     resetUploadForm();
     uploadMutation.reset();
   }
+  const uploadBackdrop = useDialogBackdrop(closeUploadDialog);
 
   function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -278,6 +280,7 @@ export default function MusicPage() {
 
       <dialog
         ref={dialogRef}
+        {...uploadBackdrop}
         className="music-page__upload-dialog"
         aria-labelledby="music-upload-title"
         onCancel={(event) => {

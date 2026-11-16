@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <title>Offline · Commune</title>
+    <title>Нет подключения · Bubble</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
       :root {
@@ -22,8 +22,9 @@
         }
       }
       body {
+        box-sizing: border-box;
         margin: 0;
-        min-height: 100vh;
+        min-height: 100dvh;
         display: grid;
         place-items: center;
         padding: 24px;
@@ -48,6 +49,8 @@
         color: var(--muted);
         margin: 0 0 20px;
       }
+      a { color: var(--accent); }
+      button + p { margin-top: 16px; }
       button {
         padding: 10px 20px;
         border: 0;
@@ -63,9 +66,10 @@
   <body>
     <main>
       <img src="/favicon.svg" alt="" />
-      <h1>You're offline</h1>
-      <p>Commune needs a connection to load your feed. Check your network and try again.</p>
-      <button onclick="location.reload()">Try again</button>
+      <h1>Нет подключения</h1>
+      <p>Подключитесь к интернету и обновите страницу.</p>
+      <button onclick="location.reload()">Повторить</button>
+      <p><a href="https://t.me/+4NVWfxlDRps4ODhi" target="_blank" rel="noopener noreferrer">Bubble в Telegram</a></p>
     </main>
   </body>
 </html>

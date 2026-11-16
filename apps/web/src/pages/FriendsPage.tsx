@@ -12,15 +12,17 @@ import {
   useFriendsAccess,
   useToggleFollow,
   useRelationshipCounts,
+  usePeople,
 } from "../hooks/useSocial";
 import { useAuth } from "../store/auth";
 import { ApiError } from "../lib/api";
 
-type Tab = "friends" | "outgoing" | "incoming";
+type Tab = "friends" | "outgoing" | "incoming" | "people";
 const tabs: { id: Tab; label: string; empty: string }[] = [
   { id: "friends", label: "Друзья", empty: "Друзей пока нет." },
   { id: "outgoing", label: "Исходящие заявки", empty: "Исходящих заявок нет." },
   { id: "incoming", label: "Входящие заявки", empty: "Входящих заявок нет." },
+  { id: "people", label: "Поиск", empty: "Пользователей пока нет." },
 ];
 
 function PersonRow({ person, tab, isMe }: { person: UserSummaryDTO; tab: Tab; isMe: boolean }) {
@@ -38,7 +40,7 @@ function PersonRow({ person, tab, isMe }: { person: UserSummaryDTO; tab: Tab; is
         <strong>{displayNameOf(person)}</strong>
         <PlusBadge plus={person.plus} />
       </Link>
-      {isMe && (
+      {isMe && tab !== "people" && (
         <div>
           <button
             type="button"
@@ -87,6 +89,7 @@ export default function FriendsPage() {
   const friends = useFriends(username, q, tab === "friends" && canView);
   const outgoing = useFriendRequests("outgoing", q, isMe && tab === "outgoing");
   const incoming = useFriendRequests("incoming", q, isMe && tab === "incoming");
+  const allPeople = usePeople(q, isMe && tab === "people");
   const counts = useRelationshipCounts(isMe);
   const qc = useQueryClient();
   const previousCounts = useRef<string | null>(null);
@@ -99,7 +102,7 @@ export default function FriendsPage() {
     previousCounts.current = current;
   }, [counts.data, isMe, user, qc]);
   const activeTab = isMe ? tab : "friends";
-  const query = activeTab === "friends" ? friends : activeTab === "outgoing" ? outgoing : incoming;
+  const query = activeTab === "friends" ? friends : activeTab === "outgoing" ? outgoing : activeTab === "incoming" ? incoming : allPeople;
   const denied = friends.error instanceof ApiError && friends.error.status === 403;
   const showList = activeTab !== "friends" || (canView && !denied);
   const people = query.data?.pages.flatMap((page) => page.items) ?? [];
@@ -117,7 +120,7 @@ export default function FriendsPage() {
               aria-pressed={activeTab === item.id}
               onClick={() => setTab(item.id)}
             >
-              {item.label} ({counts.isFetching || counts.isPending ? "…" : counts.isError ? "—" : counts.data[item.id]})
+              {item.label}{item.id !== "people" && ` (${counts.isFetching || counts.isPending ? "…" : counts.isError ? "—" : counts.data[item.id]})`}
             </button>
           ))}
         </div>

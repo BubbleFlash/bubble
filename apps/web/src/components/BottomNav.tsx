@@ -8,11 +8,13 @@ import { adminNavigation, inStaffArea, navigationFor } from "../lib/navigation";
 import { type IconName } from "./Icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
+import type { Ref } from "react";
 
 /** App-style tab bar for members on phones and tablets. The menu button holds everything else. */
-export default function BottomNav({ menuOpen, onToggleMenu }: {
+export default function BottomNav({ menuOpen, onToggleMenu, navRef }: {
   menuOpen: boolean;
   onToggleMenu: () => void;
+  navRef?: Ref<HTMLElement>;
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -45,7 +47,7 @@ export default function BottomNav({ menuOpen, onToggleMenu }: {
   );
 
   return (
-    <nav className="bottom-nav" aria-label="Вкладки">
+    <nav ref={navRef} className="bottom-nav" aria-label="Вкладки">
       {inAdmin ? adminNavigation.filter((item) => item.id !== "errors" || user.role === "admin").map((entry) => <span key={entry.id}>{tab(entry.to, entry.icon, entry.label, 0, true)}</span>) : navigationFor("member", "bottom").map((entry) => <span key={entry.id}>{tab(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" ? m : entry.id === "notifications" ? n : 0, entry.end)}</span>)}
       {!inAdmin && (
       <button

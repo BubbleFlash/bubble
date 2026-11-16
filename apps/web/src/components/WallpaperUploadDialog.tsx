@@ -4,6 +4,7 @@ import { WALLPAPER_NAME_MAX_LENGTH } from "@commune/shared";
 import { api } from "../lib/api";
 import { prepareImage, WALLPAPER_PHOTO } from "../lib/images";
 import AeroTitlebar from "./AeroTitlebar";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 export default function WallpaperUploadDialog({
   onClose,
@@ -35,10 +36,12 @@ export default function WallpaperUploadDialog({
   function close() {
     if (!upload.isPending) onClose();
   }
+  const backdrop = useDialogBackdrop(close);
 
   return (
     <dialog
       ref={dialog}
+      {...backdrop}
       className="wallpaper-workshop wallpaper-upload"
       aria-labelledby="wallpaper-upload-title"
       onCancel={(event) => {

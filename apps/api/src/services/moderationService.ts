@@ -1,10 +1,12 @@
 import { Comment } from "../models/Comment.js";
+import { CommentLike } from "../models/CommentLike.js";
+import { CommentReport, commentReportsForPost, commentReportTarget } from "../models/CommentReport.js";
 import { Like } from "../models/Like.js";
 import { Notification } from "../models/Notification.js";
 import { Post } from "../models/Post.js";
 import { moderationEvent } from "../models/moderationFields.js";
 import { conflict } from "../utils/errors.js";
-import { Report, CommentReport } from "../models/Report.js";
+import { Report } from "../models/Report.js";
 import { Wallpaper, WallpaperReaction, WallpaperReport } from "../models/Wallpaper.js";
 import { User } from "../models/User.js";
 import { disconnectUser } from "./realtime.js";
@@ -18,6 +20,7 @@ import { deleteUploadIfUnused } from "./uploadService.js";
 export async function removePost(postId: string, resolvedBy?: string): Promise<void> {
   const post = await Post.findById(postId).select("imageUrl imageUrls");
   if (!post) return;
+  const comments = await Comment.find({ post: postId }).select("_id").lean();
 
   const deleted = await Post.deleteOne({ _id: postId, "moderationEvents.0": { $exists: false } });
   if (!deleted.deletedCount) {
@@ -41,6 +44,8 @@ export async function removePost(postId: string, resolvedBy?: string): Promise<v
       { post: postId, "moderationEvents.0": { $exists: true } },
       { $set: { moderationState: "withdrawn", content: "" } },
     ),
+    CommentLike.deleteMany({ post: postId }),
+    CommentReport.updateMany({ ...commentReportsForPost(postId, comments.map(({ _id }) => _id)), status: "open" }, { $set: { status: "resolved", resolvedAt: new Date(), resolvedBy: resolvedBy ?? null } }),
     Like.deleteMany({ post: postId }),
     Notification.deleteMany({ post: postId }),
     Report.updateMany(
@@ -87,8 +92,9 @@ export async function changeContent(
     if (!retry) throw conflict("Content is missing or its state changed");
   }
   if (next !== "published") {
-    const reports: typeof Report = kind === "post" ? Report : kind === "comment" ? CommentReport : WallpaperReport as unknown as typeof Report;
-    const reportFilter = kind === "wallpaper" ? { wallpaper: target, status: { $in: ["open", null] } } : { post: target, status: "open" };
+    const reports: typeof Report = kind === "post" ? Report : kind === "comment" ? CommentReport as unknown as typeof Report : WallpaperReport as unknown as typeof Report;
+    const reportTarget = kind === "wallpaper" ? { wallpaper: target } : kind === "comment" ? commentReportTarget(target) : { post: target };
+    const reportFilter = { ...reportTarget, status: kind === "wallpaper" ? { $in: ["open", null] } : "open" };
     const open = await reports.find(reportFilter).select("_id").lean();
     for (const report of open) {
       await reports.updateOne(
@@ -138,8 +144,8 @@ async function permanentlyRemoveContent(
   if (!previous && !existing.purgedAt) throw conflict("Content is missing or already deleted");
   const removed = previous ?? existing;
 
-  const reports: typeof Report = kind === "post" ? Report : kind === "comment" ? CommentReport : WallpaperReport as unknown as typeof Report;
-  const reportFilter = kind === "wallpaper" ? { wallpaper: target } : { post: target };
+  const reports: typeof Report = kind === "post" ? Report : kind === "comment" ? CommentReport as unknown as typeof Report : WallpaperReport as unknown as typeof Report;
+  const reportFilter = kind === "wallpaper" ? { wallpaper: target } : kind === "comment" ? commentReportTarget(target) : { post: target };
   const openStatus = kind === "wallpaper" ? { $in: ["open", null] } : "open";
   const open = await reports.find({ ...reportFilter, status: openStatus }).select("_id").lean();
   for (const report of open) {
@@ -151,14 +157,14 @@ async function permanentlyRemoveContent(
   if (kind !== "wallpaper") await reports.updateMany(reportFilter, { $unset: { "snapshot.content": 1 } });
   if (kind === "post") {
     const comments = await Comment.find({ post: target }).select("_id").lean();
-    const commentReports = { post: { $in: comments.map((comment) => comment._id) } };
+    const commentReports = commentReportsForPost(target, comments.map(({ _id }) => _id));
     await CommentReport.updateMany(commentReports, { $unset: { "snapshot.content": 1 } });
     await CommentReport.updateMany({ ...commentReports, status: "open" }, {
       $set: { status: "resolved", resolvedBy: who.id, resolvedAt: new Date(), decision: why },
     });
     await Comment.deleteMany({ post: target, "moderationEvents.0": { $exists: false } });
     await Comment.updateMany({ post: target }, { $set: { moderationState: "withdrawn" }, $unset: { content: 1 } });
-    await Promise.all([Like.deleteMany({ post: target }), Notification.deleteMany({ post: target })]);
+    await Promise.all([Like.deleteMany({ post: target }), CommentLike.deleteMany({ post: target }), Notification.deleteMany({ post: target })]);
   }
   if (kind === "comment" && previous && "post" in previous) {
     await Post.updateOne({ _id: previous.post, commentCount: { $gt: 0 } }, { $inc: { commentCount: -1 } });

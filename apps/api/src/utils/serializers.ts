@@ -67,6 +67,8 @@ export interface PopulatedPost {
 export interface PopulatedComment {
   _id: Types.ObjectId;
   post: Types.ObjectId;
+  parent?: Types.ObjectId;
+  mention?: { name?: string | null; username?: string | null } | null;
   content: string;
   author: PopulatedAuthor;
   createdAt: Date;
@@ -122,7 +124,7 @@ export function toPublicUser(u: UserLike): PublicUser {
 }
 
 type UserWithAppearance = UserLike & {
-  appearance?: Partial<SiteAppearance> | null;
+  appearance?: (Omit<Partial<SiteAppearance>, "windowOpacity"> & { windowOpacity?: number | null }) | null;
   shareProfileAppearance?: boolean | null;
   profileAppearanceVisibility?: FriendsVisibility | null;
 };
@@ -132,12 +134,12 @@ function profileAppearanceVisibility(u: UserWithAppearance): FriendsVisibility {
 }
 
 export function toAccountUser(u: UserWithAppearance): AccountUser {
-  const { backgroundUrl, primaryColor, accentColor, font } = u.appearance ?? {};
+  const { backgroundUrl, primaryColor, accentColor, font, windowOpacity } = u.appearance ?? {};
   return {
     ...toPublicUser(u),
     profileAppearanceVisibility: profileAppearanceVisibility(u),
-    appearance: backgroundUrl !== undefined || primaryColor !== undefined || accentColor !== undefined || font !== undefined
-      ? { backgroundUrl, primaryColor, accentColor, font }
+    appearance: backgroundUrl !== undefined || primaryColor !== undefined || accentColor !== undefined || font !== undefined || windowOpacity != null
+      ? { backgroundUrl, primaryColor, accentColor, font, windowOpacity: windowOpacity ?? undefined }
       : undefined,
   };
 }
@@ -179,10 +181,15 @@ export function toPostDTO(p: PopulatedPost, likedByMe: boolean, musicAttachments
   };
 }
 
-export function toCommentDTO(c: PopulatedComment): CommentDTO {
+export function toCommentDTO(c: PopulatedComment, likeCount = 0, likedByMe = false, replyCount = 0): CommentDTO {
   return {
     id: c._id.toString(),
     postId: c.post.toString(),
+    parentId: c.parent?.toString() ?? null,
+    ...(c.mention?.name && c.mention.username ? { mention: { name: c.mention.name, username: c.mention.username } } : {}),
+    likeCount,
+    likedByMe,
+    replyCount,
     content: c.content,
     author: toAuthor(c.author),
     createdAt: c.createdAt.toISOString(),

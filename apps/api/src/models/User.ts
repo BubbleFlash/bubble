@@ -25,6 +25,7 @@ const userSchema = new Schema(
       backgroundUrl: { type: String, index: true, sparse: true },
       primaryColor: { type: String },
       accentColor: { type: String },
+      windowOpacity: { type: Number },
       font: { type: String },
     },
     ...moderationFields,

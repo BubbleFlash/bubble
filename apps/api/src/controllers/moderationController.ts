@@ -3,20 +3,21 @@ import { Types } from "mongoose";
 import { z } from "zod";
 import { Comment } from "../models/Comment.js";
 import { Post } from "../models/Post.js";
-import { Report, CommentReport } from "../models/Report.js";
+import { Report } from "../models/Report.js";
+import { CommentReport as CommentReportModel, commentReportTarget } from "../models/CommentReport.js";
 import { Wallpaper, WallpaperReport } from "../models/Wallpaper.js";
 import { User } from "../models/User.js";
-import { moderationEvent, visibleContent } from "../models/moderationFields.js";
+import { moderationEvent } from "../models/moderationFields.js";
 import { badRequest, conflict, forbidden, notFound } from "../utils/errors.js";
 import { accountRestriction, publishingRestriction } from "../services/restrictions.js";
 import { changeContent } from "../services/moderationService.js";
 import { disconnectUser } from "../services/realtime.js";
-import { loadReadablePostAuthor } from "../services/postAccess.js";
 import { loadPostMusic } from "../services/postMusic.js";
 import { getObject } from "../services/storageService.js";
 import { Readable } from "node:stream";
 import { uploadUrlSchema } from "@commune/shared";
 
+const CommentReport = CommentReportModel as unknown as typeof Report;
 const reason = z.string().trim().min(1).max(500);
 const kind = z.enum(["post", "comment", "wallpaper"]);
 const state = z.enum(["published", "hidden", "removed"]);
@@ -124,7 +125,7 @@ export async function moderateContent(req: Request, res: Response) {
   const targetId = id(req.params.id);
   if (input.reportId) {
     const model: typeof Report = targetKind === "post" ? Report : targetKind === "comment" ? CommentReport : WallpaperReport as unknown as typeof Report;
-    if (!(await model.exists({ _id: id(input.reportId), ...(targetKind === "wallpaper" ? { wallpaper: targetId } : { post: targetId }) })))
+    if (!(await model.exists({ _id: id(input.reportId), ...(targetKind === "wallpaper" ? { wallpaper: targetId } : targetKind === "comment" ? commentReportTarget(targetId) : { post: targetId }) })))
       throw notFound("Report not found");
   }
   await changeContent(
@@ -136,25 +137,6 @@ export async function moderateContent(req: Request, res: Response) {
     input.reportId,
   );
   res.status(204).end();
-}
-
-export async function reportComment(req: Request, res: Response) {
-  await loadReadablePostAuthor(String(id(req.params.id)), req.userId!);
-  const comment = await Comment.findOne({
-    _id: id(req.params.commentId),
-    post: req.params.id,
-    ...visibleContent,
-  }).lean();
-  if (!comment) throw notFound("Comment not found");
-  if (String(comment.author) === req.userId) throw badRequest("You can't report your own comment");
-  await CommentReport.create({
-    post: comment._id,
-    reporter: req.userId,
-    reason: req.body.reason,
-    details: req.body.details,
-    snapshot: { content: comment.content, author: comment.author, parent: comment.post },
-  });
-  res.status(201).json({ ok: true });
 }
 
 export async function listReports(req: Request, res: Response) {
@@ -175,10 +157,11 @@ export async function listReports(req: Request, res: Response) {
         const targets = reportKind === "post" ? Post : reportKind === "comment" ? Comment : Wallpaper;
         const pending = await reports.aggregate([
           { $match: { status: reportKind === "wallpaper" ? { $in: ["open", null] } : "open" } },
+          ...(reportKind === "comment" ? [{ $set: { comment: { $ifNull: ["$comment", "$post"] } } }] : []),
           {
             $lookup: {
               from: targets.collection.name,
-              localField: reportKind === "wallpaper" ? "wallpaper" : "post",
+              localField: reportKind === "wallpaper" ? "wallpaper" : reportKind === "comment" ? "comment" : "post",
               foreignField: "_id",
               as: "target",
             },
@@ -228,13 +211,14 @@ export async function listReports(req: Request, res: Response) {
       const items = await Promise.all(
         rows.map(async (row) => {
           const wallpaperId = (row as typeof row & { wallpaper?: Types.ObjectId }).wallpaper;
+          const commentId = (row as typeof row & { comment?: Types.ObjectId }).comment ?? row.post;
           const target =
             reportKind === "post"
               ? await Post.findById(row.post)
                   .select("author content imageUrl imageUrls createdAt moderationState purgedAt deletionPending")
                   .lean()
               : reportKind === "comment"
-                ? await Comment.findById(row.post)
+                ? await Comment.findById(commentId)
                     .select("author content post createdAt moderationState purgedAt deletionPending")
                     .lean()
                 : await Wallpaper.findById(wallpaperId)
@@ -248,7 +232,7 @@ export async function listReports(req: Request, res: Response) {
               .lean());
           return {
             ...row,
-            post: reportKind === "wallpaper" ? wallpaperId : row.post,
+            post: reportKind === "wallpaper" ? wallpaperId : reportKind === "comment" ? commentId : row.post,
             kind: reportKind,
             target: reportKind === "wallpaper" && target && "purgedAt" in target && target.purgedAt ? { ...target, imageUrl: undefined } : target,
             author,

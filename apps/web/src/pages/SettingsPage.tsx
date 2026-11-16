@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useBeforeUnload, useBlocker, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { MAX_FONT_BYTES, type UploadResponse } from "@commune/shared";
+import { DEFAULT_WINDOW_OPACITY, MAX_FONT_BYTES, MIN_WINDOW_OPACITY, type UploadResponse } from "@commune/shared";
 import type {
   AvatarFrame,
   AccountUser,
@@ -467,6 +467,16 @@ function AppearanceSettings({ user, onWallpaperPreview }: { user: AccountUser } 
                 save.reset();
               }}
             />
+            <label className="appearance-opacity">
+              <span>Прозрачность окон · {DEFAULT_WINDOW_OPACITY - (appearance.windowOpacity ?? DEFAULT_WINDOW_OPACITY)}%</span>
+              <input type="range" min={0} max={DEFAULT_WINDOW_OPACITY - MIN_WINDOW_OPACITY} step={1}
+                aria-label="Прозрачность окон"
+                value={DEFAULT_WINDOW_OPACITY - (appearance.windowOpacity ?? DEFAULT_WINDOW_OPACITY)}
+                onChange={(event) => {
+                  setChanges({ ...changes, windowOpacity: DEFAULT_WINDOW_OPACITY - Number(event.target.value) });
+                  save.reset();
+                }} />
+            </label>
           </section>
         </fieldset>
         <div className="appearance-save">

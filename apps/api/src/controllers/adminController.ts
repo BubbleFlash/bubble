@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import type { Page, ReportDTO, ReportStatus } from "@commune/shared";
+import { Comment } from "../models/Comment.js";
 import { Post } from "../models/Post.js";
 import { Report } from "../models/Report.js";
+import { CommentReport } from "../models/CommentReport.js";
 import { User } from "../models/User.js";
 import { moderationEvent } from "../models/moderationFields.js";
 import { banUser, changeContent, unbanUser } from "../services/moderationService.js";
@@ -51,6 +53,40 @@ export async function dismissReport(req: Request, res: Response) {
     { _id: idParam(req, "id"), status: "open" },
     { $set: { status: "dismissed", resolvedBy: req.userId, resolvedAt: new Date() },
       $push: { moderationEvents: moderationEvent(req.userId!, "admin", "dismissed", "Отклонено через админку") } },
+  );
+  if (!updated) throw notFound("Open report not found");
+  res.status(204).end();
+}
+
+export async function listCommentReports(_req: Request, res: Response) {
+  const { cursor, limit, status } = res.locals.query as { cursor?: string; limit: number; status: ReportStatus };
+  const rows = await CommentReport.find(cursor ? { status, _id: { $lt: cursor } } : { status })
+    .sort({ _id: -1 }).limit(limit + 1)
+    .populate("reporter", "username displayName")
+    .lean();
+  const page = rows.slice(0, limit);
+  const comments = await Comment.find({ _id: { $in: page.map((row) => row.comment ?? row.post) } })
+    .select("content author post")
+    .populate<{ author: { username: string; displayName?: string } | null }>("author", "username displayName")
+    .lean();
+  const commentsById = new Map(comments.map((comment) => [String(comment._id), comment]));
+  res.json({
+    items: page.map((row) => {
+      const reporter = row.reporter as unknown as { username: string; displayName?: string };
+      const comment = commentsById.get(String(row.comment ?? row.post));
+      return { id: String(row._id), postId: String(comment?.post ?? row.snapshot?.parent ?? row.post), reason: row.reason, details: row.details,
+        reporter: { username: reporter.username, displayName: reporter.displayName },
+        comment: comment ? { id: String(comment._id), content: comment.content, author: comment.author } : null,
+        createdAt: row.createdAt.toISOString() };
+    }),
+    nextCursor: rows.length > limit ? String(page.at(-1)!._id) : null,
+  });
+}
+
+export async function dismissCommentReport(req: Request, res: Response) {
+  const updated = await CommentReport.findOneAndUpdate(
+    { _id: idParam(req, "id"), status: "open" },
+    { $set: { status: "dismissed", resolvedBy: req.userId, resolvedAt: new Date() } },
   );
   if (!updated) throw notFound("Open report not found");
   res.status(204).end();

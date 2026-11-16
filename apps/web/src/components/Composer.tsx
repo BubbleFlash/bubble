@@ -4,23 +4,25 @@ import { useCreatePost } from "../hooks/usePosts";
 import { useImageDraft } from "../hooks/useImageDraft";
 import { useImageDrop } from "../hooks/useImageDrop";
 import ImageDropHint from "./ImageDropHint";
-import { FREE_POST_LENGTH, PLUS_POST_LENGTH } from "@commune/shared";
+import { COMMUNITY_POST_LENGTH, FREE_POST_LENGTH, PLUS_POST_LENGTH } from "@commune/shared";
 import { useAuth } from "../store/auth";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import { LinkPreview } from "./LinkContent";
 import type { MusicTrackDTO } from "@commune/shared";
+import EmojiInputButton from "./EmojiInputButton";
 
 export default function Composer({ communitySlug }: { communitySlug?: string }) {
   const { user } = useAuth();
-  const MAX = user?.plus ? PLUS_POST_LENGTH : FREE_POST_LENGTH;
+  const maxLength = communitySlug ? COMMUNITY_POST_LENGTH : user?.plus ? PLUS_POST_LENGTH : FREE_POST_LENGTH;
   const [content, setContent] = useState("");
   const [music, setMusic] = useState<MusicTrackDTO[]>([]);
   const [musicPickerOpen, setMusicPickerOpen] = useState(false);
   const imageDraft = useImageDraft();
   const [privatePost, setPrivatePost] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const create = useCreatePost();
   const drop = useImageDrop(imageDraft.add, create.isPending);
   const pickImage = (e: ChangeEvent<HTMLInputElement>) => {
@@ -65,16 +67,18 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
         {user && <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={42} />}
         <div className="image-drop-field">
         <textarea
+          ref={textRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder={
             communitySlug ? `Запись в c/${communitySlug}` : "Что нового? Поделитесь со всеми!"
           }
-          maxLength={MAX}
+          maxLength={maxLength}
           rows={2}
           aria-label="Написать запись"
           onPaste={onPaste}
         />
+        <EmojiInputButton field={textRef} value={content} onChange={setContent} maxLength={maxLength} disabled={create.isPending} />
         {drop.dragging && <ImageDropHint />}
         </div>
       </div>

@@ -7,7 +7,8 @@
 .friend-preview .avatar { flex-shrink: 0; }
 .friends-page .friend-list-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
 .friend-person-link { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
-.aero-home .feed-tabs.friends-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+.aero-home .feed-tabs.friends-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: stretch; }
+@media (max-width: 600px) { .aero-home .feed-tabs.friends-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .aero-home .friends-tabs .tab { display: flex; align-items: center; justify-content: center; align-self: stretch; height: auto; min-height: 44px; white-space: normal; overflow-wrap: anywhere; padding: 8px; line-height: 1.25; }
 .friends-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .friends-search input { min-width: 0; max-width: 100%; }
@@ -133,8 +134,8 @@
 
 /* Keep this after selected/disabled states, including keyboard-focusable links. */
 :where([data-theme^="aero-"]) :is(.aero-button, .aero-input, .aero-tab):focus-visible {
-  outline: var(--aero-focus-width) solid var(--aero-color-focus);
-  outline-offset: var(--aero-focus-offset);
+  outline: 1px dotted var(--aero-color-focus);
+  outline-offset: -4px;
   box-shadow: 0 0 0 var(--aero-focus-offset) var(--aero-color-focus-gap);
 }
 
@@ -230,6 +231,9 @@
 
 /* Global music player */
 .music-player {
+  --music-accent: var(--aero-chosen-accent, #63b9ff);
+  --music-accent-ink: var(--aero-chosen-accent-ink, #092942);
+  --music-icon: var(--aero-player-icon, #71caff);
   position: fixed;
   z-index: 1000;
   right: 24px;
@@ -282,7 +286,7 @@
 .music-player input[type="range"]:disabled { opacity: .5; cursor: not-allowed; }
 .music-player__error { position: absolute; right: 0; bottom: calc(100% + 8px); max-width: 100%; padding: var(--aero-space-2) var(--aero-space-3); border: 1px solid var(--aero-color-error-border); border-radius: var(--aero-radius-control); background: var(--aero-color-error-surface); color: var(--aero-color-error-text); font-size: 12px; }
 @media (max-width: 1100px) {
-  .music-player { bottom: calc(var(--bottom-h) + env(safe-area-inset-bottom) + 12px); }
+  .music-player { bottom: calc(var(--aero-bottom-nav-space, var(--bottom-h)) + 12px); }
 }
 @media (max-width: 600px) {
   .music-player { right: 10px; width: calc(100vw - 20px); grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info extras" "controls controls" "timeline timeline"; gap: 4px 8px; padding: 8px 10px; }
@@ -413,7 +417,32 @@
   }
 }
 
+.music-player .music-player__play--main {
+  background: linear-gradient(#ffffff30, #ffffff08 47%, #00000010 50%, #ffffff15), var(--music-accent);
+  color: var(--music-accent-ink);
+}
+.music-player .music-player__mode,
+.music-player .music-player__play:not(.music-player__play--main),
+.music-player .music-player__mute,
+.music-player .music-player__queue-action { color: var(--music-icon); }
+.music-player .music-player__mode.is-active {
+  background: var(--music-accent);
+  border-color: var(--music-accent);
+  color: var(--music-accent-ink);
+}
+.music-player .music-player__play--main:hover:not(:disabled) { filter: none; box-shadow: inset 0 1px white, 0 0 10px var(--music-accent); }
+.music-player .music-player__play--main:active:not(:disabled) { box-shadow: inset 0 2px 5px var(--aero-color-shadow); }
+.music-player input[type="range"]:focus-visible { outline-color: var(--music-accent); }
+.music-player input[type="range"]::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--music-accent) var(--range-fill, 0%), #17212a var(--range-fill, 0%)); }
+.music-player input[type="range"]::-moz-range-track { background: linear-gradient(90deg, var(--music-accent) var(--range-fill, 0%), #17212a var(--range-fill, 0%)); }
+.music-player input[type="range"]::-webkit-slider-thumb { border-color: #17212a; background: var(--music-accent); }
+.music-player input[type="range"]::-moz-range-thumb { border-color: #17212a; background: var(--music-accent); }
+@media (hover: none) and (pointer: coarse) {
+  .music-player .music-player__volume { display: none; }
+}
+
 /* Music page */
+.music-attachment-picker__backdrop { position: fixed; z-index: 899; inset: 0; background: rgb(19 40 61 / 48%); }
 .music-attachment-picker { position: fixed; z-index: 900; inset: 0; box-sizing: border-box; width: min(560px, calc(100vw - 24px)); height: min(700px, calc(100dvh - 24px)); max-width: none; max-height: calc(100dvh - 24px); padding: 0 5px 5px; margin: auto; overflow: hidden; border: 1px solid var(--aero-color-border-strong); border-radius: 12px; background: var(--aero-gradient-glass); box-shadow: 0 5px 18px var(--aero-color-shadow), inset 0 0 0 1px var(--aero-color-highlight); color: var(--aero-color-text); }
 .music-attachment-picker[open] { display: flex; flex-direction: column; }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .music-attachment-picker { -webkit-backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); } }
@@ -458,7 +487,7 @@
 .music-player__queue::-webkit-scrollbar-thumb:hover { border-color: #69b7e2; background: linear-gradient(90deg, #c0dbe8, #7caac1 48%, #52829d 51%, #a0cbde); }
 .music-player__queue-list { list-style: none; margin: 0; padding: 0; }
 .music-player__queue-row { display: flex; align-items: center; gap: 5px; min-width: 0; min-height: 25px; padding: 0 3px; border-bottom: 1px solid #3b505e; }
-.music-player__queue-row.is-current { background: #315b79; }
+.music-player__queue-row.is-current { background: color-mix(in srgb, var(--music-accent) 22%, #17212a); box-shadow: inset 3px 0 var(--music-accent); }
 .music-player__queue-number { width: 24px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
 .music-player__queue-title { overflow: hidden; flex: 1; min-width: 0; padding: 2px 0; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .music-player__queue-duration { flex: none; font-variant-numeric: tabular-nums; }
@@ -480,7 +509,7 @@
 .image-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 10px; min-width: 0; }
 .image-gallery--1 { grid-template-columns: minmax(0, 1fr); }
 .image-gallery__item { display: block; min-width: 0; padding: 0; border: 0; border-radius: 8px; overflow: hidden; background: transparent; cursor: pointer; }
-.image-gallery__item img { display: block; width: 100%; height: 180px; object-fit: cover; }
+.image-gallery__item img { display: block; width: 100%; height: 180px; object-fit: contain; }
 .image-draft { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow-y: auto; }
 .image-draft .image-preview { flex: 0 0 90px; width: 90px; margin: 0; }
 .image-draft .image-preview img { width: 90px; height: 72px; object-fit: cover; }
@@ -506,18 +535,62 @@
 .chat-attachments__menu button { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 10px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--aero-color-text); font: inherit; text-align: left; cursor: pointer; }
 .chat-attachments__menu button:hover:not(:disabled), .chat-attachments__menu button:focus-visible { border-color: var(--aero-color-border-strong); background: var(--aero-gradient-button-hover); }
 .chat-attachments__menu button:disabled { opacity: .5; cursor: not-allowed; }
-@media (max-width: 480px) { .chat-form-row .image-drop-field { flex-basis: 100%; } }
-.image-gallery--1 .image-gallery__item img { height: auto; max-height: 480px; width: auto; max-width: 100%; object-fit: contain; }
+.chat-message-actions .btn { min-height: 36px; }
+.chat-message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.chat-message-actions .btn { padding-inline: 6px; }
+.message-context-menu { position: fixed; z-index: 1100; display: grid; min-width: 150px; max-width: calc(100vw - 16px); padding: 3px; border: 1px solid var(--aero-color-border-strong); border-radius: 8px; background: var(--aero-color-surface-solid); color: var(--aero-color-text); box-shadow: 0 3px 12px var(--aero-color-shadow); }
+.message-context-menu button { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 3px 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.message-context-menu button:hover:not(:disabled), .message-context-menu button:focus-visible { border-color: var(--aero-color-border-strong); background: var(--aero-gradient-button-hover); }
+.message-context-menu button:disabled { opacity: .5; cursor: default; }
+.chat-edit { display: grid; gap: 6px; }
+.chat-edit textarea { width: 100%; min-width: 0; min-height: 64px; resize: vertical; }
+.aero-home .chat .chat-edit .chat-message-actions .btn { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+.aero-home .chat .chat-edit .chat-edit__cancel { color: inherit; }
+.aero-home .chat .chat-edit .chat-edit__cancel:hover:not(:disabled) { color: inherit; background: rgb(255 255 255 / 16%); }
+.chat-form { position: relative; }
+/* The native textarea and its visual mirror need identical emoji advances. */
+@font-face {
+  font-family: "Bubble Emoji Metrics";
+  src: url("@fontsource/noto-color-emoji/files/noto-color-emoji-emoji-400-normal.woff2") format("woff2");
+  font-display: swap;
+  size-adjust: 80.3%;
+  unicode-range: U+00A9, U+00AE, U+200D, U+203C, U+2049, U+20E3, U+2122, U+2139, U+2190-21FF, U+2300-23FF, U+24C2, U+25AA-27BF, U+2934-2935, U+2B00-2BFF, U+3030, U+303D, U+3297, U+3299, U+FE0E-FE0F, U+1F000-1FAFF, U+E0020-E007F;
+}
+.emoji-glyph { display: inline-block; width: 1em; height: 1em; vertical-align: -0.12em; background-size: 6100% 6100%; background-repeat: no-repeat; color: transparent; overflow: hidden; }
+.emoji-glyph::selection { color: transparent; }
+.emoji-glyph-cell { display: inline-flex; justify-content: center; vertical-align: -0.12em; }
+.emoji-glyph-cell .emoji-glyph { flex: none; vertical-align: baseline; }
+.chat-form__mirror { position: absolute; inset: 0; box-sizing: border-box; overflow: hidden; padding: 10px 14px; border: 1px solid transparent; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: normal; pointer-events: none; }
+.chat-form textarea.chat-form__text--mirrored { position: relative; background: transparent; color: transparent; caret-color: var(--aero-color-text); }
+.chat-form__tools { position: absolute; right: 2px; bottom: 1px; display: flex; align-items: center; }
+.chat-form-row .chat-form__tool { display: grid; place-items: center; width: 40px; height: 42px; min-width: 40px; min-height: 42px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--aero-color-text-muted); cursor: pointer; }
+.chat-form-row .chat-form__tool:hover:not(:disabled) { background: transparent; box-shadow: none; color: var(--aero-color-text); }
+.chat-form-row .chat-form__tool:disabled { opacity: .5; cursor: default; }
+.chat-emoji.aero-panel { position: absolute; z-index: 5; inset-inline-end: 4px; bottom: calc(100% + 4px); display: grid; grid-template: auto minmax(0, 1fr) / 36px minmax(0, 1fr); gap: 3px; width: min(440px, calc(100% - 8px)); height: min(450px, 55dvh); padding: 5px; }
+.chat-emoji header { grid-column: 1 / -1; display: flex; gap: 4px; }
+.aero-home .chat-emoji input[type="search"] { box-sizing: border-box; min-width: 0; min-height: 32px; height: 32px; flex: 1; padding: 4px 8px; font-size: 13px; line-height: 1.2; }
+.chat-emoji header > button { min-width: 32px; min-height: 32px; padding: 0; }
+.chat-emoji__categories { display: flex; flex-direction: column; gap: 1px; min-height: 0; overflow-y: auto; }
+.chat-emoji__categories button { flex: none; display: grid; place-items: center; width: 34px; min-height: 34px; padding: 3px; }
+.chat-emoji__categories [aria-pressed="true"] { background: var(--aero-gradient-tab-active); }
+.chat-emoji__results { position: relative; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.chat-emoji__results h3 { margin: 4px 2px; font-size: 12px; color: var(--aero-color-text-muted); }
+.chat-emoji__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); }
+.chat-emoji__grid button { display: grid; place-items: center; min-width: 0; min-height: 30px; padding: 0; font-size: 19px; line-height: 1; }
+.chat-emoji__grid button span { display: block; width: 20px; height: 20px; background-size: 6100% 6100%; background-repeat: no-repeat; }
+.chat-emoji__results p { margin: 4px; }
+.chat-emoji__credit { font-size: 10px; color: var(--aero-color-text-muted); }
+.image-gallery--1 .image-gallery__item img { width: 100%; height: auto; aspect-ratio: 4 / 3; max-height: 540px; object-fit: contain; }
 .image-gallery--3 .image-gallery__item:first-child { grid-row: span 2; }
 .image-gallery--3 .image-gallery__item:first-child img { height: 364px; }
 .image-gallery--carousel { position: relative; display: block; overflow: hidden; border-radius: 8px; touch-action: pan-y; }
 .image-gallery--carousel .image-gallery__item { width: 100%; }
-.image-gallery--carousel .image-gallery__item img { width: 100%; height: auto; aspect-ratio: 4 / 3; max-height: 540px; object-fit: cover; }
+.image-gallery--carousel .image-gallery__item img { width: 100%; height: auto; aspect-ratio: 4 / 3; max-height: 540px; object-fit: contain; }
 .image-gallery__count { position: absolute; z-index: 1; top: 10px; right: 10px; padding: 4px 8px; border-radius: 12px; color: white; background: rgb(0 0 0 / 55%); font-size: 12px; pointer-events: none; }
 .image-gallery__zone { position: absolute; top: 0; bottom: 0; width: 26%; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .image-gallery__zone--previous { left: 0; }
 .image-gallery__zone--next { right: 0; }
-.image-gallery__zone:focus-visible { outline: 3px solid var(--aero-color-focus); outline-offset: -3px; }
+.image-gallery__zone:focus-visible { outline: 1px dotted var(--aero-color-focus); outline-offset: -4px; }
 .image-gallery__arrow { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: white; background: rgb(0 0 0 / 55%); font-size: 28px; line-height: 1; }
 .image-gallery__zone--previous .image-gallery__arrow { left: 10px; }
 .image-gallery__zone--next .image-gallery__arrow { right: 10px; }
@@ -526,17 +599,22 @@
 .image-viewer[open] { display: flex; flex-direction: column; }
 .image-viewer::backdrop { background: rgb(0 12 25 / 65%); }
 .image-viewer__header { min-height: 27px; display: flex; align-items: center; justify-content: space-between; padding-left: 4px; color: var(--aero-color-text); }
-.image-viewer__content { position: relative; min-height: 0; flex: 1; display: flex; align-items: center; justify-content: center; border: 1px solid #34596e; border-radius: 0 0 5px 5px; background: #111d27; touch-action: pan-y; }
-.image-viewer__content img { min-width: 0; max-width: 100%; max-height: 100%; object-fit: contain; }
-.image-viewer__zone { position: absolute; top: 0; bottom: 0; width: 50%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.image-viewer__content { position: relative; min-height: 0; flex: 1; border: 1px solid #34596e; border-radius: 0 0 5px 5px; background: #111d27; touch-action: pan-y; }
+.image-viewer__scroll { display: grid; place-items: center; height: 100%; overflow: hidden; }
+.image-viewer__scroll img { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
+.image-viewer__content--full { touch-action: pan-x pan-y pinch-zoom; }
+.image-viewer__content--full .image-viewer__scroll { display: block; overflow: auto; overscroll-behavior: contain; }
+.image-viewer__content--full img { width: auto; height: auto; max-width: none; margin-inline: auto; }
+.image-viewer__fit { min-height: 34px; }
+.image-viewer__zone { position: absolute; top: calc(50% - 22px); width: 52px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .image-viewer__zone--previous { left: 0; }
 .image-viewer__zone--next { right: 0; }
 .image-viewer__arrow { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: white; font-size: 28px; line-height: 1; background: rgb(0 0 0 / 55%); transition: opacity 160ms ease; }
 .image-viewer--idle .image-viewer__arrow { opacity: 0; }
-.image-viewer--idle .image-viewer__zone:focus-visible .image-viewer__arrow { opacity: 1; }
+.image-viewer--idle .image-viewer__zone:is(:hover, :focus-visible) .image-viewer__arrow { opacity: 1; }
 .image-viewer__zone--previous .image-viewer__arrow { left: 8px; }
 .image-viewer__zone--next .image-viewer__arrow { right: 8px; }
-.image-viewer__zone:focus-visible { outline: 3px solid var(--aero-color-focus); outline-offset: -3px; }
+.image-viewer__zone:focus-visible { outline: 1px dotted var(--aero-color-focus); outline-offset: -4px; }
 .music-attachment-picker__item, .music-attachments__row { display: flex; align-items: center; gap: var(--aero-space-3); min-width: 0; }
 .music-attachment-picker__item span { min-width: 0; overflow-wrap: anywhere; }
 .music-attachment-picker__item small { display: block; }

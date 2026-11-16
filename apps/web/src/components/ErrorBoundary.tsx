@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportError } from "../lib/report";
+import { OFFICIAL_TELEGRAM_URL } from "../lib/support";
 
 const RELOAD_KEY = "commune_chunk_reload";
 
@@ -55,6 +56,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
 
           Перезагрузить Bubble
         </button>
+        <p><a href={OFFICIAL_TELEGRAM_URL} target="_blank" rel="noopener noreferrer">Bubble в Telegram</a></p>
       </div>
     );
   }

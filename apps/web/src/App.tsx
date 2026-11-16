@@ -20,6 +20,7 @@ import { useStoredFont } from "./lib/siteFont";
 import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
 import MusicPlayer from "./components/MusicPlayer";
+import BackToTop from "./components/BackToTop";
 
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const PostPage = lazy(() => import("./pages/PostPage"));
@@ -295,6 +296,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const homeRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const profileName = matchPath("/u/:username", pathname)?.params.username;
   const visitingProfile = Boolean(user && profileName && profileName.toLowerCase() !== user.username.toLowerCase());
   const { data: profile, isError: profileError } = useProfile(profileName ?? "", visitingProfile);
@@ -331,6 +333,16 @@ export default function App() {
     observer.observe(chrome);
     return () => observer.disconnect();
   }, [authPage]);
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    const nav = navRef.current;
+    if (!home || !nav) return;
+    const update = () => home.style.setProperty("--aero-bottom-nav-height", `${nav.getBoundingClientRect().height}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [authPage, signedIn]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
 
@@ -367,7 +379,8 @@ export default function App() {
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
       data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
-      style={appearanceStyle({ ...appearance, backgroundUrl }, fontFamily, localWallpaper)}
+      data-custom-opacity={user?.appearance?.windowOpacity !== undefined || undefined}
+      style={appearanceStyle({ ...appearance, backgroundUrl, windowOpacity: user?.appearance?.windowOpacity }, fontFamily, localWallpaper)}
     >
       <div className="aero-fixed-frame" aria-hidden="true" />
       <div className="aero-window">
@@ -391,7 +404,8 @@ export default function App() {
           </main>
           {!wide && <RightRail />}
         </div>
-        <BottomNav menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        {!wide && <BackToTop route={pathname} />}
         <MusicPlayer />
       </div>
     </div>

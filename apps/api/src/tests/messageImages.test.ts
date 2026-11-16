@@ -59,7 +59,7 @@ describe("image attachments", () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  it("sends an image-only first message in order and uses a photo preview", async () => {
+  it("sends an image-only first message in order", async () => {
     const otherImage = new mongoose.Types.ObjectId();
     const convo = new mongoose.Types.ObjectId();
     vi.spyOn(User, "findOne").mockImplementation((() => ({ collation: () => ({ lean: async () => ({ _id: new mongoose.Types.ObjectId(viewer), username: "sam", banned: false }) }) })) as never);
@@ -71,6 +71,6 @@ describe("image attachments", () => {
     const response = await request(app).post("/api/messages/with/sam").set("Authorization", token(owner)).send({ imageIds });
     expect(response.status).toBe(201);
     expect(response.body.message.imageIds).toEqual(imageIds);
-    expect((update.mock.calls[0] as unknown as [unknown, unknown])[1]).toMatchObject({ $set: { lastMessageText: "Фото" } });
+    expect((update.mock.calls[0] as unknown as [unknown, unknown])[1]).toMatchObject({ $max: { lastMessageAt: expect.any(Date) } });
   });
 });

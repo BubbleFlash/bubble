@@ -23,6 +23,3 @@ reportSchema.index({ status: 1, _id: -1 });
 reportSchema.index({ post: 1 });
 
 export const Report = model("Report", reportSchema);
-
-// A separate collection preserves the unique reporter/post index for existing reports.
-export const CommentReport: typeof Report = model("CommentReport", reportSchema.clone());

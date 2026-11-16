@@ -11,6 +11,7 @@ import {
   readNotificationsSchema,
   contactSchema,
   messagesQuerySchema,
+  editMessageSchema,
   linkPreviewSchema,
   musicUploadSignSchema,
   musicUploadCompleteSchema,
@@ -361,6 +362,7 @@ router.post("/billing/portal", requireAuth, checkoutLimiter, asyncHandler(billin
 router.get("/insights", requireAuth, requirePlus, asyncHandler(insights.get));
 
 // Search
+router.get("/search/people", requireAuth, searchLimiter, validate(friendsQuerySchema, "query"), asyncHandler(search.people));
 router.get(
   "/search/users",
   requireAuth,
@@ -442,7 +444,9 @@ router.post(
 router.get("/posts/:id", requireAuth, asyncHandler(posts.getPost));
 router.patch("/posts/:id", requireAuth, requireActive, requirePublishing, validate(updateCommunityPostSchema), asyncHandler(posts.updatePost));
 router.delete("/posts/:id", requireAuth, requireActive, asyncHandler(posts.deletePost));
-router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.toggleLike));
+router.post("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.setPostLike));
+router.put("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.setPostLike));
+router.delete("/posts/:id/like", requireAuth, requireActive, asyncHandler(posts.setPostLike));
 router.post("/posts/:id/view", requireAuth, viewLimiter, asyncHandler(posts.trackView));
 router.get("/posts/:id/comments", requireAuth, asyncHandler(posts.listComments));
 router.post(
@@ -453,6 +457,9 @@ router.post(
   requirePublishing,
   asyncHandler(posts.addComment),
 );
+router.put("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
+router.delete("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
+router.post("/posts/:id/comments/:commentId/report", requireAuth, reportLimiter, validate(createReportSchema), requireActive, asyncHandler(reports.createCommentReport));
 router.post(
   "/posts/:id/report",
   requireAuth,
@@ -463,13 +470,14 @@ router.post(
 );
 
 // Admin / moderation
+router.get("/admin/comment-reports", ...adminOnly, validate(reportQuerySchema, "query"), asyncHandler(admin.listCommentReports));
+router.post("/admin/comment-reports/:id/dismiss", ...adminOnly, asyncHandler(admin.dismissCommentReport));
 router.get(
   "/admin/reports",
   ...adminOnly,
   validate(reportQuerySchema, "query"),
   asyncHandler(admin.listReports),
 );
-router.post("/posts/:id/comments/:commentId/report", requireAuth, reportLimiter, validate(createReportSchema), requireActive, asyncHandler(moderation.reportComment));
 router.get("/moderation/notices", requireAuth, asyncHandler(moderation.ownNotices));
 router.get("/moderation/reports", ...staff, asyncHandler(moderation.listReports));
 router.post("/moderation/reports/:kind/:id", ...staff, asyncHandler(moderation.decideReport));
@@ -552,6 +560,8 @@ router.get(
 );
 // After /messages/with/:username, so a user named "read" can still be messaged.
 router.post("/messages/:id/read", requireAuth, readLimiter, asyncHandler(messages.markRead));
+router.patch("/messages/:id/items/:messageId", requireAuth, requireActive, messageLimiter, validate(editMessageSchema), asyncHandler(messages.editMessage));
+router.delete("/messages/:id/items/:messageId", requireAuth, requireActive, messageLimiter, asyncHandler(messages.deleteMessage));
 router.post(
   "/messages/:id",
   requireAuth,

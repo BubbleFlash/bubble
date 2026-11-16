@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { displayNameOf, FREE_POST_LENGTH, MESSAGE_MAX_LENGTH, PLUS_POST_LENGTH } from "@commune/shared";
+import { COMMUNITY_POST_LENGTH, displayNameOf, FREE_POST_LENGTH, MESSAGE_MAX_LENGTH, PLUS_POST_LENGTH } from "@commune/shared";
 import type { MessageDTO, PostDTO, RepostSource } from "@commune/shared";
 import { useCommunities } from "../hooks/useCommunities";
 import { useConversations } from "../hooks/useMessages";
@@ -9,6 +9,7 @@ import { useAuth } from "../store/auth";
 import AeroTitlebar from "./AeroTitlebar";
 import Icon from "./Icon";
 import RepostSelect from "./RepostSelect";
+import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 
 const DESTINATIONS = [
   { id: "profile", label: "Профиль", icon: "user" },
@@ -35,7 +36,7 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
   const community = selectedCommunity
     ? communities.data?.find((item) => item.slug === selectedCommunity)?.slug ?? ""
     : communities.data?.[0]?.slug ?? "";
-  const maxLength = destination === "message" ? MESSAGE_MAX_LENGTH : user?.plus ? PLUS_POST_LENGTH : FREE_POST_LENGTH;
+  const maxLength = destination === "message" ? MESSAGE_MAX_LENGTH : destination === "community" ? COMMUNITY_POST_LENGTH : user?.plus ? PLUS_POST_LENGTH : FREE_POST_LENGTH;
   const mutation = useMutation({
     mutationFn: async () => {
       if (destination === "message") {
@@ -60,6 +61,9 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
       return "Репост опубликован";
     },
     onSuccess,
+  });
+  const backdrop = useDialogBackdrop(() => {
+    if (!mutation.isPending) onClose();
   });
 
   useEffect(() => {
@@ -86,7 +90,7 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
   }
 
   return (
-    <dialog ref={dialog} className="aero-dialog repost-dialog" aria-labelledby={titleId} onCancel={(event) => {
+    <dialog ref={dialog} {...backdrop} className="aero-dialog repost-dialog" aria-labelledby={titleId} onCancel={(event) => {
       event.preventDefault();
       close();
     }}>

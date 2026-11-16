@@ -6,7 +6,8 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import type { CommentDTO, CreatePostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
+import type { CommentDTO, CreateCommentInput, CreatePostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
+import { COMMENTS_PAGE_SIZE } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 
 export type FeedType = "all" | "following";
@@ -43,9 +44,15 @@ export function usePost(id: string) {
 }
 
 export function useComments(id: string, linkedCommentId?: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: linkedCommentId ? ["comments", id, linkedCommentId] : ["comments", id],
-    queryFn: () => api<CommentDTO[]>(withQuery(`/posts/${id}/comments`, { comment: linkedCommentId })),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }): Promise<CommentDTO[]> =>
+      api<CommentDTO[]>(withQuery(`/posts/${id}/comments`, { before: pageParam, comment: pageParam ? undefined : linkedCommentId }), { signal }),
+    getNextPageParam: (page: CommentDTO[]) => {
+      if (page.length < COMMENTS_PAGE_SIZE) return undefined;
+      return page.length > COMMENTS_PAGE_SIZE ? page.find((item) => item.id !== linkedCommentId)?.id : page[0]?.id;
+    },
   });
 }
 
@@ -58,16 +65,27 @@ export function useCreatePost() {
   });
 }
 
-export function useToggleLike() {
+export function useSetPostLike() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api<PostDTO>(`/posts/${id}/like`, { method: "POST" }),
+    mutationFn: ({ id, liked }: { id: string; liked: boolean }) =>
+      api<PostDTO>(`/posts/${id}/like`, { method: liked ? "PUT" : "DELETE" }),
     onSuccess: (post) => {
-      void qc.invalidateQueries({ queryKey: ["post"], predicate: (query) => query.queryKey[1] !== post.id });
+      const update = (row: PostDTO) => row.id === post.id
+        ? { ...row, likeCount: post.likeCount, likedByMe: post.likedByMe }
+        : row;
+      qc.setQueriesData<PostDTO>({ queryKey: ["post"] }, (row) => row && update(row));
       qc.setQueryData(["post", post.id], post);
-      void qc.invalidateQueries({ queryKey: ["feed"] });
-      void qc.invalidateQueries({ queryKey: ["search", "posts"] });
-      void qc.invalidateQueries({ queryKey: ["public", "posts"] });
+      for (const key of [["feed"], ["search", "posts"], ["public", "posts"]]) {
+        qc.setQueriesData<InfiniteData<Page<PostDTO>>>({ queryKey: key }, (rows) => rows && ({
+          ...rows,
+          pages: rows.pages.map((page) => ({ ...page, items: page.items.map(update) })),
+        }));
+      }
+      if (post.likePostId) {
+        void qc.invalidateQueries({ queryKey: ["post", post.likePostId] });
+        for (const key of [["feed"], ["search", "posts"], ["public", "posts"]]) void qc.invalidateQueries({ queryKey: key });
+      }
     },
   });
 }
@@ -101,12 +119,21 @@ export function useUpdateCommunityPost(id: string) {
 export function useAddComment(postId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) =>
-      api<CommentDTO>(`/posts/${postId}/comments`, { method: "POST", body: { content } }),
+    mutationFn: (input: CreateCommentInput) =>
+      api<CommentDTO>(`/posts/${postId}/comments`, { method: "POST", body: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["comments", postId] });
       void qc.invalidateQueries({ queryKey: ["post", postId] });
       void qc.invalidateQueries({ queryKey: ["feed"] });
     },
+  });
+}
+
+export function useSetCommentLike(postId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, liked }: { id: string; liked: boolean }) =>
+      api<void>(`/posts/${postId}/comments/${id}/like`, { method: liked ? "PUT" : "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["comments", postId] }),
   });
 }

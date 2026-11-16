@@ -107,6 +107,7 @@ export const communityListSchema = z.object({
 /** Free accounts can write 500 characters per post; Commune Plus members 2000. */
 export const FREE_POST_LENGTH = 500;
 export const PLUS_POST_LENGTH = 2000;
+export const COMMUNITY_POST_LENGTH = 1000;
 
 export const musicTrackIdsSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(10).refine((ids) => new Set(ids).size === ids.length, "Duplicate music tracks");
 
@@ -123,7 +124,10 @@ export const createRepostSchema = z.object({
   source: repostSourceSchema,
   content: z.string().trim().max(PLUS_POST_LENGTH).default(""),
   community: communitySlugSchema.optional(),
-}).strict();
+}).strict().refine((value) => !value.community || value.content.length <= COMMUNITY_POST_LENGTH, {
+  message: `Community posts can have up to ${COMMUNITY_POST_LENGTH} characters`,
+  path: ["content"],
+});
 export type CreateRepostInput = z.infer<typeof createRepostSchema>;
 
 export const createPostSchema = z
@@ -147,13 +151,19 @@ export const createPostSchema = z
   .refine((v) => v.visibility === undefined || v.visibility === "public" || !v.community, {
     message: "Only posts in your profile can be private",
     path: ["visibility"],
+  })
+  .refine((v) => !v.community || v.content.length <= COMMUNITY_POST_LENGTH, {
+    message: `Community posts can have up to ${COMMUNITY_POST_LENGTH} characters`,
+    path: ["content"],
   });
 
 export const updateCommunityPostSchema = z.object({
-  content: z.string().trim().max(PLUS_POST_LENGTH),
+  content: z.string().trim().max(COMMUNITY_POST_LENGTH).optional(),
   imageUrls: z.array(uploadUrlSchema).max(10).optional(),
   musicTrackIds: musicTrackIdsSchema.optional(),
-}).strict();
+}).strict().refine((value) => value.content !== undefined || value.imageUrls !== undefined || value.musicTrackIds !== undefined, {
+  message: "Provide a change to save",
+});
 export type UpdateCommunityPostInput = z.infer<typeof updateCommunityPostSchema>;
 
 /** Search results come in pages of 20, up to 10 pages. */
@@ -179,8 +189,11 @@ export const updateFriendsVisibilitySchema = z
 export type FriendsAccessDTO =
   { canView: false } | { canView: true; count: number; friendsVisibility?: FriendsVisibility };
 
+export const COMMENTS_PAGE_SIZE = 200;
 export const createCommentSchema = z.object({
   content: z.string().trim().min(1).max(300),
+  parentId: objectIdSchema.optional(),
+  mention: z.string().trim().min(1).max(100).optional(),
 });
 
 export const appearanceColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i).transform((color) => color.toLowerCase());
@@ -197,12 +210,16 @@ export const MAX_FONT_BYTES = 2 * 1024 * 1024;
 export const fontUploadUrlSchema = z.string().regex(/^\/uploads\/[a-f0-9]{24}-[a-f0-9]{32}\.(woff2?|ttf|otf)$/);
 export const siteFontSchema = z.union([z.enum(SITE_FONTS), fontUploadUrlSchema]);
 export type SiteFont = z.infer<typeof siteFontSchema>;
+export const MIN_WINDOW_OPACITY = 78;
+export const DEFAULT_WINDOW_OPACITY = 100;
+export const windowOpacitySchema = z.number().int().min(MIN_WINDOW_OPACITY).max(DEFAULT_WINDOW_OPACITY);
 
 export const siteAppearanceSchema = z.object({
   backgroundUrl: uploadUrlSchema.nullable(),
   primaryColor: appearanceColorSchema.nullable(),
   accentColor: appearanceColorSchema.nullable(),
   font: siteFontSchema.nullable().optional(),
+  windowOpacity: windowOpacitySchema.optional(),
 }).strict();
 export type SiteAppearance = z.infer<typeof siteAppearanceSchema>;
 
@@ -291,6 +308,7 @@ export const reportQuerySchema = paginationSchema.omit({ feed: true }).extend({
 // ---- Direct messages, news and contact ----
 
 export const MESSAGE_MAX_LENGTH = 1000;
+export const editMessageSchema = z.object({ text: z.string().trim().max(MESSAGE_MAX_LENGTH) }).strict();
 export const linkPreviewSchema = z.object({ url: z.string().max(2048).url() });
 export const sendMessageSchema = z.object({
   text: z.string().trim().max(MESSAGE_MAX_LENGTH).default(""),
@@ -300,8 +318,12 @@ export const sendMessageSchema = z.object({
   repost: repostSourceSchema.optional(),
 }).refine((value) => Boolean(value.text || value.musicTrackIds?.length || value.imageIds?.length || value.repost), { message: "Write a message or attach a file", path: ["text"] });
 export const messagesQuerySchema = z.object({
-  /** ISO timestamp of the oldest message already loaded; returns older ones. */
-  cursor: z.string().datetime().optional(),
+  /** Timestamp and message id; legacy ISO-only cursors still work. */
+  cursor: z.string().refine((cursor) => {
+    const [timestamp, id, extra] = cursor.split("~");
+    return extra === undefined && z.iso.datetime().safeParse(timestamp).success &&
+      (id === undefined || objectIdSchema.safeParse(id).success);
+  }, "Invalid message cursor").optional(),
   limit: z.coerce.number().int().min(1).max(50).default(30),
 });
 
@@ -330,6 +352,7 @@ export interface MessageDTO {
   repost?: RepostPreviewDTO;
   clientMessageId?: string;
   createdAt: string;
+  editedAt?: string;
 }
 
 export interface ConversationDTO {
@@ -416,6 +439,8 @@ export interface PostDTO {
   likeCount: number;
   commentCount: number;
   likedByMe: boolean;
+  /** A share's original post. Null if the viewer cannot access the original. */
+  likePostId?: string | null;
   repostCount?: number;
   repost?: RepostPreviewDTO;
   visibility?: PostVisibility;
@@ -544,6 +569,11 @@ export interface EarningsDTO {
 export interface CommentDTO {
   id: string;
   postId: string;
+  parentId: string | null;
+  mention?: { name: string; username: string };
+  likeCount: number;
+  replyCount: number;
+  likedByMe: boolean;
   content: string;
   author: AuthorDTO;
   createdAt: string;
@@ -732,6 +762,16 @@ export interface ReportDTO {
   resolvedAt: string | null;
 }
 
+export interface CommentReportDTO {
+  id: string;
+  postId: string;
+  reason: ReportReason;
+  details: string;
+  reporter: { username: string; displayName?: string };
+  comment: { id: string; content: string; author: { username: string; displayName?: string } | null } | null;
+  createdAt: string;
+}
+
 // ---- Monitoring ----
 
 /** Sent by the browser when something throws. Kept small: no personal data is needed. */
@@ -760,7 +800,7 @@ export interface ErrorEventDTO {
 // ---- Realtime (Socket.IO) ----
 
 /** Events the API pushes to users through the realtime service. */
-export type PushedEvent = "message:new" | "message:read" | "notification:new";
+export type PushedEvent = "message:new" | "message:read" | "message:changed" | "notification:new";
 
 export interface MessageNewEvent {
   message: MessageDTO;
@@ -768,6 +808,9 @@ export interface MessageNewEvent {
 export interface MessageReadEvent {
   conversationId: string;
   readerId: string;
+}
+export interface MessageChangedEvent {
+  conversationId: string;
 }
 /** Sent between the two people in a conversation. */
 export interface TypingEvent {

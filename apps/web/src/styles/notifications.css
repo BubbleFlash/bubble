@@ -193,6 +193,11 @@
 .notification-preferences tbody th {
   font-weight: normal;
 }
+.notification-preferences .notification-preview { display: inline-grid; place-items: center; min-width: 36px; min-height: 36px; padding: 4px; }
+@media (max-width: 480px) {
+  .notification-preferences { font-size: 12px; }
+  .notification-preferences :is(th, td) { padding-inline: 2px; }
+}
 
 .notification-toasts {
   position: fixed;

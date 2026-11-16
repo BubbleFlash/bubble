@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { PostDTO } from "@commune/shared";
 import { useAuth } from "../store/auth";
-import { useDeletePost, useToggleLike } from "../hooks/usePosts";
+import { useDeletePost, useSetPostLike } from "../hooks/usePosts";
 import Avatar, { ProfileAvatar } from "./Avatar";
 import Icon from "./Icon";
 import PlusBadge from "./PlusBadge";
@@ -29,7 +29,7 @@ export function timeAgo(iso: string): string {
 
 export default function PostCard({ post, inlineComments = false }: { post: PostDTO; inlineComments?: boolean }) {
   const { user } = useAuth();
-  const like = useToggleLike();
+  const like = useSetPostLike();
   const del = useDeletePost();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsMounted, setCommentsMounted] = useState(false);
@@ -70,8 +70,9 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
         <div className="post-actions">
           <button
             className={`btn btn-ghost ${post.likedByMe ? "liked" : ""}`}
-            onClick={() => like.mutate(post.id)}
-            disabled={like.isPending}
+            onClick={() => like.mutate({ id: post.id, liked: !post.likedByMe })}
+            disabled={like.isPending || post.likePostId === null}
+            aria-label={post.likePostId === null ? "Исходная публикация недоступна" : `Нравится · ${post.likeCount}`}
             aria-pressed={post.likedByMe}
           >
             <Icon name="heart" size={19} filled={post.likedByMe} />
@@ -85,6 +86,7 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
           {canEdit && !showEditor && <button type="button" className="btn btn-ghost" aria-label="Редактировать запись" title="Редактировать запись" onClick={() => setEditing(true)}><Icon name="pencil" size={18} /></button>}
         </div>
         {del.error && <p className="error" role="alert">{del.error.message}</p>}
+        {like.error && <p className="error" role="alert">{like.error.message}</p>}
         {inlineComments && (
           <div className={`comments-disclosure${commentsOpen ? " is-open" : ""}`} aria-hidden={!commentsOpen} ref={(node) => { node?.toggleAttribute("inert", !commentsOpen); }}>
             <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} />}</div>

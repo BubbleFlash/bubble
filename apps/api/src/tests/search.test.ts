@@ -95,6 +95,34 @@ describe("GET /api/search/users", () => {
   });
 });
 
+describe("GET /api/search/people", () => {
+  it("requires authentication and validates the cursor", async () => {
+    expect((await request(app).get("/api/search/people")).status).toBe(401);
+    expect((await request(app).get("/api/search/people?cursor=invalid").set(auth)).status).toBe(400);
+  });
+
+  it("lists available people without a query and returns a cursor", async () => {
+    const rows = Array.from({ length: 21 }, (_, i) => ({ _id: new mongoose.Types.ObjectId(), username: `user${i}` }));
+    const find = vi.spyOn(User, "find").mockReturnValue(queryChain(rows) as never);
+    const res = await request(app).get("/api/search/people").set(auth);
+    expect(res.status).toBe(200);
+    expect(find).toHaveBeenCalledWith(expect.objectContaining({ banned: { $ne: true }, $nor: expect.any(Array) }));
+    expect(res.body.items).toHaveLength(20);
+    expect(res.body.nextCursor).toBe(String(rows[19]!._id));
+  });
+
+  it("filters by escaped name prefix and cursor", async () => {
+    const find = vi.spyOn(User, "find").mockReturnValue(queryChain([]) as never);
+    const cursor = new mongoose.Types.ObjectId().toString();
+    const res = await request(app).get(`/api/search/people?q=a.b&cursor=${cursor}`).set(auth);
+    expect(res.status).toBe(200);
+    expect(find).toHaveBeenCalledWith(expect.objectContaining({
+      _id: { $lt: new mongoose.Types.ObjectId(cursor) },
+      $or: [{ displayName: { $regex: "^a\\.b", $options: "i" } }, { username: { $regex: "^a\\.b", $options: "i" } }],
+    }));
+  });
+});
+
 describe("GET /api/search/posts", () => {
   const author = { _id: new mongoose.Types.ObjectId(), username: "sam", avatarUrl: null };
   const base = {
