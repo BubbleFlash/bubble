@@ -27,10 +27,14 @@ integration("moderation on isolated MongoDB", () => {
   let ownsDatabase = false;
 
   beforeAll(async () => {
-    await mongoose.connect("mongodb://127.0.0.1:" + port + "/" + dbName, { serverSelectionTimeoutMS: 3000 });
+    await mongoose.connect("mongodb://127.0.0.1:" + port + "/" + dbName, {
+      serverSelectionTimeoutMS: 3000,
+      autoCreate: false,
+      autoIndex: false,
+    });
     if ((await mongoose.connection.db!.listCollections().toArray()).length) throw new Error("Expected a new test database");
     ownsDatabase = true;
-    await Promise.all([User.init(), Post.init(), Report.init(), Wallpaper.init(), WallpaperReport.init()]);
+    await Promise.all([User, Post, Report, CommentReport, Wallpaper, WallpaperReport].map((model) => model.createIndexes()));
     await User.create(Object.entries(ids).map(([username, _id]) => ({ _id, username, email: username + "@example.invalid", passwordHash: "test", role: username === "admin" || username === "moderator" ? username : "user" })));
   }, 60_000);
   beforeEach(() => {
@@ -129,11 +133,37 @@ integration("moderation on isolated MongoDB", () => {
     expect((await app.get("/api/users/me").set(legacyAuth)).status).toBe(200);
     const parent = await Post.create({ author: ids.user, content: "Parent" });
     const comment = await Comment.create({ author: ids.user, post: parent._id, content: "Comment" });
+    const otherComment = await Comment.create({ author: ids.user, post: parent._id, content: "Existing report" });
+    const earlierComment = await Comment.create({ author: ids.user, post: parent._id, content: "Earlier report" });
+    // The upstream database may already have the uniqueness index from the original CMS model.
+    await CommentReport.collection.createIndex({ reporter: 1, post: 1 }, { unique: true });
+    const existingReport = await CommentReport.collection.insertOne({
+      post: otherComment._id,
+      reporter: ids.reporter,
+      reason: "spam",
+      status: "open",
+      snapshot: { parent: parent._id, author: ids.user, content: otherComment.content },
+      createdAt: new Date(),
+    });
+    const earlierReport = await CommentReport.create({
+      post: parent._id,
+      comment: earlierComment._id,
+      reporter: ids.reporter,
+      reason: "spam",
+    });
+    expect((await post("reporter", `/posts/${parent._id}/comments/${otherComment._id}/report`, { reason: "spam" })).status).toBe(409);
+    expect((await post("reporter", `/posts/${parent._id}/comments/${earlierComment._id}/report`, { reason: "spam" })).status).toBe(409);
     expect((await post("reporter", `/posts/${parent._id}/comments/${comment._id}/report`, { reason: "spam" })).status).toBe(201);
     const report = (await CommentReport.findOne({ comment: comment._id }).lean())!;
     const queue = await app.get("/api/moderation/reports?kind=comment&status=open").set(auth("moderator"));
     expect(queue.status).toBe(200);
-    expect(queue.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ _id: String(report._id), post: String(comment._id), kind: "comment", target: expect.objectContaining({ content: "Comment" }) })]));
+    expect(queue.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ _id: String(report._id), post: String(comment._id), kind: "comment", target: expect.objectContaining({ content: "Comment" }) }),
+      expect.objectContaining({ _id: String(existingReport.insertedId), post: String(otherComment._id) }),
+      expect.objectContaining({ _id: String(earlierReport._id), post: String(earlierComment._id) }),
+    ]));
+    expect((await post("moderator", `/moderation/content/comment/${otherComment._id}`, { state: "hidden", reason: "Спам", reportId: String(existingReport.insertedId) })).status).toBe(204);
+    expect((await post("moderator", `/moderation/content/comment/${earlierComment._id}`, { state: "hidden", reason: "Спам", reportId: String(earlierReport._id) })).status).toBe(204);
     const path = "/moderation/content/comment/" + comment._id;
     expect((await post("moderator", path, { state: "hidden", reason: "Спам", reportId: String(report._id) })).status).toBe(204);
     expect((await CommentReport.findById(report._id).lean())?.status).toBe("resolved");

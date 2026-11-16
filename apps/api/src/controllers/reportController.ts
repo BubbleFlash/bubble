@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { Post } from "../models/Post.js";
 import { Report } from "../models/Report.js";
 import { Comment } from "../models/Comment.js";
-import { CommentReport } from "../models/CommentReport.js";
+import { CommentReport, commentReportTarget } from "../models/CommentReport.js";
 import { visibleContent } from "../models/moderationFields.js";
 import { loadReadablePostAuthor } from "../services/postAccess.js";
 import { badRequest, conflict, notFound } from "../utils/errors.js";
@@ -37,8 +37,18 @@ export async function createCommentReport(req: Request, res: Response) {
   const comment = await Comment.findOne({ _id: commentId, post, ...visibleContent }).select("author content post").lean();
   if (!comment) throw notFound("Comment not found");
   if (String(comment.author) === req.userId) throw badRequest("You can't report your own comment");
+  if (await CommentReport.exists({ reporter: req.userId, ...commentReportTarget(commentId) })) {
+    throw conflict("You already reported this comment");
+  }
   try {
-    await CommentReport.create({ reporter: req.userId, post, comment: commentId, reason: req.body.reason, details: req.body.details ?? "", snapshot: { content: comment.content, author: comment.author, parent: comment.post } });
+    await CommentReport.create({
+      reporter: req.userId,
+      post: commentId,
+      comment: commentId,
+      reason: req.body.reason,
+      details: req.body.details ?? "",
+      snapshot: { content: comment.content, author: comment.author, parent: comment.post },
+    });
   } catch (err) {
     if ((err as { code?: number }).code === 11000) throw conflict("You already reported this comment");
     throw err;

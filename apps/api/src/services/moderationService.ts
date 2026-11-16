@@ -1,6 +1,6 @@
 import { Comment } from "../models/Comment.js";
 import { CommentLike } from "../models/CommentLike.js";
-import { CommentReport } from "../models/CommentReport.js";
+import { CommentReport, commentReportsForPost, commentReportTarget } from "../models/CommentReport.js";
 import { Like } from "../models/Like.js";
 import { Notification } from "../models/Notification.js";
 import { Post } from "../models/Post.js";
@@ -20,6 +20,7 @@ import { deleteUploadIfUnused } from "./uploadService.js";
 export async function removePost(postId: string, resolvedBy?: string): Promise<void> {
   const post = await Post.findById(postId).select("imageUrl imageUrls");
   if (!post) return;
+  const comments = await Comment.find({ post: postId }).select("_id").lean();
 
   const deleted = await Post.deleteOne({ _id: postId, "moderationEvents.0": { $exists: false } });
   if (!deleted.deletedCount) {
@@ -44,7 +45,7 @@ export async function removePost(postId: string, resolvedBy?: string): Promise<v
       { $set: { moderationState: "withdrawn", content: "" } },
     ),
     CommentLike.deleteMany({ post: postId }),
-    CommentReport.updateMany({ post: postId, status: "open" }, { $set: { status: "resolved", resolvedAt: new Date(), resolvedBy: resolvedBy ?? null } }),
+    CommentReport.updateMany({ ...commentReportsForPost(postId, comments.map(({ _id }) => _id)), status: "open" }, { $set: { status: "resolved", resolvedAt: new Date(), resolvedBy: resolvedBy ?? null } }),
     Like.deleteMany({ post: postId }),
     Notification.deleteMany({ post: postId }),
     Report.updateMany(
@@ -92,7 +93,8 @@ export async function changeContent(
   }
   if (next !== "published") {
     const reports: typeof Report = kind === "post" ? Report : kind === "comment" ? CommentReport as unknown as typeof Report : WallpaperReport as unknown as typeof Report;
-    const reportFilter = kind === "wallpaper" ? { wallpaper: target, status: { $in: ["open", null] } } : kind === "comment" ? { comment: target, status: "open" } : { post: target, status: "open" };
+    const reportTarget = kind === "wallpaper" ? { wallpaper: target } : kind === "comment" ? commentReportTarget(target) : { post: target };
+    const reportFilter = { ...reportTarget, status: kind === "wallpaper" ? { $in: ["open", null] } : "open" };
     const open = await reports.find(reportFilter).select("_id").lean();
     for (const report of open) {
       await reports.updateOne(
@@ -143,7 +145,7 @@ async function permanentlyRemoveContent(
   const removed = previous ?? existing;
 
   const reports: typeof Report = kind === "post" ? Report : kind === "comment" ? CommentReport as unknown as typeof Report : WallpaperReport as unknown as typeof Report;
-  const reportFilter = kind === "wallpaper" ? { wallpaper: target } : kind === "comment" ? { comment: target } : { post: target };
+  const reportFilter = kind === "wallpaper" ? { wallpaper: target } : kind === "comment" ? commentReportTarget(target) : { post: target };
   const openStatus = kind === "wallpaper" ? { $in: ["open", null] } : "open";
   const open = await reports.find({ ...reportFilter, status: openStatus }).select("_id").lean();
   for (const report of open) {
@@ -155,14 +157,14 @@ async function permanentlyRemoveContent(
   if (kind !== "wallpaper") await reports.updateMany(reportFilter, { $unset: { "snapshot.content": 1 } });
   if (kind === "post") {
     const comments = await Comment.find({ post: target }).select("_id").lean();
-    const commentReports = { post: { $in: comments.map((comment) => comment._id) } };
+    const commentReports = commentReportsForPost(target, comments.map(({ _id }) => _id));
     await CommentReport.updateMany(commentReports, { $unset: { "snapshot.content": 1 } });
     await CommentReport.updateMany({ ...commentReports, status: "open" }, {
       $set: { status: "resolved", resolvedBy: who.id, resolvedAt: new Date(), decision: why },
     });
     await Comment.deleteMany({ post: target, "moderationEvents.0": { $exists: false } });
     await Comment.updateMany({ post: target }, { $set: { moderationState: "withdrawn" }, $unset: { content: 1 } });
-    await Promise.all([Like.deleteMany({ post: target }), Notification.deleteMany({ post: target })]);
+    await Promise.all([Like.deleteMany({ post: target }), CommentLike.deleteMany({ post: target }), Notification.deleteMany({ post: target })]);
   }
   if (kind === "comment" && previous && "post" in previous) {
     await Post.updateOne({ _id: previous.post, commentCount: { $gt: 0 } }, { $inc: { commentCount: -1 } });

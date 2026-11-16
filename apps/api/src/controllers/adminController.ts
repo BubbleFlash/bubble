@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import type { Page, ReportDTO, ReportStatus } from "@commune/shared";
+import { Comment } from "../models/Comment.js";
 import { Post } from "../models/Post.js";
 import { Report } from "../models/Report.js";
 import { CommentReport } from "../models/CommentReport.js";
@@ -62,16 +63,20 @@ export async function listCommentReports(_req: Request, res: Response) {
   const rows = await CommentReport.find(cursor ? { status, _id: { $lt: cursor } } : { status })
     .sort({ _id: -1 }).limit(limit + 1)
     .populate("reporter", "username displayName")
-    .populate({ path: "comment", select: "content author", populate: { path: "author", select: "username displayName" } })
     .lean();
   const page = rows.slice(0, limit);
+  const comments = await Comment.find({ _id: { $in: page.map((row) => row.comment ?? row.post) } })
+    .select("content author post")
+    .populate<{ author: { username: string; displayName?: string } | null }>("author", "username displayName")
+    .lean();
+  const commentsById = new Map(comments.map((comment) => [String(comment._id), comment]));
   res.json({
     items: page.map((row) => {
       const reporter = row.reporter as unknown as { username: string; displayName?: string };
-      const comment = row.comment as unknown as { _id: mongoose.Types.ObjectId; content: string; author: { username: string; displayName?: string } | null } | null;
-      return { id: String(row._id), postId: String(row.post), reason: row.reason, details: row.details,
+      const comment = commentsById.get(String(row.comment ?? row.post));
+      return { id: String(row._id), postId: String(comment?.post ?? row.snapshot?.parent ?? row.post), reason: row.reason, details: row.details,
         reporter: { username: reporter.username, displayName: reporter.displayName },
-        comment: comment && { id: String(comment._id), content: comment.content, author: comment.author },
+        comment: comment ? { id: String(comment._id), content: comment.content, author: comment.author } : null,
         createdAt: row.createdAt.toISOString() };
     }),
     nextCursor: rows.length > limit ? String(page.at(-1)!._id) : null,
