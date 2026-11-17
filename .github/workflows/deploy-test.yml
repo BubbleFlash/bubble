@@ -127,7 +127,7 @@ jobs:
           cd /opt/bubble
           test -n "$DEPLOY_SHA"
 
-          git fetch origin "$DEPLOY_SHA"
+          git fetch origin develop
           git checkout --detach "$DEPLOY_SHA"
 
           export API_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-api:${DEPLOY_SHA}"
