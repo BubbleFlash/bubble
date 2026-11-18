@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useBeforeUnload, useBlocker, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 import { DEFAULT_WINDOW_OPACITY, MAX_FONT_BYTES, MIN_WINDOW_OPACITY, type UploadResponse } from "@commune/shared";
 import type {
   AvatarFrame,
@@ -16,6 +17,7 @@ import ProfileAppearancePrivacy from "../components/ProfileAppearancePrivacy";
 import MusicPrivacySettings from "../components/MusicPrivacySettings";
 import UnsavedAppearanceDialog from "../components/UnsavedAppearanceDialog";
 import NotificationSettings from "../components/NotificationSettings";
+import AccountSettings from "../components/AccountSettings";
 import Avatar from "../components/Avatar";
 import FontSettings from "../components/FontSettings";
 import ColorPalette from "../components/ColorPalette";
@@ -39,24 +41,25 @@ import "../styles/appearance.css";
 
 const DEFAULT_FRAME: AvatarFrame = { effect: "pulse", color: DEFAULT_PRIMARY, intensity: 3 };
 
-type PreviewProps = { onWallpaperPreview?: (path?: string | null) => void };
+type PreviewProps = { onWallpaperPreview?: (path?: string | null) => void; onOpacityPreview?: (value?: number) => void };
 
 const SETTINGS_TABS = [
   { id: "appearance", label: "Визуал" },
   { id: "privacy", label: "Приватность" },
   { id: "notifications", label: "Уведомления" },
+  { id: "account", label: "Аккаунт" },
 ] as const;
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 
-export default function SettingsPage({ onWallpaperPreview }: PreviewProps) {
+export default function SettingsPage({ onWallpaperPreview, onOpacityPreview }: PreviewProps) {
   const { user } = useAuth();
   return (
-    user && <SettingsSections key={user.id} user={user} onWallpaperPreview={onWallpaperPreview} />
+    user && <SettingsSections key={user.id} user={user} onWallpaperPreview={onWallpaperPreview} onOpacityPreview={onOpacityPreview} />
   );
 }
 
-function SettingsSections({ user, onWallpaperPreview }: { user: AccountUser } & PreviewProps) {
+function SettingsSections({ user, onWallpaperPreview, onOpacityPreview }: { user: AccountUser } & PreviewProps) {
   const [params, setParams] = useSearchParams();
   const tab = SETTINGS_TABS.find((entry) => entry.id === params.get("tab"))?.id ?? "appearance";
   const [openedAppearance, setOpenedAppearance] = useState(tab === "appearance");
@@ -125,7 +128,7 @@ function SettingsSections({ user, onWallpaperPreview }: { user: AccountUser } & 
           className="settings-panel"
         >
           {id === "appearance" && (tab === id || openedAppearance) && (
-            <AppearanceSettings user={user} onWallpaperPreview={onWallpaperPreview} />
+            <AppearanceSettings user={user} onWallpaperPreview={onWallpaperPreview} onOpacityPreview={onOpacityPreview} />
           )}
           {id === "privacy" && tab === id && (
             <>
@@ -137,13 +140,14 @@ function SettingsSections({ user, onWallpaperPreview }: { user: AccountUser } & 
           {id === "notifications" && tab === id && (
             <NotificationSettings />
           )}
+          {id === "account" && tab === id && <AccountSettings user={user} />}
         </div>
       ))}
     </>
   );
 }
 
-function AppearanceSettings({ user, onWallpaperPreview }: { user: AccountUser } & PreviewProps) {
+function AppearanceSettings({ user, onWallpaperPreview, onOpacityPreview }: { user: AccountUser } & PreviewProps) {
   const { applyAppearance, isCurrentAccount } = useAuth();
   const [workshopOpen, setWorkshopOpen] = useState(false);
   const [report, setReport] = useState<{ item: WallpaperDTO; trigger: HTMLButtonElement }>();
@@ -162,6 +166,8 @@ function AppearanceSettings({ user, onWallpaperPreview }: { user: AccountUser } 
   const [fileError, setFileError] = useState<string>();
   const upload = useUploadImage("wallpaper");
   const appearance = { ...user.appearance, ...changes };
+  useEffect(() => { onOpacityPreview?.(changes.windowOpacity); }, [changes.windowOpacity, onOpacityPreview]);
+  useEffect(() => () => onOpacityPreview?.(), [onOpacityPreview]);
   const frame = frameDraft === undefined ? (user.avatarFrame ?? null) : frameDraft;
   const dirty = Boolean(
     fontFile || file || frameDraft !== undefined || Object.keys(changes).length,
@@ -491,7 +497,7 @@ function AppearanceSettings({ user, onWallpaperPreview }: { user: AccountUser } 
           {save.error && <span role="alert">{save.error.message}</span>}
         </div>
       </form>
-      {blocker.state === "blocked" && (
+      {blocker.state === "blocked" && createPortal(
         <UnsavedAppearanceDialog
           busy={save.isPending}
           canSave={dirty && !checkingFont}
@@ -499,7 +505,8 @@ function AppearanceSettings({ user, onWallpaperPreview }: { user: AccountUser } 
           onStay={blocker.reset}
           onDiscard={blocker.proceed}
           onSave={() => save.mutate()}
-        />
+        />,
+        document.querySelector(".aero-home") ?? document.body,
       )}
       {report && (
         <WallpaperReportDialog

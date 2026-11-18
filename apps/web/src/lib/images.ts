@@ -29,13 +29,15 @@ export interface PrepareOptions {
   maxSide: number;
   /** Crop to a centred square (profile photos). */
   square?: boolean;
+  /** Preferred transfer budget; resize further only when encoding cannot meet it. */
+  targetBytes?: number;
 }
 
-export const POST_PHOTO: PrepareOptions = { maxSide: 1600 };
-export const WALLPAPER_PHOTO: PrepareOptions = { maxSide: 2560 };
-export const AVATAR_PHOTO: PrepareOptions = { maxSide: 512, square: true };
+export const POST_PHOTO: PrepareOptions = { maxSide: 1600, targetBytes: 450 * 1024 };
+export const WALLPAPER_PHOTO: PrepareOptions = { maxSide: 2560, targetBytes: 700 * 1024 };
+export const AVATAR_PHOTO: PrepareOptions = { maxSide: 512, square: true, targetBytes: 96 * 1024 };
 
-const KEEP_BELOW_BYTES = 600 * 1024;
+const KEEP_BELOW_BYTES = 96 * 1024;
 const TARGET_BYTES = 2.5 * 1024 * 1024;
 
 async function decode(
@@ -86,9 +88,10 @@ export async function prepareImage(file: File, options: PrepareOptions): Promise
     const { width, height } = decoded;
     const side = options.square ? Math.min(width, height) : Math.max(width, height);
     const scale = Math.min(1, options.maxSide / side);
+    const target = Math.min(options.targetBytes ?? TARGET_BYTES, TARGET_BYTES);
 
     // Already small and the right shape: nothing to gain, keep the original bytes.
-    if (scale === 1 && !options.square && file.size <= KEEP_BELOW_BYTES) return file;
+    if (scale === 1 && !options.square && file.size <= Math.min(KEEP_BELOW_BYTES, target)) return file;
 
     // Crop region in the source image.
     const sw = options.square ? Math.min(width, height) : width;
@@ -109,21 +112,27 @@ export async function prepareImage(file: File, options: PrepareOptions): Promise
       ctx.clearRect(0, 0, outW, outH);
       ctx.drawImage(decoded.source, sx, sy, sw, sh, 0, 0, outW, outH);
 
-      let blob = await toBlob(canvas, "image/webp", 0.82);
+      const quality = attempt === 0 ? 0.82 : 0.72;
+      let blob = await toBlob(canvas, "image/webp", quality);
       let ext = "webp";
       if (!blob || blob.type !== "image/webp") {
         // No WebP encoder (older Safari): use JPEG on a white background.
         ctx.globalCompositeOperation = "destination-over";
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, outW, outH);
-        blob = await toBlob(canvas, "image/jpeg", 0.85);
+        blob = await toBlob(canvas, "image/jpeg", quality);
         ext = "jpg";
       }
-      if (blob && blob.size <= TARGET_BYTES) {
+      if (blob && (blob.size <= target || (attempt === 3 && blob.size <= TARGET_BYTES))) {
+        // Re-encoding a small efficient original can increase its transfer size.
+        if (scale === 1 && !options.square && file.size <= target && file.size <= blob.size) return file;
         return new File([blob], `photo.${ext}`, { type: blob.type });
       }
-      outW = Math.round(outW * 0.8);
-      outH = Math.round(outH * 0.8);
+      // Try a modest quality change at full resolution before shrinking again.
+      if (attempt > 0) {
+        outW = Math.max(1, Math.round(outW * 0.8));
+        outH = Math.max(1, Math.round(outH * 0.8));
+      }
     }
     throw new Error("That photo is too large to upload. Try a smaller one.");
   } finally {

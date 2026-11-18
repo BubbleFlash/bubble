@@ -18,7 +18,7 @@ export async function findByUsername(raw: string | undefined) {
   const user = await User.findOne({ username: parsed.data })
     .collation({ locale: "en", strength: 2 })
     .lean();
-  if (!user) throw notFound("User not found");
+  if (!user || user.deletionExpiresAt || user.anonymizedAt) throw notFound("User not found");
   return user;
 }
 

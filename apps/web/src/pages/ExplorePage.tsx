@@ -36,11 +36,7 @@ export default function ExplorePage() {
   return (
     <>
       <section className="explore-hero">
-        <div className="hero-art" aria-hidden="true">
-          <span className="blob b1" />
-          <span className="blob b2" />
-          <span className="blob b3" />
-        </div>
+        <img className="explore-hero__logo" src="/bubble-wordmark-v2.png" alt="Bubble" />
         <h1>Ваше место для общения</h1>
         <p>Публикуйте записи, подписывайтесь, общайтесь и следите за новостями. Регистрация бесплатна, исходный код открыт.</p>
         {!user && (

@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { ErrorEvent } from "../models/ErrorEvent.js";
 import { sendMail } from "./mailService.js";
+import { errorAlertMail } from "./emailTemplates.js";
 
 export interface ErrorReport {
   source: "api" | "web";
@@ -91,18 +92,10 @@ export async function recordError(report: ErrorReport): Promise<void> {
 
     const to = env.ALERT_EMAIL ?? env.CONTACT_EMAIL;
     if (to && canAlert()) {
-      await sendMail({
-        to,
-        subject: `Commune error: ${clean.message}`.slice(0, 120),
-        text: `A new error appeared.\n\nWhere: ${clean.source} ${clean.route}\nMessage: ${clean.message}\n\nSee the Errors tab on the Admin page.`,
-        html: `<p>A new error appeared.</p><p><strong>${esc(clean.source)}</strong> ${esc(clean.route)}<br>${esc(clean.message)}</p><p>See the Errors tab on the Admin page.</p>`,
-      });
+      await sendMail(errorAlertMail(to, clean.source, clean.route, clean.message, `${env.CLIENT_ORIGIN}/admin/errors`));
     }
   } catch (err) {
     // Monitoring must never break the request that triggered it. Duplicate-key races end here.
     logger.warn({ err: String(err) }, "Could not record error");
   }
 }
-
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

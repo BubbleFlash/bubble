@@ -20,6 +20,14 @@ Known limit: in a Codespace opened **in the browser**, the web app is served fro
 the API address and the allowed origin default to `localhost`. Open the Codespace from VS Code on your computer (it
 forwards the ports to your own `localhost`), or set `VITE_API_URL` and `CLIENT_ORIGIN` to the forwarded addresses.
 
+## Предпросмотр писем Bubble
+
+Из корня репозитория выполните `npm run preview:mail -w @commune/api` и откройте `dist/mail-preview/index.html` в браузере. В каталоге девять вариантов с HTML и текстовой версией. Команда использует шаблоны API и вымышленные данные, поэтому ей не нужны MongoDB, Resend или действительные ссылки.
+
+Для проверки доставки на тестовом окружении укажите `RESEND_API_KEY` и `EMAIL_FROM` с подтверждённым в Resend адресом Bubble. Ссылки в реальных письмах берутся из `CLIENT_ORIGIN`. На локальном API без ключа письма выводятся в журнал. Адреса для служебных писем задаются через `CONTACT_EMAIL` и `ALERT_EMAIL`.
+
+Для проверки смены данных и удаления задайте `BUBBLE_ACCOUNT_TEST_MONGO_PORT` с портом локальной базы и выполните `npm run test -w @commune/api -- src/tests/accountLifecycle.integration.test.ts`.
+
 ## Browser (end-to-end) tests
 
 Playwright drives a real browser against a real API and a separate `commune_e2e` database.

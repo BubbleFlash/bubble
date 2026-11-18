@@ -168,6 +168,11 @@ export async function api<T>(
     const known: Record<string, string> = {
       "Invalid input": "Проверьте введённые данные.",
       "Invalid email or password": "Неверный адрес почты или пароль.",
+      "Current password is incorrect": "Текущий пароль указан неверно.",
+      "Email delivery is unavailable": "Отправка писем сейчас недоступна. Попробуйте позже.",
+      "This link is invalid or has expired": "Ссылка недействительна или срок её действия истёк.",
+      "The new email is the same as the current one": "Укажите адрес, отличный от текущего.",
+      "Cancel your renewing subscription before deleting your account": "Отмените продление подписки в разделе Plus, затем повторите удаление.",
       "Email or username is already taken": "Этот адрес почты или имя пользователя уже заняты.",
       "This account has been suspended": "Этот аккаунт заблокирован.",
       "No session": "Войдите в аккаунт.",

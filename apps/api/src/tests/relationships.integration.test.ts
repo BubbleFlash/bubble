@@ -11,6 +11,7 @@ import { signAccessToken } from "../utils/tokens.js";
 
 // Explicitly opt in: never use the application's configured database for integration tests.
 const integration = process.env.BUBBLE_LOCAL_MONGO_TEST === "1" ? describe : describe.skip;
+const port = process.env.BUBBLE_RELATIONSHIPS_TEST_MONGO_PORT ?? "27017";
 integration("relationships with isolated local MongoDB", () => {
   const name = `bubble_codex_test_${randomUUID().replaceAll("-", "")}`;
   const app = createApp();
@@ -20,7 +21,10 @@ integration("relationships with isolated local MongoDB", () => {
   let auth: { Authorization: string };
   let ownsDatabase = false;
   beforeAll(async () => {
-    await mongoose.connect(`mongodb://127.0.0.1:27017/${name}`, { serverSelectionTimeoutMS: 3000 });
+    if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
+      throw new Error("BUBBLE_RELATIONSHIPS_TEST_MONGO_PORT must be a valid port number");
+    }
+    await mongoose.connect(`mongodb://127.0.0.1:${port}/${name}`, { serverSelectionTimeoutMS: 3000 });
     if ((await mongoose.connection.db!.listCollections().toArray()).length !== 0)
       throw new Error("Test database is not empty");
     ownsDatabase = true;

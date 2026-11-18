@@ -18,7 +18,7 @@ import ReportMenu from "./ReportMenu";
 import { navigationFor } from "../lib/navigation";
 
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
-export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/confirm-email-change"];
 
 export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigateToNotification }: {
   menuOpen: boolean;
@@ -75,7 +75,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
     <>
       <header className={`header${user ? " header-user" : ""}`}>
         <Link to="/" className="brand" aria-label="На главную Bubble">
-          <Brand size={30} />
+          <Brand size={44} />
         </Link>
 
         {user && (

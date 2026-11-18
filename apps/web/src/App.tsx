@@ -21,6 +21,7 @@ import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
 import MusicPlayer from "./components/MusicPlayer";
 import BackToTop from "./components/BackToTop";
+import { useStickyTabs } from "./hooks/useStickyTabs";
 
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const PostPage = lazy(() => import("./pages/PostPage"));
@@ -36,6 +37,7 @@ const ModerationPage = lazy(() => import("./pages/ModerationPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
+const ConfirmEmailChangePage = lazy(() => import("./pages/ConfirmEmailChangePage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
 const CommunitiesPage = lazy(() => import("./pages/CommunitiesPage"));
 const CommunityPage = lazy(() => import("./pages/CommunityPage"));
@@ -65,6 +67,7 @@ const TITLES: Record<string, string> = {
   "/register": "Регистрация",
   "/forgot-password": "Восстановление пароля",
   "/reset-password": "Сброс пароля",
+  "/confirm-email-change": "Смена почты",
   "/admin": "Администрирование",
   "/moderation": "Модерация",
   "/admin/errors": "Ошибки",
@@ -117,9 +120,10 @@ function Home() {
   return user ? <FeedPage /> : <ExplorePage />;
 }
 
-function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
+function AppRoutes({ onNotificationItems, onWallpaperPreview, onOpacityPreview }: {
   onNotificationItems: (items: NotificationDTO[]) => void;
   onWallpaperPreview?: (path?: string | null) => void;
+  onOpacityPreview?: (value?: number) => void;
 }) {
   return (
     <Suspense fallback={<PageSkeleton />}>
@@ -130,6 +134,7 @@ function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
         <Route path="/" element={<Home />} />
         <Route
           path="/posts/:id"
@@ -151,7 +156,7 @@ function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
             </Protected>
           }
         />
-        <Route path="/settings" element={<Protected><SettingsPage onWallpaperPreview={onWallpaperPreview} /></Protected>} />
+        <Route path="/settings" element={<Protected><SettingsPage onWallpaperPreview={onWallpaperPreview} onOpacityPreview={onOpacityPreview} /></Protected>} />
         <Route path="/friends" element={<Protected><FriendsPage /></Protected>} />
         <Route path="/friends/:username" element={<Protected><FriendsPage /></Protected>} />
         <Route
@@ -272,6 +277,7 @@ function AuthArt() {
 }
 
 export default function App() {
+  useStickyTabs();
   const { pathname } = useLocation();
   const { user } = useAuth();
   const onNotificationsPage = Boolean(matchPath("/notifications", pathname));
@@ -293,6 +299,7 @@ export default function App() {
   const authPage = AUTH_PATHS.includes(pathname);
   const signedIn = Boolean(user);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
+  const [opacityPreview, setOpacityPreview] = useState<number>();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const homeRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
@@ -306,6 +313,21 @@ export default function App() {
   const preview = pathname === "/settings" ? wallpaperPreview : undefined;
   const localWallpaper = preview?.startsWith("blob:") ? preview : undefined;
   const backgroundUrl = preview === undefined ? appearance?.backgroundUrl : preview;
+  useLayoutEffect(() => {
+    if (authPage) return;
+    const root = document.documentElement;
+    const update = () => root.toggleAttribute("data-aero-no-scroll", root.scrollHeight <= root.clientHeight);
+    const observer = new ResizeObserver(update);
+    observer.observe(document.body);
+    if (homeRef.current) observer.observe(homeRef.current);
+    window.addEventListener("resize", update);
+    update();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      root.removeAttribute("data-aero-no-scroll");
+    };
+  }, [authPage]);
   // Once signed in, quietly download the most-used pages so tapping them is instant.
   useEffect(() => {
     if (signedIn) prefetchLikelyRoutes();
@@ -379,8 +401,8 @@ export default function App() {
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
       data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
-      data-custom-opacity={user?.appearance?.windowOpacity !== undefined || undefined}
-      style={appearanceStyle({ ...appearance, backgroundUrl, windowOpacity: user?.appearance?.windowOpacity }, fontFamily, localWallpaper)}
+      data-custom-opacity={(pathname === "/settings" && opacityPreview !== undefined) || user?.appearance?.windowOpacity !== undefined || undefined}
+      style={appearanceStyle({ ...appearance, backgroundUrl, windowOpacity: pathname === "/settings" ? opacityPreview ?? user?.appearance?.windowOpacity : user?.appearance?.windowOpacity }, fontFamily, localWallpaper)}
     >
       <div className="aero-fixed-frame" aria-hidden="true" />
       <div className="aero-window">
@@ -400,7 +422,7 @@ export default function App() {
           {user && <LeftNav />}
           <main id="main" tabIndex={-1} className="container">
             {user && <ModerationNotices key={user.id} />}
-            <AppRoutes onWallpaperPreview={setWallpaperPreview} onNotificationItems={remember} />
+            <AppRoutes onWallpaperPreview={setWallpaperPreview} onOpacityPreview={setOpacityPreview} onNotificationItems={remember} />
           </main>
           {!wide && <RightRail />}
         </div>

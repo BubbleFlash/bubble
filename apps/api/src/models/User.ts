@@ -31,6 +31,19 @@ const userSchema = new Schema(
     ...moderationFields,
     moderationRevision: { type: Number, default: 0 },
     sessionVersion: { type: Number, default: 0 },
+    credentialsChangedAt: Date,
+    deletionExpiresAt: { type: Date, index: true, sparse: true },
+    anonymizedAt: Date,
+    deletionCleanupPending: { type: Boolean, index: true, sparse: true },
+    pendingEmail: {
+      type: new Schema({
+        address: { type: String, required: true },
+        tokenHash: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+        sessionVersion: { type: Number, required: true },
+      }, { _id: false }),
+      default: undefined,
+    },
     accountRestriction: { reason: String, until: Date },
     publishingRestriction: { reason: String, until: Date },
     role: { type: String, enum: ["user", "moderator", "admin"], default: "user" },
@@ -65,6 +78,7 @@ const userSchema = new Schema(
 
 // Case-insensitive unique usernames ("Sam" and "sam" are the same person).
 userSchema.index({ username: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
+userSchema.index({ "pendingEmail.tokenHash": 1 }, { unique: true, sparse: true });
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 export const User = model("User", userSchema);

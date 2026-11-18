@@ -1,7 +1,7 @@
 import OnlineStatus from "./OnlineStatus";
 import { displayNameOf } from "@commune/shared";
 import { pluralRu } from "../lib/plural";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { PostDTO } from "@commune/shared";
 import { useAuth } from "../store/auth";
@@ -27,7 +27,7 @@ export function timeAgo(iso: string): string {
   return relativeTime.format(-Math.floor(seconds / 86400), "day");
 }
 
-export default function PostCard({ post, inlineComments = false }: { post: PostDTO; inlineComments?: boolean }) {
+export default memo(function PostCard({ post, inlineComments = false }: { post: PostDTO; inlineComments?: boolean }) {
   const { user } = useAuth();
   const like = useSetPostLike();
   const del = useDeletePost();
@@ -44,7 +44,10 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
   return (
     <article className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
       {post.community ? <Link to={`/c/${post.community.slug}`} className="profile-avatar-link"><Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /></Link> : <ProfileAvatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} />}
-      {canDelete ? <button type="button" className="btn btn-ghost danger post-report" title="Удалить запись" aria-label="Удалить запись" disabled={del.isPending} onClick={() => window.confirm("Удалить эту запись?") && del.mutate(post.id)}><Icon name="trash" size={18} /></button> : <button type="button" className="btn btn-ghost post-report" title="Пожаловаться" aria-label="Пожаловаться" aria-expanded={reporting} onClick={() => setReporting((r) => !r)}><Icon name="flag" size={18} /></button>}
+      <div className="post-controls">
+        {canDelete && <button type="button" className="btn btn-ghost danger post-report" title="Удалить запись" aria-label="Удалить запись" disabled={del.isPending} onClick={() => window.confirm("Удалить эту запись?") && del.mutate(post.id)}><Icon name="trash" size={18} /></button>}
+        {!mine && <button type="button" className="btn btn-ghost post-report" title="Пожаловаться" aria-label="Пожаловаться" aria-expanded={reporting} onClick={() => setReporting((r) => !r)}><Icon name="flag" size={18} /></button>}
+      </div>
       <div className="post-main">
         <div className="post-meta">
           {post.community ? <Link to={`/c/${post.community.slug}`} className="user-link">{post.community.name}</Link> : <>
@@ -96,4 +99,4 @@ export default function PostCard({ post, inlineComments = false }: { post: PostD
       </div>
     </article>
   );
-}
+});

@@ -28,7 +28,7 @@ describe("sendMail with Resend configured", () => {
     expect(init.method).toBe("POST");
     expect(init.headers.Authorization).toBe("Bearer re_test_key");
     expect(JSON.parse(init.body)).toEqual({
-      from: "Commune <hello@example.com>",
+      from: "Bubble <hello@example.com>",
       to: ["sam@example.com"],
       subject: "Hi",
       text: "plain",

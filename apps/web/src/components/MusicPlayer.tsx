@@ -2,7 +2,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useMusicPlayerPosition } from "../hooks/useMusicPlayerPosition";
-import { useMusicPlayer } from "../store/music";
+import { useMusicPlayer, useMusicTime } from "../store/music";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
@@ -29,7 +29,6 @@ export default function MusicPlayer() {
     previousTrack,
     isPlaying,
     isLoading,
-    currentTime,
     duration,
     volume,
     error,
@@ -42,6 +41,7 @@ export default function MusicPlayer() {
     toggleShuffle,
     cycleRepeatMode,
   } = useMusicPlayer();
+  const currentTime = useMusicTime();
 
   const statusKey = ["music", "membership", user?.id, track?.id];
   const membership = useQuery({
