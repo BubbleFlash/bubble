@@ -6,6 +6,9 @@ on:
       - develop
   workflow_dispatch:
 
+env:
+  IMAGE_OWNER: bubbleflash
+
 permissions:
   contents: read
   packages: write
@@ -67,7 +70,7 @@ jobs:
           file: apps/api/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/test-bubble-api:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-api:${{ github.sha }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
@@ -78,7 +81,7 @@ jobs:
           file: apps/realtime/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/test-bubble-realtime:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-realtime:${{ github.sha }}
           cache-from: type=gha,scope=realtime
           cache-to: type=gha,mode=max,scope=realtime
 
@@ -89,7 +92,7 @@ jobs:
           file: apps/web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/test-bubble-web:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-web:${{ github.sha }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
   deploy:
@@ -125,12 +128,11 @@ jobs:
           test -n "$DEPLOY_SHA"
 
           git fetch origin develop
-          git checkout develop
-          git reset --hard origin/develop
+          git checkout --detach "$DEPLOY_SHA"
 
-          export API_IMAGE="ghcr.io/neucorochen/test-bubble-api:${DEPLOY_SHA}"
-          export REALTIME_IMAGE="ghcr.io/neucorochen/test-bubble-realtime:${DEPLOY_SHA}"
-          export WEB_IMAGE="ghcr.io/neucorochen/test-bubble-web:${DEPLOY_SHA}"
+          export API_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-api:${DEPLOY_SHA}"
+          export REALTIME_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-realtime:${DEPLOY_SHA}"
+          export WEB_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-web:${DEPLOY_SHA}"
 
           docker compose --env-file .env.production -f docker-compose.prod.yml pull
           docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans
