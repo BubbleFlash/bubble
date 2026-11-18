@@ -6,6 +6,7 @@ import { displayNameOf, type CommunityDTO, type CommunityMemberDTO, type Communi
 import { refreshCommunity, useCommunityMembers } from "../hooks/useCommunities";
 import { api } from "../lib/api";
 import { COMMUNITY_ROLES } from "../lib/communityRoles";
+import { fitTooltip } from "../lib/tooltip";
 import AeroTitlebar from "./AeroTitlebar";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
@@ -102,7 +103,7 @@ function RoleMenu({ member, disabled, onChange }: {
     };
   }, [position]);
   const modal = button.current?.closest("dialog");
-  return <span className="community-role-menu">
+  return <span className="community-role-menu" onMouseEnter={(event) => fitTooltip(event.currentTarget)} onFocus={(event) => fitTooltip(event.currentTarget)}>
     <button ref={button} type="button" className="aero-button" aria-label={`${label} @${member.username}`} aria-expanded={Boolean(position)} aria-controls={id} disabled={disabled} onClick={() => {
       if (position) { setPosition(null); return; }
       const rect = button.current!.getBoundingClientRect();

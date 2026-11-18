@@ -5,7 +5,7 @@ import { useAuth } from "../store/auth";
 import { useMusicPlayer } from "../store/music";
 import Icon from "./Icon";
 
-export default function MusicTrackList({ tracks, source, order, selection }: { tracks: MusicTrackDTO[]; source: string; order?: string[]; selection?: { selected: MusicTrackDTO[]; onChange: (tracks: MusicTrackDTO[]) => void } }) {
+export default function MusicTrackList({ tracks, source, order, selection, loadLibraryStatus = true }: { tracks: MusicTrackDTO[]; source: string; order?: string[]; loadLibraryStatus?: boolean; selection?: { selected: MusicTrackDTO[]; onChange: (tracks: MusicTrackDTO[]) => void } }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const libraryBusy = useIsMutating({ mutationKey: ["music-library", user?.id] }) > 0;
@@ -13,7 +13,7 @@ export default function MusicTrackList({ tracks, source, order, selection }: { t
   const ids = [...new Set(tracks.map((track) => track.id))].sort();
   const statuses = useQuery({
     queryKey: ["music", "statuses", user?.id, ids],
-    enabled: Boolean(user && ids.length),
+    enabled: Boolean(loadLibraryStatus && user && ids.length),
     queryFn: async () => {
       const batches = [];
       for (let i = 0; i < ids.length; i += 100) batches.push(ids.slice(i, i + 100));

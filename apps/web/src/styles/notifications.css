@@ -10,6 +10,14 @@
   flex: none;
 }
 
+.notification-menu > .icon-btn > img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  max-width: none;
+  max-height: none;
+}
+
 .notification-popup {
   position: absolute;
   top: calc(100% + 4px);

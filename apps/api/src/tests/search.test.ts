@@ -68,6 +68,8 @@ describe("GET /api/search/users", () => {
     const res = await request(app).get("/api/search/users?q=sa.m").set(auth);
     expect(res.status).toBe(200);
     expect(find).toHaveBeenCalledWith({
+      deletionExpiresAt: null,
+      anonymizedAt: null,
       $or: [
         { displayName: { $regex: "^sa\\.m", $options: "i" } },
         { username: { $regex: "^sa\\.m", $options: "i" } },

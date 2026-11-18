@@ -40,6 +40,17 @@ export const verifyEmailSchema = z.object({
   token: tokenField,
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: loginSchema.shape.password,
+  password: passwordField,
+});
+export const changeEmailSchema = z.object({
+  email: loginSchema.shape.email,
+  currentPassword: loginSchema.shape.password,
+});
+export const confirmEmailChangeSchema = verifyEmailSchema;
+export const deleteAccountSchema = z.object({ confirmation: z.literal("УДАЛИТЬ") });
+
 /** Path of a file stored by the upload endpoint, e.g. /uploads/3f2a...c9.png */
 export const uploadUrlSchema = z
   .string()
@@ -414,6 +425,7 @@ export interface PublicUser {
 }
 
 export interface AccountUser extends PublicUser {
+  email?: string;
   profileAppearanceVisibility?: FriendsVisibility;
   appearance?: Partial<SiteAppearance>;
 }

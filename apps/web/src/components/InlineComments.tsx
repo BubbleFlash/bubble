@@ -113,7 +113,7 @@ function CommentRow({ comment, prefix, focused, onReply }: {
           <time className="muted" dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString("ru-RU")}</time>
           <button type="button" className="btn btn-ghost" onClick={onReply}>Ответить{comment.replyCount ? ` · ${comment.replyCount}` : ""}</button>
           <RepostButton source={{ post: comment.postId, comment: comment.id }} />
-          {user?.id !== comment.author.id && <button ref={trigger} type="button" className="btn btn-ghost" onClick={() => setReporting(true)}>Пожаловаться</button>}
+          {user?.id !== comment.author.id && <button ref={trigger} type="button" className="btn btn-ghost comment-report" aria-label="Пожаловаться на комментарий" title="Пожаловаться на комментарий" onClick={() => setReporting(true)}><Icon name="flag" size={15} /></button>}
           <button type="button" className={`btn btn-ghost comment-like${comment.likedByMe ? " liked" : ""}`} disabled={like.isPending} aria-pressed={comment.likedByMe} aria-label={`Нравится · ${comment.likeCount}`} onClick={() => like.mutate({ id: comment.id, liked: !comment.likedByMe })}><Icon name="heart" size={15} filled={comment.likedByMe} /> {comment.likeCount}</button>
         </div>
         {reporting && trigger.current && <CommentReportDialog postId={comment.postId} commentId={comment.id} trigger={trigger.current} onClose={() => setReporting(false)} />}

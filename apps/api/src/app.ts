@@ -14,8 +14,9 @@ import { lemonSqueezyWebhook, rawBody } from "./controllers/paymentController.js
 import { router } from "./routes/index.js";
 import { hasRealtimeSecret, verifySession } from "./controllers/internalController.js";
 import { uploadIsModerated } from "./services/uploadService.js";
-import { getObject } from "./services/storageService.js";
+import { createDownloadUrl, getObject } from "./services/storageService.js";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 export function createApp() {
   const app = express();
@@ -59,13 +60,14 @@ export function createApp() {
   }));
   app.use(globalLimiter);
 
-  // Uploaded images and fonts. File names are random, so they can be cached for a long time.
+  // Uploaded images and fonts. Revalidate before reuse so moderation still takes effect.
   // Helmet already sets X-Content-Type-Options: nosniff on these responses.
 
   app.get(
     "/uploads/:file",
     asyncHandler(async (req, res) => {
       const file = req.params.file ?? "";
+      res.set("Cache-Control", "no-store");
 
       if (!uploadUrlSchema.safeParse(`/uploads/${file}`).success &&
           !fontUploadUrlSchema.safeParse(`/uploads/${file}`).success) {
@@ -78,11 +80,30 @@ export function createApp() {
         return;
       }
 
+      if (env.S3_DIRECT_IMAGES && env.S3_PUBLIC_ENDPOINT && req.query.direct === "1" &&
+          uploadUrlSchema.safeParse(`/uploads/${file}`).success) {
+        try {
+          const url = await createDownloadUrl(`uploads/${file}`, 60, undefined, "no-store");
+          res.redirect(302, url);
+          return;
+        } catch (err) {
+          // Signing failures use the same proxy path as clients without direct storage access.
+          logger.warn({ err }, "Direct image signing failed; using proxy");
+        }
+      }
+
       let object;
+      const validator = req.get("If-None-Match");
 
       try {
-        object = await getObject(`uploads/${file}`);
+        object = validator
+          ? await getObject(`uploads/${file}`, validator)
+          : await getObject(`uploads/${file}`);
       } catch (err) {
+        if (err instanceof Error && (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304) {
+          res.status(304).set("Cache-Control", "private, no-cache").end();
+          return;
+        }
         const isNotFound =
           err instanceof Error &&
           (err.name === "NoSuchKey" ||
@@ -112,11 +133,12 @@ export function createApp() {
         res.setHeader("Content-Length", String(object.ContentLength));
       }
 
-      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Cache-Control", "private, no-cache");
+      if (object.ETag) res.setHeader("ETag", object.ETag);
 
-      Readable.fromWeb(
+      await pipeline(Readable.fromWeb(
         object.Body.transformToWebStream() as unknown as import("node:stream/web").ReadableStream,
-      ).pipe(res);
+      ), res);
     }),
   );
 

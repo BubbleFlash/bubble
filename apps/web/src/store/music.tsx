@@ -20,7 +20,6 @@ interface MusicState {
   queueSource: string | null;
   isPlaying: boolean;
   isLoading: boolean;
-  currentTime: number;
   duration: number;
   volume: number;
   error: string | null;
@@ -40,6 +39,8 @@ interface MusicState {
 }
 
 const MusicContext = createContext<MusicState | null>(null);
+// Playback ticks must not rerender every track attached to a feed post.
+const MusicTimeContext = createContext(0);
 
 export function MusicPlayerProvider({
                                       children,
@@ -459,7 +460,6 @@ export function MusicPlayerProvider({
       previousTrack,
       isPlaying,
       isLoading,
-      currentTime,
       duration,
       volume,
       error,
@@ -483,7 +483,6 @@ export function MusicPlayerProvider({
       previousTrack,
       isPlaying,
       isLoading,
-      currentTime,
       duration,
       volume,
       error,
@@ -503,9 +502,13 @@ export function MusicPlayerProvider({
 
   return (
     <MusicContext.Provider value={value}>
-      {children}
+      <MusicTimeContext.Provider value={currentTime}>{children}</MusicTimeContext.Provider>
     </MusicContext.Provider>
   );
+}
+
+export function useMusicTime() {
+  return useContext(MusicTimeContext);
 }
 
 export function useMusicPlayer() {

@@ -14,8 +14,8 @@ export async function checkSession(token: string) {
     throw unauthorized("Invalid or expired access token");
   }
   const user = await User.findById(principal.userId)
-    .select("role banned emailVerified sessionVersion accountRestriction publishingRestriction").lean();
-  if (!user) throw unauthorized("Account not found");
+    .select("role banned emailVerified sessionVersion accountRestriction publishingRestriction deletionExpiresAt anonymizedAt").lean();
+  if (!user || user.deletionExpiresAt || user.anonymizedAt) throw unauthorized("Account not found");
   const restriction = accountRestriction(user);
   if (restriction) throw restrictionError("account", restriction);
   if ((user.sessionVersion ?? 0) !== principal.version) throw unauthorized("Session expired");

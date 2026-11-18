@@ -48,6 +48,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
       },
       {
         onSuccess: () => {
+          if (textRef.current) textRef.current.style.height = "";
           setContent("");
           setMusic([]);
           imageDraft.clear();

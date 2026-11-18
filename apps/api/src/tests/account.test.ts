@@ -111,7 +111,9 @@ describe("POST /api/auth/reset-password", () => {
       user: USER_ID,
       expiresAt: new Date(Date.now() + 60_000),
     } as never);
-    const update = vi.spyOn(User, "updateOne").mockResolvedValue({} as never);
+    const update = vi.spyOn(User, "findOneAndUpdate").mockResolvedValue({
+      _id: USER_ID, sessionVersion: 1, email: "sam@example.com", username: "sam",
+    } as never);
     const sessions = vi.spyOn(RefreshToken, "deleteMany").mockResolvedValue({} as never);
 
     const res = await request(app)
@@ -128,7 +130,7 @@ describe("POST /api/auth/reset-password", () => {
     const set = args[1].$set;
     expect(set.emailVerified).toBe(true);
     expect(await bcrypt.compare("brand-new-pass", set.passwordHash)).toBe(true);
-    expect(sessions).toHaveBeenCalledWith({ user: USER_ID });
+    expect(sessions).toHaveBeenCalledWith(expect.objectContaining({ user: USER_ID }));
   });
 });
 
@@ -144,10 +146,10 @@ describe("POST /api/auth/verify-email", () => {
       user: USER_ID,
       expiresAt: new Date(Date.now() + 60_000),
     } as never);
-    const update = vi.spyOn(User, "updateOne").mockResolvedValue({} as never);
+    const update = vi.spyOn(User, "updateOne").mockResolvedValue({ matchedCount: 1 } as never);
     const res = await request(app).post("/api/auth/verify-email").send({ token: TOKEN });
     expect(res.status).toBe(204);
-    expect(update).toHaveBeenCalledWith({ _id: USER_ID }, { $set: { emailVerified: true } });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ _id: USER_ID, deletionExpiresAt: null }), { $set: { emailVerified: true } });
   });
 });
 
@@ -198,5 +200,42 @@ describe("POST /api/auth/resend-verification", () => {
     );
     const res = await request(app).post("/api/auth/resend-verification").set(auth);
     expect(res.status).toBe(403);
+  });
+});
+
+describe("account changes", () => {
+  it("requires the current password and sends confirmation to the new address only", async () => {
+    const passwordHash = await bcrypt.hash("current-password", 4);
+    const user = { _id: USER_ID, username: "sam", email: "sam@example.com", passwordHash, sessionVersion: 3 };
+    vi.spyOn(User, "findById").mockImplementation((() => ({ select: (fields: string) =>
+      fields === "+passwordHash" ? Promise.resolve(user) : { lean: async () => ({ ...user, role: "user", sessionVersion: 0 }) },
+    })) as never);
+    const exists = vi.spyOn(User, "exists").mockResolvedValue(null);
+    const update = vi.spyOn(User, "updateOne").mockResolvedValue({ matchedCount: 1 } as never);
+    const rejected = await request(app).post("/api/auth/change-email").set(auth)
+      .send({ email: "new@example.com", currentPassword: "wrong" });
+    expect(rejected.status).toBe(400);
+    expect(exists).not.toHaveBeenCalled();
+    const accepted = await request(app).post("/api/auth/change-email").set(auth)
+      .send({ email: "new@example.com", currentPassword: "current-password" });
+    expect(accepted.status).toBe(202);
+    const delivered = vi.mocked(sendMail).mock.calls[0]![0];
+    const token = /confirm-email-change\?token=([a-f0-9]{96})/.exec(delivered.text)?.[1];
+    expect(delivered.to).toBe("new@example.com");
+    expect(token).toBeDefined();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ sessionVersion: 3 }), {
+      $set: { pendingEmail: expect.objectContaining({ address: "new@example.com", tokenHash: hashToken(token!) }) },
+    });
+  });
+
+  it("rejects a reset link invalidated by a credential change", async () => {
+    vi.spyOn(AuthToken, "findOneAndDelete").mockResolvedValue({
+      user: USER_ID, email: "old@example.com", sessionVersion: 2, expiresAt: new Date(Date.now() + 60_000),
+    } as never);
+    const apply = vi.spyOn(User, "findOneAndUpdate").mockResolvedValue(null);
+    const res = await request(app).post("/api/auth/reset-password").send({ token: TOKEN, password: "new-password" });
+    expect(res.status).toBe(400);
+    expect(apply.mock.calls[0]?.[0]).toMatchObject({ email: "old@example.com", sessionVersion: 2 });
+    expect(sendMail).not.toHaveBeenCalled();
   });
 });

@@ -12,14 +12,14 @@
  *
  * Bump VERSION to force every client to drop its old caches.
  */
-const VERSION = "v2";
+const VERSION = "v8";
 const STATIC_CACHE = `commune-static-${VERSION}`;
 const SHELL_CACHE = `commune-shell-${VERSION}`;
 const KNOWN_CACHES = [STATIC_CACHE, SHELL_CACHE];
 
 const OFFLINE_URL = "/offline.html";
 const SHELL_KEY = "/__shell";
-const PRECACHE = [OFFLINE_URL, "/favicon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
+const PRECACHE = [OFFLINE_URL, "/favicon-v3.png", "/icons/icon-192-v3.png", "/icons/icon-512-v3.png"];
 const NAVIGATION_TIMEOUT_MS = 4000;
 
 self.addEventListener("install", (event) => {
@@ -130,8 +130,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(String(data.title || "Commune").slice(0, 80), {
       body: String(data.body || "").slice(0, 140),
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: "/icons/icon-192-v3.png",
+      badge: "/icons/icon-192-v3.png",
       tag,
       // A new notification with the same tag replaces the old one but still alerts.
       renotify: Boolean(tag),

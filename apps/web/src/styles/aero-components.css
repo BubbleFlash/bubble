@@ -12,6 +12,7 @@
 .aero-home .friends-tabs .tab { display: flex; align-items: center; justify-content: center; align-self: stretch; height: auto; min-height: 44px; white-space: normal; overflow-wrap: anywhere; padding: 8px; line-height: 1.25; }
 .friends-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .friends-search input { min-width: 0; max-width: 100%; }
+@media (max-width: 600px) { .friends-search input { flex: 1 1 100%; width: 100%; box-sizing: border-box; } }
 .comments-disclosure { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 180ms ease-out, visibility 0s linear 180ms; }
 .comments-disclosure.is-open { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 180ms ease-out, visibility 0s; }
 .comments-disclosure-inner { min-height: 0; overflow: hidden; }
@@ -220,6 +221,7 @@
   line-height: 1.3;
   pointer-events: none;
   visibility: hidden;
+  transform: translateX(var(--tooltip-shift, 0px));
 }
 .profile-action-wrap:hover .profile-action-tooltip,
 .profile-action:focus-visible + .profile-action-tooltip {
@@ -227,6 +229,10 @@
 }
 
 .profile > .row .profile-action-tooltip { left: 0; right: auto; }
+@media (max-width: 600px) {
+  /* The profile's own edit button moves to the left edge on a phone. */
+  .profile-top > .profile-action-wrap .profile-action-tooltip { left: 0; right: auto; }
+}
 
 
 /* Global music player */
@@ -606,7 +612,8 @@
 .image-viewer__content--full .image-viewer__scroll { display: block; overflow: auto; overscroll-behavior: contain; }
 .image-viewer__content--full img { width: auto; height: auto; max-width: none; margin-inline: auto; }
 .image-viewer__fit { min-height: 34px; }
-.image-viewer__zone { position: absolute; top: calc(50% - 22px); width: 52px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.image-viewer__zone { position: absolute; top: 0; bottom: 0; width: 26%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.image-viewer__content--full .image-viewer__zone { top: calc(50% - 22px); bottom: auto; width: 52px; height: 44px; }
 .image-viewer__zone--previous { left: 0; }
 .image-viewer__zone--next { right: 0; }
 .image-viewer__arrow { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: white; font-size: 28px; line-height: 1; background: rgb(0 0 0 / 55%); transition: opacity 160ms ease; }
