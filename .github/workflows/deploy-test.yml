@@ -114,27 +114,46 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+
       - name: Deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_REF: ${{ github.ref }}
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+          printf -v REMOTE_ENV 'DEPLOY_SHA=%q DEPLOY_REF=%q' "$DEPLOY_SHA" "$DEPLOY_REF"
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$REMOTE_ENV bash -s" <<'REMOTE'
           set -euo pipefail
 
           cd /opt/bubble
           test -n "$DEPLOY_SHA"
+          test -n "$DEPLOY_REF"
 
-          git fetch origin develop
-          git checkout --detach "$DEPLOY_SHA"
+          case "$DEPLOY_REF" in
+            refs/heads/*) ;;
+            *)
+              echo "Expected a branch, got: $DEPLOY_REF"
+              exit 1
+              ;;
+          esac
 
-          export API_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-api:${DEPLOY_SHA}"
-          export REALTIME_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-realtime:${DEPLOY_SHA}"
-          export WEB_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-web:${DEPLOY_SHA}"
+          echo "Deploying branch: $DEPLOY_REF"
+          echo "Deploying commit: $DEPLOY_SHA"
+
+          git fetch origin "$DEPLOY_REF"
+          git checkout -B "${DEPLOY_REF#refs/heads/}" "origin/${DEPLOY_REF#refs/heads/}"
+
+          export API_IMAGE="ghcr.io/bubbleflash/test-bubble-api:${DEPLOY_SHA}"
+          export REALTIME_IMAGE="ghcr.io/bubbleflash/test-bubble-realtime:${DEPLOY_SHA}"
+          export WEB_IMAGE="ghcr.io/bubbleflash/test-bubble-web:${DEPLOY_SHA}"
 
           docker compose --env-file .env.production -f docker-compose.prod.yml pull
           docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans
           docker compose --env-file .env.production -f docker-compose.prod.yml ps
           REMOTE
+
