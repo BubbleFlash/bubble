@@ -98,6 +98,7 @@ import {
   emailLimiter,
   reportLimiter,
   publicLimiter,
+  refreshLimiter,
   searchLimiter,
   linkPreviewLimiter,
   uploadLimiter,
@@ -150,7 +151,7 @@ router.post(
 router.post("/auth/register", authLimiter, validate(registerSchema), asyncHandler(auth.register));
 router.post("/auth/login", authLimiter, validate(loginSchema), asyncHandler(auth.login));
 router.post("/auth/google", authLimiter, validate(googleLoginSchema), asyncHandler(auth.google));
-router.post("/auth/refresh", authLimiter, asyncHandler(auth.refresh));
+router.post("/auth/refresh", asyncHandler(auth.prepareRefresh), refreshLimiter, asyncHandler(auth.refresh));
 router.post("/auth/logout", asyncHandler(auth.logout));
 router.post("/auth/change-password", requireAuth, authLimiter, validate(changePasswordSchema), asyncHandler(account.changePassword));
 router.post("/auth/change-email", requireAuth, emailLimiter, authLimiter, validate(changeEmailSchema), asyncHandler(account.changeEmail));

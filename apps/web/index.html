@@ -72,7 +72,7 @@
           };
           var hint = localStorage.getItem("commune_session");
           var path = location.pathname;
-          start("/news?topic=top", "/api/news?topic=top");
+          if (path === "/news" && hint === "guest") start("/news?topic=top", "/api/news?topic=top");
           if (hint !== "guest")
             start("/auth/refresh", "/api/auth/refresh", { method: "POST", credentials: "include" });
           else if (path === "/" || path === "/explore") start("/public/posts", "/api/public/posts");

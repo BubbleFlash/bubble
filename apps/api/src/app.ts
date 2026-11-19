@@ -9,7 +9,7 @@ import { logger } from "./config/logger.js";
 import { asyncHandler } from "./utils/errors.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import { noStore, originGuard } from "./middleware/security.js";
-import { globalLimiter } from "./middleware/rateLimit.js";
+import { globalLimiter, LIMITER_HEADER } from "./middleware/rateLimit.js";
 import { lemonSqueezyWebhook, rawBody } from "./controllers/paymentController.js";
 import { router } from "./routes/index.js";
 import { hasRealtimeSecret, verifySession } from "./controllers/internalController.js";
@@ -39,6 +39,10 @@ export function createApp() {
         }),
         res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
       },
+      customSuccessObject(_req, res, log) {
+        const limiter = res.getHeader(LIMITER_HEADER);
+        return limiter ? { ...log, limiter } : log;
+      },
       autoLogging: { ignore: (req) => req.url === "/api/health" },
     }),
   );
@@ -52,7 +56,7 @@ export function createApp() {
       crossOriginResourcePolicy: { policy: "cross-origin" },
     }),
   );
-  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After"] }));
+  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After", LIMITER_HEADER] }));
   app.get("/api/internal/session", asyncHandler(async (req, res, next) => {
     if (!hasRealtimeSecret(req)) return next();
     res.set("Cache-Control", "no-store");
