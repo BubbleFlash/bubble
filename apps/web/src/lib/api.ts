@@ -1,4 +1,6 @@
 import type { AuthResponse } from "@commune/shared";
+import { assertSessionGeneration, SessionChanged, sessionGeneration, withSessionCookie } from "./browserSession";
+import { observeFetch } from "./networkTelemetry";
 
 // Production builds always call the same origin ("/api"), which Vercel forwards to the API
 // (see apps/web/vercel.json). That keeps the login cookie first-party. VITE_API_URL is only
@@ -10,15 +12,15 @@ const BASE = import.meta.env.PROD
 // With a relative VITE_API_URL such as "/api" this is "", so "/uploads/..." stays relative.
 const ORIGIN = BASE.replace(/\/api\/?$/, "");
 
-let accessToken: string | null = null;
-let refreshing: Promise<AuthResponse | null> | null = null;
+let accessToken: { value: string; generation: string } | null = null;
+let refreshing: { generation: string; promise: Promise<AuthResponse | null> } | null = null;
 
 export function getAccessToken(): string | null {
-  return accessToken;
+  return accessToken?.generation === sessionGeneration() ? accessToken.value : null;
 }
 
 export function setAccessToken(token: string | null) {
-  accessToken = token;
+  accessToken = token ? { value: token, generation: sessionGeneration() } : null;
 }
 
 // ---- Session hint: lets the app skip, or start earlier, the "am I logged in?" round trip ----
@@ -45,8 +47,7 @@ export function writeSessionHint(hint: Exclude<SessionHint, null>) {
   }
 }
 
-// index.html starts a few requests before this script has even downloaded (news, public
-// posts, session refresh). Take the response over once instead of asking the server again.
+// Take over public requests started by index.html before the application bundle loaded.
 type EarlyMap = Record<string, Promise<Response> | undefined>;
 function takeEarly(path: string): Promise<Response> | undefined {
   const map = (window as unknown as { __early?: EarlyMap }).__early;
@@ -65,11 +66,25 @@ export class SessionRestoreError extends Error {
 }
 
 async function refreshSession(): Promise<AuthResponse | null> {
-  refreshing ??= (
-    takeEarly("/auth/refresh") ??
-    fetch(`${BASE}/auth/refresh`, { method: "POST", credentials: "include" })
-  )
-    .then(async (res) => {
+  const generation = sessionGeneration();
+  if (refreshing?.generation === generation) return refreshing.promise;
+  const promise = withSessionCookie(async () => {
+      const request = () => {
+        assertSessionGeneration(generation);
+        return observeFetch(BASE, "/auth/refresh", {
+          method: "POST", credentials: "include", signal: AbortSignal.timeout(10_000),
+        });
+      };
+      let res = await request();
+      if (res.status === 401 && !navigator.locks && readSessionHint() === "1") {
+        // A browser without locks can receive a stale-cookie response while a peer rotates it.
+        for (const delay of [120, 400]) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+          res = await request();
+          if (res.status !== 401) break;
+        }
+      }
+      assertSessionGeneration(generation);
       if (res.status === 401) return null;
       if (res.status === 403) {
         const body = await res.json() as { restriction?: Restriction };
@@ -80,16 +95,19 @@ async function refreshSession(): Promise<AuthResponse | null> {
         throw new SessionRestoreError(seconds > 0 ? seconds * 1000 : undefined);
       }
       const data = (await res.json()) as AuthResponse;
-      accessToken = data.accessToken;
+      assertSessionGeneration(generation);
+      setAccessToken(data.accessToken);
       return data;
     })
     .finally(() => {
-      refreshing = null;
+      if (refreshing?.promise === promise) refreshing = null;
     });
-  return refreshing;
+  refreshing = { generation, promise };
+  return promise;
 }
 
 async function refresh(): Promise<boolean> {
+  if (accessToken && accessToken.generation !== sessionGeneration()) return false;
   return (await refreshSession().catch(() => null)) !== null;
 }
 
@@ -120,13 +138,17 @@ export async function api<T>(
   options: { method?: string; body?: unknown; signal?: AbortSignal; keepalive?: boolean } = {},
   retry = true,
 ): Promise<T> {
+  const generation = sessionGeneration();
+  if (accessToken && accessToken.generation !== generation) throw new SessionChanged();
   const isForm = options.body instanceof FormData;
   // Requests that need a login wait for the session restore that is already in flight, instead
   // of going out without a token, failing with 401 and being repeated.
-  if (refreshing && !accessToken && !path.startsWith("/auth/")) await refreshing;
+  if (refreshing?.generation === generation && !getAccessToken() && !path.startsWith("/auth/")) await refreshing.promise;
+  assertSessionGeneration(generation);
+  const token = getAccessToken();
 
   const send = () =>
-    fetch(`${BASE}${path}`, {
+    observeFetch(BASE, path, {
       method: options.method ?? "GET",
       signal: options.signal,
       keepalive: options.keepalive,
@@ -134,7 +156,7 @@ export async function api<T>(
       headers: {
         // For FormData the browser sets the multipart Content-Type (with boundary) itself.
         ...(options.body && !isForm ? { "Content-Type": "application/json" } : {}),
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: options.body
         ? isForm
@@ -147,15 +169,20 @@ export async function api<T>(
 
   // A plain GET may already have been started by index.html; use that response if it worked.
   const early = !options.method && !options.body && retry ? takeEarly(path) : undefined;
-  const earlyRes = early ? await early.catch(() => undefined) : undefined;
+  const earlyRes = early ? await observeFetch(BASE, path, {}, early).catch(() => undefined) : undefined;
   const res = earlyRes?.ok ? earlyRes : await send();
+  assertSessionGeneration(generation);
 
   if (res.status === 401 && retry && !path.startsWith("/auth/")) {
-    if (await refresh()) return api<T>(path, options, false);
+    const currentToken = getAccessToken();
+    const refreshed = Boolean(currentToken && currentToken !== token) || await refresh();
+    assertSessionGeneration(generation);
+    if (refreshed) return api<T>(path, options, false);
   }
 
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string; restriction?: Restriction };
+    assertSessionGeneration(generation);
     // Hosting platforms answer some failures (too large, overloaded) with a plain page, not our JSON.
     const fallback =
       res.status === 413
@@ -222,7 +249,9 @@ export async function api<T>(
     }
     throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : safe, data.error ?? fallback, data.restriction);
   }
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  const result = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  assertSessionGeneration(generation);
+  return result;
 }
 
 /** Builds "/path?a=1&b=2", skipping undefined or empty values. */

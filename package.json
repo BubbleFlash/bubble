@@ -21,7 +21,8 @@
     "format:check": "prettier --check .",
     "e2e": "playwright test",
     "check:site": "playwright test --config playwright.site.config.ts",
-    "check:load": "node --import tsx tools/load-check/run.mts"
+    "check:load": "node --import tsx tools/load-check/run.mts",
+    "check:tabs": "node --import tsx tools/site-checks/tabs.mts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

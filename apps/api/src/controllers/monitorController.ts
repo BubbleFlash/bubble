@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
-import type { ClientErrorInput, ErrorEventDTO } from "@commune/shared";
+import type { ClientErrorInput, ClientNetworkEvent, ErrorEventDTO, TelemetryHours } from "@commune/shared";
 import { ErrorEvent } from "../models/ErrorEvent.js";
 import { recordError } from "../services/errorTracker.js";
 import { notFound } from "../utils/errors.js";
+import { apiMetrics, networkIncidents, recordClientNetwork } from "../services/telemetry.js";
 
 /** Liveness: the process is up. Cheap, no database. */
 export function live(_req: Request, res: Response) {
@@ -73,4 +74,19 @@ export async function resolveError(req: Request, res: Response) {
   const result = await ErrorEvent.updateOne({ _id: id }, { $set: { resolved: true } });
   if (result.matchedCount === 0) throw notFound("Error not found");
   res.status(204).end();
+}
+
+export function reportNetwork(req: Request, res: Response) {
+  recordClientNetwork((req.body as { events: ClientNetworkEvent[] }).events);
+  res.status(204).end();
+}
+
+export async function listMetrics(_req: Request, res: Response) {
+  const { hours } = res.locals.query as { hours: TelemetryHours };
+  res.json(await apiMetrics(hours));
+}
+
+export async function listNetwork(_req: Request, res: Response) {
+  const { hours } = res.locals.query as { hours: TelemetryHours };
+  res.json(await networkIncidents(hours));
 }

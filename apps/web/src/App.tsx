@@ -70,7 +70,7 @@ const TITLES: Record<string, string> = {
   "/confirm-email-change": "Смена почты",
   "/admin": "Администрирование",
   "/moderation": "Модерация",
-  "/admin/errors": "Ошибки",
+  "/admin/errors": "Мониторинг",
   "/music": "Музыка",
 };
 

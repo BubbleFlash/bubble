@@ -10,7 +10,7 @@ function limiter(
   windowMs: number,
   limit: number,
   error: string,
-  options: Partial<Pick<Options, "keyGenerator">> = {},
+  options: Partial<Pick<Options, "keyGenerator" | "skip">> = {},
 ) {
   return rateLimit({
     windowMs,
@@ -20,8 +20,10 @@ function limiter(
     skip: () => env.NODE_ENV === "test",
     ...options,
     handler(req, res, _next, { statusCode }) {
+      const label = typeof name === "string" ? name : name(req, res);
+      res.locals.limiterPolicy = { name: label, limit, windowSeconds: windowMs / 1000 };
       res.setHeader("Cache-Control", "no-store");
-      res.setHeader(LIMITER_HEADER, typeof name === "string" ? name : name(req, res));
+      res.setHeader(LIMITER_HEADER, label);
       res.status(statusCode).json({ error });
     },
   });
@@ -63,6 +65,7 @@ export const globalLimiter = limiter(
   300,
   "Too many requests, slow down.",
   {
+    skip: (req) => env.NODE_ENV === "test" || (req.method === "POST" && /^\/api\/client-network\/?$/i.test(req.path)),
     keyGenerator(req) {
       const principal = browsingPrincipal(req);
       return principal ? accessKey(principal) : ipKey(req);
@@ -193,6 +196,7 @@ export const testPushLimiter = limiter(
 export const readLimiter = limiter("messages-read", 10 * 60 * 1000, 300, "Slow down.");
 
 export const clientErrorLimiter = limiter("client-error", 10 * 60 * 1000, 20, "Too many reports.");
+export const clientNetworkLimiter = limiter("client-network", 10 * 60 * 1000, 20, "Too many reports.");
 
 export const contactLimiter = limiter(
   "contact",

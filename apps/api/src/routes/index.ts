@@ -3,6 +3,8 @@ import type { RequestHandler } from "express";
 import {
   banUserSchema,
   clientErrorSchema,
+  clientNetworkBatchSchema,
+  telemetryQuerySchema,
   pushPreferencesSchema,
   pushSubscribeSchema,
   pushUnsubscribeSchema,
@@ -146,6 +148,7 @@ router.post(
   validate(clientErrorSchema),
   asyncHandler(monitor.reportClientError),
 );
+router.post("/client-network", validate(clientNetworkBatchSchema), monitor.reportNetwork);
 
 // Auth
 router.post("/auth/register", authLimiter, validate(registerSchema), asyncHandler(auth.register));
@@ -500,6 +503,8 @@ router.post("/moderation/users/:id/measures", ...staff, asyncHandler(moderation.
 router.patch("/moderation/users/:id/role", ...adminOnly, asyncHandler(moderation.changeRole));
 router.get("/moderation/history", ...staff, asyncHandler(moderation.history));
 router.get("/admin/errors", ...adminOnly, asyncHandler(monitor.listErrors));
+router.get("/admin/telemetry/metrics", ...adminOnly, validate(telemetryQuerySchema, "query"), asyncHandler(monitor.listMetrics));
+router.get("/admin/telemetry/network", ...adminOnly, validate(telemetryQuerySchema, "query"), asyncHandler(monitor.listNetwork));
 router.post("/admin/errors/:id/resolve", ...adminOnly, asyncHandler(monitor.resolveError));
 router.post("/admin/reports/:id/dismiss", ...adminOnly, asyncHandler(admin.dismissReport));
 router.post(

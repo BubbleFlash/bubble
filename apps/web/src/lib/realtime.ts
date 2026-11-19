@@ -8,7 +8,8 @@ import type {
   PresenceEvent,
   TypingEvent,
 } from "@commune/shared";
-import { getAccessToken, tryRefresh } from "./api";
+import { API_BASE, getAccessToken, tryRefresh } from "./api";
+import { reportSocketIssue } from "./networkTelemetry";
 
 /**
  * Live connection to the realtime (Socket.IO) service.
@@ -85,7 +86,8 @@ function joinNow(id: string) {
 }
 
 async function renewAndReconnect() {
-  if (!socket || socket.active) return;
+  const current = socket;
+  if (!current || current.active) return;
   // Repeated refusals (for example a suspended account) back off instead of hammering.
   authFailures += 1;
   if (authFailures > 3) {
@@ -94,7 +96,7 @@ async function renewAndReconnect() {
     }, 60_000);
     return;
   }
-  if (await tryRefresh()) socket.connect();
+  if (await tryRefresh() && socket === current) current.connect();
 }
 
 export function startRealtime(handlers: RealtimeHandlers): void {
@@ -120,10 +122,12 @@ export function startRealtime(handlers: RealtimeHandlers): void {
     setState({ connected: false, presence: {}, typing: {} });
     // The server ends a connection when its token expires: renew and come back.
     if (reason === "io server disconnect") void renewAndReconnect();
+    else if (reason !== "io client disconnect") reportSocketIssue(API_BASE, "socket-drop");
   });
   s.on("connect_error", (err) => {
     setState({ connected: false });
     if (err.message === "unauthorized") void renewAndReconnect();
+    else reportSocketIssue(API_BASE, err.message === "too_many_connections" ? "socket-limit" : "socket-connect");
   });
 
   document.addEventListener("visibilitychange", sendVisibility);

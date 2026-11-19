@@ -2,11 +2,9 @@
 
 What makes the first screen fast, and where to change it:
 
-- **Session restore starts at page load.** `index.html` starts the session refresh or the next public request
-  (news on `/news`, public posts on `/` and `/explore`) before the app has downloaded. `src/lib/api.ts` takes those
-  responses over. Browsers remember a session hint (`commune_session`) and the last profile
-  (`commune_user`), so the left menu and feed shell appear instantly and the session is confirmed in the
-  background. Logged-out visitors skip the check entirely.
+- **Session restore starts when the API module loads.** Tabs serialize refresh, login and logout with Web Locks
+  before operating on the shared HttpOnly cookie. The session hint and last profile can render the shell while
+  restore is pending. Guest prefetch in `index.html` is scoped to news on `/news` and public posts on `/` or `/explore`.
 - **Code splitting.** Only the feed and Explore pages are in the first download; every other page loads
   when opened (`React.lazy` in `App.tsx`). React, the router and React Query are separate cached files.
 - **CDN caching.** `/api/news` and `/api/public/posts` send `s-maxage` so Vercel's edge can answer without
@@ -28,6 +26,22 @@ npm run check:site
 
 В `test-results/site-candidate.json` в приложении `feed-timings` сохраняются время появления ленты, открытия комментариев и записи, а также 95-й процентиль и максимальный интервал между вызовами `requestAnimationFrame` при прокрутке. Сравнивайте несколько прогонов на той же машине, в том же браузере и при той же ширине. Один замер зависит от загрузки машины. Интервалы `requestAnimationFrame` измеряют работу браузера во время сценария. Ширина 390 px воспроизводит мобильную раскладку, а замер производительности телефона требует физического устройства.
 
+### Повторное открытие вкладок с реальным API
+
+Запустите отдельный экземпляр MongoDB, как для нагрузочной проверки ниже, и задайте `BUBBLE_LOAD_MONGO_PORT`.
+
+```powershell
+$env:BUBBLE_TAB_CHECK_BROWSERS = 'chrome,msedge'
+$env:BUBBLE_TAB_CHECK_ASSERT = '1'
+npm run check:tabs
+```
+
+Сценарий собирает текущую веб-версию и использует временную MongoDB, штатный API и Socket.IO на loopback. Он измеряет холодное открытие ленты и одновременное открытие 1, 2 и 5 вкладок после прогрева. Отчёт `test-results/site-tabs.json` содержит запросы, статусы и байты ответов по endpoint, время до появления тестовой записи и WebSocket-рукопожатия. Можно указать другой файл через `BUBBLE_TAB_CHECK_REPORT`. Внешние ресурсы и service worker выключены для воспроизводимости. Замер времени зависит от машины и планировщика вкладок.
+
+Режим `BUBBLE_TAB_CHECK_ASSERT=1` проверяет авторизацию, повторные GET, уведомления и их прочтение между вкладками, доставку и изменение сообщений, восстановление после разрыва Socket.IO, выход и смену аккаунта. `BUBBLE_TAB_CHECK_EXPIRE=1` дополнительно сокращает TTL access-токена до 12 секунд в локальном процессе и проверяет автоматический refresh и переподключение.
+
+В живых вкладках передаются первые страницы ленты до 30 секунд и счётчики непрочитанного до 25 секунд. Доступ к обмену включается после серверной проверки аккаунта, при выходе и смене аккаунта кэш сбрасывается. Резервные сверки REST и восстановление после reconnect остаются включёнными. После закрытия всех вкладок первая вкладка получает данные с сервера.
+
 ### Проверка доступности по конкретному сетевому маршруту
 
 ```powershell
@@ -45,6 +59,16 @@ npm run check:site
 Доступность локальной сборки проверяется на этой машине. Для проверки изменений через Cloudflare нужен отдельный URL с этой сборкой. Запуск по адресу общего стенда показывает состояние уже развёрнутой там версии и выбранного сетевого маршрута.
 
 Lighthouse можно использовать для дополнительного аудита развёрнутого сайта в Chrome.
+
+### Метрики и сетевые события в админке
+
+Откройте «Админка» → «Мониторинг». CSV на вкладке «Метрики API» включает сводку и разбивку по маршрутам, на вкладке «Сеть и 429» — все группы выбранного периода и фильтра. Время в CSV указано в UTC. «Ошибки приложения» экспортирует сводку текущих активных групп, текст и трассировки остаются в админке. Структурированная телеметрия хранит шаблоны маршрутов и значения из разрешённых полей, без IP, токенов, тел запросов и параметров URL.
+
+API собирает завершённые запросы без выборки, за исключением служебных маршрутов проверки здоровья, межсервисных запросов и самого мониторинга. Счётчики сбрасываются в MongoDB пачками каждые 10 секунд. Сетевые события также включают прерванные ответы. Интервалы хранятся 8 дней. Для p95/p99 в отчёте используются верхние границы интервалов гистограммы. Потеря процесса или MongoDB до сброса может оставить пропуски, особенно при остановке serverless-инстанса. В админке данные обновляются раз в минуту или по кнопке.
+
+Production-сборка веб-приложения отправляет ограниченную очередь диагностических событий. При восстановлении сети открытая вкладка повторяет отправку. Если сайт не загрузился или вкладка закрылась до отправки, данные нужны из журналов прокси и внешних проверок доступности. Один сбой может появиться у API и в браузере, поэтому их счётчики не складывают. `CF-Ray` помогает найти транзакцию в Cloudflare и сам по себе не определяет, кто вернул `429`. При отсутствии имени лимитера проверяйте логи Cloudflare/Nginx и API по времени и идентификаторам.
+
+Для локального теста с отдельной MongoDB передайте её loopback-порт в `BUBBLE_MONITOR_TEST_MONGO_PORT` и запустите `npm run test -w @commune/api -- src/tests/monitor.integration.test.ts`. `npm run check:site` проверяет вкладки, фильтры, скачивание CSV и отправку браузерного события при восстановлении сеанса.
 
 ### Нагрузочный прогон на одном IP (#64, #79)
 

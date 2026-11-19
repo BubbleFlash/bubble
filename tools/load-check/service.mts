@@ -16,17 +16,22 @@ if (
 
 const dbName = `bubble_load_${randomUUID().replaceAll("-", "")}`;
 const local = "http://127.0.0.1";
+const browserPort = process.env.BUBBLE_TAB_CHECK_PORT;
+if (browserPort && (!/^\d{1,5}$/.test(browserPort) || +browserPort < 1 || +browserPort > 65535)) {
+  throw new Error("Expected a local browser fixture port");
+}
+const clientOrigin = browserPort ? `http://bubble.localhost:${browserPort}` : local;
 const jwtSecret = randomBytes(32).toString("hex");
 const internalSecret = randomBytes(32).toString("hex");
 Object.assign(process.env, {
   NODE_ENV: "production",
   MONGODB_URI: `mongodb://127.0.0.1:${port}/${dbName}?directConnection=true`,
-  CLIENT_ORIGIN: local,
+  CLIENT_ORIGIN: clientOrigin,
   JWT_ACCESS_SECRET: jwtSecret,
   REALTIME_SECRET: internalSecret,
   REALTIME_URL: "",
   TRUST_PROXY: "0",
-  ACCESS_TOKEN_TTL: "15m",
+  ACCESS_TOKEN_TTL: browserPort && process.env.BUBBLE_TAB_CHECK_EXPIRE === "1" ? "12s" : "15m",
   RESEND_API_KEY: "",
   VAPID_PUBLIC_KEY: "",
   VAPID_PRIVATE_KEY: "",
@@ -51,6 +56,7 @@ const [
   { Post },
   { Comment },
   { RefreshToken },
+  { env },
   tokens,
 ] = await Promise.all([
   import("../../apps/api/src/app.js"),
@@ -60,6 +66,7 @@ const [
   import("../../apps/api/src/models/Post.js"),
   import("../../apps/api/src/models/Comment.js"),
   import("../../apps/api/src/models/RefreshToken.js"),
+  import("../../apps/api/src/config/env.js"),
   import("../../apps/api/src/utils/tokens.js"),
 ]);
 
@@ -117,17 +124,19 @@ try {
   const api = await listen(server);
   realtime = createRealtimeServer({
     port: 0,
-    clientOrigin: local,
+    clientOrigin,
     jwtSecret,
     internalSecret,
     apiUrl: api,
     maxConnectionsPerUser: 8,
   });
   const sockets = await listen(realtime.httpServer);
+  if (browserPort) env.REALTIME_URL = sockets;
   process.send({
     kind: "ready",
     api,
     sockets,
+    ...(browserPort ? { posts: posts.map((post) => ({ id: post.id, content: post.content })) } : {}),
     sessions: sessions.map(({ user, token }) => ({
       username: user.username,
       cookie: `commune_rt=${token}`,

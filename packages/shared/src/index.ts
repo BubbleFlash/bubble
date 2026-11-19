@@ -654,6 +654,7 @@ export interface NotificationDTO {
 export interface NotificationNewEvent {
   notification?: NotificationDTO;
   sound?: boolean;
+  readStateChanged?: boolean;
 }
 
 export interface UploadResponse {
@@ -808,6 +809,8 @@ export interface ErrorEventDTO {
   lastSeen: string;
   resolved: boolean;
 }
+
+export * from "./telemetry.js";
 
 // ---- Realtime (Socket.IO) ----
 

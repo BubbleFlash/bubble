@@ -1,14 +1,72 @@
-import { Navigate } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { telemetryMethods, telemetryRoute } from "@commune/shared";
+import { TelemetryPanel } from "../components/AdminTelemetry";
 import { timeAgo } from "../components/PostCard";
 import { useErrorEvents, useResolveError } from "../hooks/useErrors";
+import { downloadCsv } from "../lib/csv";
 import { useAuth } from "../store/auth";
+import "../styles/admin-monitor.css";
+
+const tabs = [
+  { id: "errors", label: "Ошибки приложения" },
+  { id: "metrics", label: "Метрики API" },
+  { id: "network", label: "Сеть и 429" },
+] as const;
 
 function ErrorsPanel() {
   const errors = useErrorEvents(true);
   const resolve = useResolveError();
   const items = errors.data ?? [];
+  const exportErrors = () =>
+    downloadCsv(
+      "application-errors",
+      [
+        "id",
+        "source",
+        "method",
+        "route",
+        "status",
+        "count",
+        "first_seen_utc",
+        "last_seen_utc",
+        "resolved",
+      ],
+      items.map((event) => {
+        const [method, path] = event.route.split(" ", 2);
+        const verb = telemetryMethods.find((value) => value === method);
+        return [
+          event.id,
+          event.source,
+          verb,
+          telemetryRoute(verb ? (path ?? "") : event.route),
+          event.status,
+          event.count,
+          event.firstSeen,
+          event.lastSeen,
+          event.resolved,
+        ];
+      }),
+    );
   return (
     <>
+      <div className="card admin-monitor-toolbar">
+        <p className="muted small">
+          До 100 активных групп. CSV содержит сводку без текста и трассировок ошибок.
+        </p>
+        <div className="row admin-monitor-actions">
+          <button
+            className="btn btn-outline"
+            type="button"
+            disabled={errors.isFetching}
+            onClick={() => void errors.refetch()}
+          >
+            Обновить
+          </button>
+          <button className="btn" type="button" disabled={!errors.data} onClick={exportErrors}>
+            Скачать CSV
+          </button>
+        </div>
+      </div>
       {errors.isLoading && <p className="muted center">Загрузка…</p>}
       {errors.isError && <p className="error center">{errors.error.message}</p>}
       {errors.isSuccess && items.length === 0 && (
@@ -37,7 +95,6 @@ function ErrorsPanel() {
               onClick={() => resolve.mutate(e.id)}
               disabled={resolve.isPending}
             >
-
               Отметить исправленной
             </button>
           </div>
@@ -48,10 +105,36 @@ function ErrorsPanel() {
 }
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { user, confirmed } = useAuth();
+  const [params] = useSearchParams();
+  const activeTab = tabs.find((tab) => tab.id === params.get("tab"))?.id ?? "errors";
+  if (user?.role === "admin" && !confirmed)
+    return (
+      <p className="muted" role="status">
+        Проверяем сеанс…
+      </p>
+    );
   if (user?.role !== "admin") return <Navigate to="/" replace />;
-  return <>
-    <h1 className="page-title">Ошибки приложения</h1>
-    <ErrorsPanel />
-  </>;
+  return (
+    <section className="admin-monitor">
+      <h1 className="page-title">Мониторинг</h1>
+      <nav className="tabs feed-tabs moderation-tabs" aria-label="Разделы мониторинга">
+        {tabs.map(({ id, label }) => (
+          <Link
+            key={id}
+            className={`tab${activeTab === id ? " active" : ""}`}
+            to={id === "errors" ? "/admin/errors" : `/admin/errors?tab=${id}`}
+            aria-current={activeTab === id ? "page" : undefined}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+      {activeTab === "errors" ? (
+        <ErrorsPanel />
+      ) : (
+        <TelemetryPanel key={activeTab} view={activeTab} />
+      )}
+    </section>
+  );
 }

@@ -121,7 +121,7 @@ export type RefreshSession = NonNullable<Awaited<ReturnType<typeof findRefreshSe
 /** Only consume the token after checking its budget. Concurrent rotations have one winner. */
 export async function refresh(session: RefreshSession | null, res: Response) {
   if (!session) {
-    clearRefreshCookie(res);
+    // This response might arrive after another tab has already rotated the same cookie.
     throw unauthorized("Session expired");
   }
   const record = await RefreshToken.findOneAndDelete({ _id: session._id, expiresAt: { $gt: new Date() } });
