@@ -24,7 +24,14 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     const parsed =
       mode === "login" ? loginSchema.safeParse(fields) : registerSchema.safeParse(fields);
     if (!parsed.success) {
-      setError("Проверьте введённые данные");
+      const field = parsed.error.issues[0]?.path[0];
+      setError(field === "username"
+        ? "ID профиля должен содержать от 3 до 24 латинских букв, цифр или знаков подчёркивания."
+        : field === "email"
+          ? "Введите корректный адрес почты."
+          : mode === "register"
+            ? "Пароль должен содержать от 8 до 128 символов."
+            : "Введите пароль.");
       return;
     }
     setBusy(true);

@@ -216,13 +216,15 @@ export async function api<T>(
       "Too many attempts, try again later.": "Слишком много попыток. Попробуйте позже.",
     };
     const safe = (data.error && known[data.error]) ||
+      (path === "/auth/register" && res.status === 409 ? "Этот адрес почты или ID профиля уже заняты." : "") ||
       (res.status === 413 ? "Файл слишком большой." : res.status === 429 ? "Слишком много запросов. Попробуйте позже." : `Не удалось выполнить запрос (код ${res.status}).`);
     if (data.restriction?.kind === "account" && !path.startsWith("/auth/")) {
       window.dispatchEvent(new CustomEvent("account-restricted", { detail: data.restriction }));
     }
     throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : safe, data.error ?? fallback, data.restriction);
   }
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  const body = await res.text();
+  return body ? JSON.parse(body) as T : undefined as T;
 }
 
 /** Builds "/path?a=1&b=2", skipping undefined or empty values. */
