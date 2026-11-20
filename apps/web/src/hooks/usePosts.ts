@@ -9,18 +9,25 @@ import {
 import type { CommentDTO, CreateCommentInput, CreatePostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { COMMENTS_PAGE_SIZE } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
+import { readAcrossTabs, sharedStaleTime } from "../lib/tabQueries";
+import { useAuth } from "../store/auth";
 
 export type FeedType = "all" | "following";
 
 export function useFeed(feed: FeedType = "all") {
+  const { confirmed } = useAuth();
+  const qc = useQueryClient();
+  const key = ["feed", feed];
   return useInfiniteQuery({
-    queryKey: ["feed", feed],
-    staleTime: 0,
-    refetchOnMount: "always",
+    queryKey: key,
+    enabled: confirmed,
+    staleTime: () => sharedStaleTime(key, qc.getQueryState(key)?.dataUpdatedAt ?? 0, 30_000),
     refetchOnWindowFocus: true,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      api<Page<PostDTO>>(withQuery("/posts", { feed, cursor: pageParam })),
+    queryFn: ({ pageParam, signal }): Promise<Page<PostDTO>> => {
+      const read = () => api<Page<PostDTO>>(withQuery("/posts", { feed, cursor: pageParam }), { signal });
+      return pageParam ? read() : readAcrossTabs(qc, key, 30_000, read, signal);
+    },
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }

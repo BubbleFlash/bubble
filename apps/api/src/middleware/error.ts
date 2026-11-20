@@ -13,6 +13,10 @@ export const notFoundHandler: RequestHandler = (req, res) => {
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof AppError) {
+    if (err.status === 503 && err.message === "Email delivery is unavailable") {
+      void recordError({ source: "api", message: err.message, status: 503, category: "mail",
+        route: `${req.method} ${req.baseUrl}${req.route?.path ?? req.path}`, requestId: String(req.id ?? "") });
+    }
     return res.status(err.status).json({ error: err.message, restriction: err.restriction });
   }
   // Malformed JSON body
@@ -36,12 +40,22 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
   logger.error({ err }, "Unhandled error");
   const e = err instanceof Error ? err : new Error(String(err));
+  const route = `${req.method} ${req.baseUrl}${req.route?.path ?? req.path}`;
+  const metadata = (err as { $metadata?: { httpStatusCode?: unknown } })?.$metadata;
+  const providerStatus = /^Email provider returned (\d{3})$/.exec(e.message);
+  const upstreamStatus = typeof metadata?.httpStatusCode === "number" ? metadata.httpStatusCode
+    : providerStatus ? Number(providerStatus[1]) : null;
+  const category = providerStatus ? "mail" : req.path.startsWith("/uploads/") ? "storage"
+    : e.name.startsWith("Mongo") ? "database" : ["TimeoutError", "AbortError"].includes(e.name) ? "network" : "unknown";
   void recordError({
     source: "api",
     message: e.message || e.name,
     stack: e.stack,
-    route: `${req.method} ${req.baseUrl}${req.route?.path ?? req.path}`,
+    route,
     status: 500,
+    category,
+    upstreamStatus,
+    requestId: String(req.id ?? ""),
   });
   // The request id is also in the server log, so a user's report can be matched to it.
   res.status(500).json({ error: "Internal server error", requestId: String(req.id ?? "") });

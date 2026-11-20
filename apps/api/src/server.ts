@@ -3,6 +3,7 @@ import { connectDb, disconnectDb } from "./config/db.js";
 import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { startAccountDeletionWorker } from "./services/accountDeletion.js";
+import { flushTelemetry } from "./services/telemetry.js";
 
 async function main() {
   await connectDb();
@@ -15,6 +16,7 @@ async function main() {
     logger.info(`${signal} received, shutting down`);
     stopAccountDeletionWorker();
     server.close(async () => {
+      await flushTelemetry();
       await disconnectDb();
       process.exit(0);
     });

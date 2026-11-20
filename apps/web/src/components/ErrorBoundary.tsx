@@ -1,14 +1,22 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
-import { reportError } from "../lib/report";
+import { Component, useEffect, type ReactNode } from "react";
+import { Link, useRouteError } from "react-router-dom";
+import { isChunkError, reportError } from "../lib/report";
 import { OFFICIAL_TELEGRAM_URL } from "../lib/support";
 
-const RELOAD_KEY = "commune_chunk_reload";
+const RELOAD_KEY = "bubble_chunk_reloaded_at";
+const RELOAD_COOLDOWN_MS = 10 * 60_000;
 
-/** A page file that no longer exists: the site was updated while this tab was open. */
-function isStaleChunk(error: Error): boolean {
-  return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(
-    error.message,
-  );
+function recover(error: unknown, preservePlayback = false) {
+  reportError("react", error);
+  if (preservePlayback || !isChunkError(error) || navigator.onLine === false) return;
+  try {
+    const now = Date.now();
+    if (now - Number(sessionStorage.getItem(RELOAD_KEY)) < RELOAD_COOLDOWN_MS) return;
+    sessionStorage.setItem(RELOAD_KEY, String(now));
+  } catch {
+    return;
+  }
+  window.location.reload();
 }
 
 interface State {
@@ -16,48 +24,58 @@ interface State {
 }
 
 /**
- * Last line of defence: if rendering throws, show a friendly screen instead of a blank page,
- * and report the error. After a new deployment, an open tab can ask for page files that are
- * gone; one automatic reload fixes that without the visitor noticing.
+ * Report a render failure and offer a way back. A failed module load may recover on reload
+ * when the tab has an outdated entry point after a deployment.
  */
-export default class ErrorBoundary extends Component<{ children: ReactNode }, State> {
+export default class ErrorBoundary extends Component<{ children: ReactNode; routeKey?: string; preservePlayback?: boolean }, State> {
   state: State = { failed: false };
 
   static getDerivedStateFromError(): State {
     return { failed: true };
   }
 
-  componentDidCatch(error: Error, _info: ErrorInfo) {
-    if (isStaleChunk(error)) {
-      try {
-        if (sessionStorage.getItem(RELOAD_KEY) !== "1") {
-          sessionStorage.setItem(RELOAD_KEY, "1");
-          window.location.reload();
-          return;
-        }
-      } catch {
-        /* storage blocked: fall through to the message */
-      }
-    }
-    reportError("react", error);
+  componentDidCatch(error: Error) {
+    recover(error, this.props.preservePlayback);
+  }
+
+  componentDidUpdate(previous: Readonly<{ routeKey?: string }>) {
+    if (this.state.failed && previous.routeKey !== this.props.routeKey) this.setState({ failed: false });
   }
 
   render() {
-    if (!this.state.failed) return this.props.children;
-    return (
-      <div
-        className="card center"
-        role="alert"
-        style={{ margin: "20vh auto 0", maxWidth: 420, padding: 24 }}
-      >
-        <h1 className="page-title">Что-то пошло не так</h1>
-        <p className="muted">Мы получили сообщение об ошибке. Обычно помогает перезагрузка.</p>
-        <button className="btn btn-primary" onClick={() => window.location.assign("/")}>
-
-          Перезагрузить Bubble
-        </button>
-        <p><a href={OFFICIAL_TELEGRAM_URL} target="_blank" rel="noopener noreferrer">Bubble в Telegram</a></p>
-      </div>
-    );
+    return this.state.failed
+      ? <RecoveryCard embedded={this.props.routeKey !== undefined} preservePlayback={this.props.preservePlayback} />
+      : this.props.children;
   }
+}
+
+export function RouteErrorBoundary() {
+  const error = useRouteError();
+  useEffect(() => recover(error), [error]);
+  return <RecoveryCard />;
+}
+
+function RecoveryCard({ embedded, preservePlayback }: { embedded?: boolean; preservePlayback?: boolean }) {
+  const reload = () => {
+    try {
+      // This document request already serves as the retry.
+      sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+    } catch { /* The user can still reload when storage is disabled. */ }
+    window.location.reload();
+  };
+  return (
+    <div
+      className="card center"
+      role="alert"
+      style={{ margin: embedded ? "1rem auto" : "20vh auto 0", maxWidth: 420, padding: 24 }}
+    >
+      <h1 className="page-title">Страница не загрузилась</h1>
+      <p className="muted">{preservePlayback ? "Обновление страницы остановит плеер." : "Обновите страницу или вернитесь на главную."}</p>
+      <button type="button" className="btn btn-primary" onClick={reload}>
+        Обновить страницу
+      </button>
+      <p>{embedded ? <Link to="/">На главную</Link> : <a href="/">На главную</a>}</p>
+      <p><a href={OFFICIAL_TELEGRAM_URL} target="_blank" rel="noopener noreferrer">Bubble в Telegram</a></p>
+    </div>
+  );
 }

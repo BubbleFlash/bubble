@@ -6,12 +6,22 @@ import { ErrorEvent } from "../models/ErrorEvent.js";
 import { fingerprintOf, scrub } from "../services/errorTracker.js";
 import { signAccessToken } from "../utils/tokens.js";
 import { mockUser } from "./helpers.js";
+import { telemetryRoute } from "@commune/shared";
+import { latencyPercentile } from "../services/telemetry.js";
 
 const app = createApp();
 const token = signAccessToken("507f1f77bcf86cd799439011");
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+it("keeps only fixed route labels and returns histogram percentiles", () => {
+  expect(telemetryRoute("/api/posts/abc-secret/comments/another-secret/like?q=x")).toBe("/posts/:id/comments/:commentId/like");
+  expect(telemetryRoute("/api/custom-token/private-name?signed=secret")).toBe("/other");
+  expect(latencyPercentile([94, 4, 2], 0.95)).toBe(25);
+  expect(latencyPercentile([94, 4, 2], 0.99)).toBe(50);
+  expect(latencyPercentile([0, 0], 0.95)).toBeNull();
 });
 
 describe("health checks", () => {

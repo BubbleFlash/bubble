@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteD
 import type { ConversationDTO, MessageDTO, MessagePage, MusicTrackDTO } from "@commune/shared";
 import { api } from "../lib/api";
 import { isRealtimeConnected } from "../lib/realtime";
+import { readAcrossTabs, sharedStaleTime } from "../lib/tabQueries";
 import { useAuth } from "../store/auth";
 
 export type ThreadPage = MessagePage & { conversation?: ConversationDTO };
@@ -35,10 +36,14 @@ export function useConversations(enabled = true) {
 
 /** Number of conversations with unread messages (for the badge). */
 export function useUnreadMessages(enabled: boolean) {
+  const { confirmed } = useAuth();
+  const qc = useQueryClient();
+  const key = ["unread-messages"];
   return useQuery({
-    queryKey: ["unread-messages"],
-    queryFn: () => api<{ count: number }>("/messages/unread-count"),
-    enabled,
+    queryKey: key,
+    queryFn: ({ signal }) => readAcrossTabs(qc, key, 25_000, () => api<{ count: number }>("/messages/unread-count", { signal }), signal),
+    enabled: enabled && confirmed,
+    staleTime: (query) => sharedStaleTime(key, query.state.dataUpdatedAt, 25_000),
     refetchOnWindowFocus: true,
     refetchInterval: () => (isRealtimeConnected() ? 180_000 : 30_000),
   });
@@ -50,7 +55,7 @@ export function useThread(id: string | undefined) {
   return useInfiniteQuery({
     queryKey: ["thread", id],
     enabled: Boolean(id),
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: (query) => !isRealtimeConnected() || query.state.isInvalidated,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page: ThreadPage) => page.nextCursor ?? undefined,
     queryFn: async ({ pageParam, signal }): Promise<ThreadPage> => {
@@ -63,7 +68,10 @@ export function useThread(id: string | undefined) {
       }
       return page;
     },
-    refetchInterval: () => (isRealtimeConnected() ? 60_000 : 15_000),
+    refetchInterval: (query) => {
+      if (!isRealtimeConnected()) return 15_000;
+      return (query.state.data?.pages.length ?? 0) > 1 ? 180_000 : 60_000;
+    },
     refetchIntervalInBackground: false,
     staleTime: 0,
   });

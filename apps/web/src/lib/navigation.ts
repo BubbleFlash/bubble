@@ -29,6 +29,6 @@ export function inStaffArea(role: string | undefined, path: string) {
 
 export const adminNavigation = [
   { id: "reports", label: "Модерация", to: "/moderation", icon: "shield" },
-  { id: "errors", label: "Ошибки", to: "/admin/errors", icon: "news" },
+  { id: "errors", label: "Мониторинг", to: "/admin/errors", icon: "news" },
   { id: "site", label: "На сайт", to: "/", icon: "back" },
 ] as const;

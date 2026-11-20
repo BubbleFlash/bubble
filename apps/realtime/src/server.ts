@@ -100,6 +100,25 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
     },
   });
 
+  // Engine.IO sends a generic 400 to the client. Keep the reason in the service log.
+  const handshakeLog = new TokenBucket(10, 1 / 10);
+  io.engine.on("connection_error", ({ req, code, context }) => {
+    if (!handshakeLog.take()) return;
+    const query = new URLSearchParams(req.url?.split("?", 2)[1]);
+    const transport = query.get("transport");
+    const reason = typeof context?.name === "string" && /^[A-Z_]{1,48}$/.test(context.name)
+      ? context.name : undefined;
+    const ray = req.headers["cf-ray"];
+    log("warn", "Engine.IO handshake rejected", {
+      code,
+      reason,
+      transport: transport === "websocket" || transport === "polling" ? transport : "other",
+      upgradeHeader: req.headers.upgrade?.toLowerCase() === "websocket",
+      connectionUpgrade: /(?:^|,)\s*upgrade\s*(?:,|$)/i.test(req.headers.connection ?? ""),
+      cfRay: typeof ray === "string" && /^[a-f\d]{16}(?:-[A-Z]{3})?$/i.test(ray) ? ray : undefined,
+    });
+  });
+
   async function handleHttp(req: IncomingMessage, res: ServerResponse) {
     const path = (req.url ?? "/").split("?")[0];
 
@@ -173,7 +192,7 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
     const principal = verifyToken(token, config.jwtSecret);
-    if (!principal || !(await members.sessionAllowed(token))) return next(new Error("unauthorized"));
+    if (!principal || !(await members.sessionAllowed(token, true))) return next(new Error("unauthorized"));
     if ((online.get(principal.userId)?.size ?? 0) >= config.maxConnectionsPerUser) {
       return next(new Error("too_many_connections"));
     }

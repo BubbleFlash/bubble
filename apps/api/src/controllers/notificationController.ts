@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import {
   notificationTypes,
   type NotificationDTO,
+  type NotificationNewEvent,
   type NotificationPreference,
   type NotificationPreferences,
   type NotificationQuery,
@@ -12,6 +13,7 @@ import {
 import { Notification } from "../models/Notification.js";
 import { User } from "../models/User.js";
 import { getNotificationPreferences } from "../services/notificationService.js";
+import { emitToUsers } from "../services/realtime.js";
 import { toNotificationDTO, type PopulatedNotification } from "../utils/serializers.js";
 
 function visibleTypes(prefs: NotificationPreferences, selected?: NotificationType) {
@@ -62,7 +64,7 @@ export async function unreadCount(req: Request, res: Response) {
 export async function markAllRead(req: Request, res: Response) {
   const { type, through, items } = (req.body ?? {}) as ReadNotificationsInput;
   const prefs = await getNotificationPreferences(req.userId!);
-  await Notification.updateMany({
+  const result = await Notification.updateMany({
     user: req.userId,
     read: false,
     type: { $in: visibleTypes(prefs, type) },
@@ -71,6 +73,9 @@ export async function markAllRead(req: Request, res: Response) {
     // Likes and follows can reuse an ID when they become unread again.
     ...(items && { $or: items.map(({ id, createdAt }) => ({ _id: id, createdAt: new Date(createdAt) })) }),
   }, { $set: { read: true } });
+  if (result.modifiedCount) {
+    await emitToUsers([req.userId!], "notification:new", { readStateChanged: true } satisfies NotificationNewEvent);
+  }
   res.status(204).end();
 }
 

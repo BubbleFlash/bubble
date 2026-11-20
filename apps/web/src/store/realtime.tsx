@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import type { MessageDTO, NotificationDTO } from "@commune/shared";
+import { useQueryClient, type InfiniteData, type QueryKey } from "@tanstack/react-query";
+import type { MessageDTO, NotificationDTO, Page } from "@commune/shared";
 import NotificationToasts from "../components/NotificationToasts";
 import { refreshMessageQueries, updateLatestThreadPage, type ThreadPage } from "../hooks/useMessages";
-import { realtimeEnabled, startRealtime, stopRealtime } from "../lib/realtime";
+import { isRealtimeConnected, realtimeEnabled, startRealtime, stopRealtime } from "../lib/realtime";
 import { hideNotificationToasts, notificationVersion } from "../lib/notifications";
 import { isViewingConversation, playSound } from "../lib/sound";
 import { useAuth } from "./auth";
@@ -28,9 +28,9 @@ export function appendUnique(page: ThreadPage, message: MessageDTO): ThreadPage 
  * new messages appear instantly, "seen" ticks over, badges refresh, notifications arrive.
  */
 export function RealtimeProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, confirmed } = useAuth();
   const qc = useQueryClient();
-  const userId = user?.id;
+  const userId = confirmed ? user?.id : undefined;
   const unread = useUnreadCount(Boolean(userId));
   const previous = useRef<{ userId: string; count: number } | null>(null);
   const timers = useRef(new Map<string, number>());
@@ -41,25 +41,28 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter(({ item }) => notificationVersion(item) !== version));
   }, []);
 
+  const invalidate = useCallback((queryKey: QueryKey, exact = false) => qc.invalidateQueries({
+    queryKey, exact, refetchType: document.visibilityState === "visible" ? "active" : "none",
+  }), [qc]);
+
   useEffect(() => {
     if (!userId || unread.data === undefined) { previous.current = null; return; }
     const count = unread.data.count;
     if (previous.current?.userId === userId && previous.current.count !== count) {
-      for (const key of ["relationships", "friends-access", "friends-list", "profile", "profile-music", "notifications"]) void qc.invalidateQueries({ queryKey: [key] });
+      if (!isRealtimeConnected()) void invalidate(["notifications"]);
     }
     previous.current = { userId, count };
-  }, [userId, unread.data, qc]);
+  }, [userId, unread.data, invalidate]);
 
   useEffect(() => {
     if (!userId) return;
     const refresh = () => {
-      if (document.visibilityState !== "visible") return;
-      for (const key of ["thread", "conversations", "unread-messages", "notifications", "unread-count", "relationships", "friends-access", "friends-list", "profile", "profile-music", "feed"]) void qc.invalidateQueries({ queryKey: [key] });
+      if (isRealtimeConnected()) return;
+      for (const key of ["thread", "conversations", "unread-messages", "notifications", "unread-count", "relationships", "friends-access", "friends-list"]) void invalidate([key]);
     };
-    document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
-    return () => { document.removeEventListener("visibilitychange", refresh); window.removeEventListener("online", refresh); };
-  }, [userId, qc]);
+    return () => window.removeEventListener("online", refresh);
+  }, [userId, invalidate]);
 
   useEffect(() => {
     if (!realtimeEnabled || !userId) return;
@@ -81,24 +84,34 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           return next;
         });
-        if (fetching || message.hasRepost) void qc.invalidateQueries({ queryKey: key, exact: true });
-        void qc.invalidateQueries({ queryKey: ["conversations"] });
+        if (fetching || message.hasRepost) void invalidate(key, true);
+        void invalidate(["conversations"]);
         if (message.senderId !== userId) {
-          void qc.invalidateQueries({ queryKey: ["unread-messages"] });
+          void invalidate(["unread-messages"]);
           // A chime for someone else's message, unless you are already reading that conversation.
           if (!isViewingConversation(message.conversationId)) playSound("message");
         }
       },
-      onRead: ({ conversationId }) => {
+      onRead: ({ conversationId, readerId }) => {
+        if (readerId === userId) {
+          void invalidate(["unread-messages"]);
+          void invalidate(["conversations"]);
+          return;
+        }
         updateLatestThreadPage(qc, conversationId, (old) =>
           old.conversation
             ? { ...old, conversation: { ...old.conversation, seenByOther: true } }
             : old,
         );
-        void qc.invalidateQueries({ queryKey: ["conversations"] });
+        void invalidate(["conversations"]);
       },
       onMessageChanged: ({ conversationId }) => {
-        void refreshMessageQueries(qc, conversationId);
+        if (document.visibilityState === "visible") void refreshMessageQueries(qc, conversationId);
+        else {
+          void invalidate(["thread", conversationId], true);
+          void invalidate(["conversations"]);
+          void invalidate(["unread-messages"]);
+        }
       },
       onNotification: (event) => {
         if (event?.notification) {
@@ -110,10 +123,38 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             setToasts((current) => [...current, { userId, item }]);
             toastTimers.set(version, window.setTimeout(() => dismissToast(version), 2700));
           }
+          for (const [key, data] of qc.getQueriesData<InfiniteData<Page<NotificationDTO>>>({ queryKey: ["notifications", userId] })) {
+            const filter = key[2];
+            if ((filter && filter !== item.type) || !data?.pages.length) continue;
+            if (qc.getQueryState(key)?.fetchStatus === "fetching") {
+              void invalidate(key, true);
+              continue;
+            }
+            const existing = data.pages.flatMap((page) => page.items).find((row) => row.id === item.id);
+            if (existing && existing.createdAt >= item.createdAt) continue;
+            const lastInHead = data.pages[0]?.items.at(-1);
+            if (lastInHead && lastInHead.createdAt > item.createdAt) {
+              void invalidate(key, true);
+              continue;
+            }
+            const pages = data.pages.map((page, index) => {
+              const items = page.items.filter((row) => row.id !== item.id);
+              if (index === 0) {
+                items.push(item);
+                items.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+              }
+              return { ...page, items };
+            });
+            qc.setQueryData(key, { ...data, pages });
+          }
+        } else {
+          void invalidate(["notifications", userId]);
         }
-        void qc.invalidateQueries({ queryKey: ["notifications"] });
-        void qc.invalidateQueries({ queryKey: ["unread-count"] });
-        for (const key of ["relationships", "friends-access", "friends-list", "profile", "profile-music"]) void qc.invalidateQueries({ queryKey: [key] });
+        void invalidate(["unread-count"]);
+        // An event without a card may still represent a hidden follow notification.
+        if (!event?.readStateChanged && (!event?.notification || event.notification.type === "follow")) {
+          for (const key of ["relationships", "friends-access", "friends-list", "profile", "profile-music"]) void invalidate([key]);
+        }
       },
       onResync: () => {
         // Events sent while the connection was down are gone, so ask the server what changed.
@@ -125,7 +166,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           "unread-count",
           "relationships", "friends-access", "friends-list", "profile", "profile-music",
         ]) {
-          void qc.invalidateQueries({ queryKey: [key] });
+          void invalidate([key]);
         }
       },
     });
@@ -135,7 +176,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       toastTimers.clear();
       setToasts([]);
     };
-  }, [userId, qc, dismissToast]);
+  }, [userId, qc, dismissToast, invalidate]);
 
   return (
     <>
