@@ -1,4 +1,5 @@
 import { API_BASE } from "./api";
+import { telemetryPage } from "@commune/shared";
 
 /**
  * Sends unexpected browser errors to the API so the owner can see them in the Admin page.
@@ -20,6 +21,11 @@ const IGNORED = [
   /moz-extension:\/\//i,
 ];
 
+export function isChunkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|failed to load module script|unable to preload css|loading chunk .+ failed/i.test(message);
+}
+
 export function reportError(source: "window" | "promise" | "react", error: unknown): void {
   if (!import.meta.env.PROD) return;
   try {
@@ -27,11 +33,15 @@ export function reportError(source: "window" | "promise" | "react", error: unkno
       error instanceof Error
         ? error
         : new Error(typeof error === "string" ? error : "Unknown error");
-    const message = (err.message || err.name || "Unknown error").slice(0, 300);
-    const stack = (err.stack ?? "").slice(0, 2000);
-    if (IGNORED.some((re) => re.test(message) || re.test(stack))) return;
-    if (sent.size >= MAX_PER_VISIT || sent.has(message)) return;
-    sent.add(message);
+    const chunk = isChunkError(err);
+    const category = chunk ? "chunk" : source === "react" ? "render" : undefined;
+    const message = chunk ? "Не удалось загрузить модуль страницы" : (err.message || err.name || "Unknown error").slice(0, 300);
+    const stack = chunk ? undefined : (err.stack ?? "").slice(0, 2000);
+    if (!chunk && IGNORED.some((re) => re.test(message) || re.test(stack ?? ""))) return;
+    const path = telemetryPage(window.location.pathname);
+    const key = `${path} ${message}`;
+    if (sent.size >= MAX_PER_VISIT || sent.has(key)) return;
+    sent.add(key);
     void fetch(`${API_BASE}/client-errors`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -39,7 +49,8 @@ export function reportError(source: "window" | "promise" | "react", error: unkno
         message,
         stack,
         source,
-        path: window.location.pathname.slice(0, 200),
+        path,
+        category,
       }),
       keepalive: true,
     }).catch(() => undefined);

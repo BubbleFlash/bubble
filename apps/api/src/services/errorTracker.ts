@@ -11,7 +11,7 @@ export interface ErrorReport {
   stack?: string;
   route?: string;
   status?: number | null;
-  category?: "storage" | "mail" | "database" | "network" | "unknown";
+  category?: "storage" | "mail" | "database" | "network" | "chunk" | "render" | "unknown";
   upstreamStatus?: number | null;
   requestId?: string;
 }

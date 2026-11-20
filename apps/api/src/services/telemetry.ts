@@ -161,7 +161,7 @@ function headerValue(value: unknown, pattern: RegExp) {
 export const observeApi: RequestHandler = (req, res, next) => {
   const path = req.path;
   if (
-    !/^\/api\//i.test(path) ||
+    !/^\/(?:api|uploads)\//i.test(path) ||
     /^\/api\/(?:admin\/(?:telemetry|errors)|internal|health|client-network|client-errors)(?:\/|$)/i.test(
       path,
     )

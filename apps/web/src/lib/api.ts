@@ -1,6 +1,6 @@
 import type { AuthResponse } from "@commune/shared";
 import { assertSessionGeneration, SessionChanged, sessionGeneration, withSessionCookie } from "./browserSession";
-import { observeFetch } from "./networkTelemetry";
+import { observeFetch, retrySeconds } from "./networkTelemetry";
 
 // Production builds always call the same origin ("/api"), which Vercel forwards to the API
 // (see apps/web/vercel.json). That keeps the login cookie first-party. VITE_API_URL is only
@@ -60,15 +60,32 @@ export type Restriction = { kind: "account" | "publishing"; reason: string; unti
 export const restrictionText = ({ reason, until }: Restriction) => reason + (until ? " · до " + new Date(until).toLocaleString("ru-RU") : " · бессрочно");
 
 export class SessionRestoreError extends Error {
-  constructor(public readonly retryAfterMs?: number) {
-    super("Не удалось проверить сеанс. Проверьте соединение и попробуйте ещё раз.");
+  constructor(public readonly retryAt?: number) {
+    super(retryAt
+      ? `Сервер попросил сделать паузу. Повторите через ${Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))} с.`
+      : "Не удалось проверить сеанс. Проверьте соединение и попробуйте ещё раз.");
   }
+}
+
+const REFRESH_COOLDOWN_KEY = "bubble-refresh-cooldown";
+let refreshCooldown: { generation: string; until: number } | undefined;
+
+function refreshRetryAt(generation: string) {
+  let until = refreshCooldown?.generation === generation ? refreshCooldown.until : 0;
+  try {
+    const stored = JSON.parse(localStorage.getItem(REFRESH_COOLDOWN_KEY) ?? "null");
+    if (stored?.generation === generation && Number.isFinite(stored.until)) until = Math.max(until, stored.until);
+  } catch { /* Recovery can still use the tab's cooldown. */ }
+  return until;
 }
 
 async function refreshSession(): Promise<AuthResponse | null> {
   const generation = sessionGeneration();
   if (refreshing?.generation === generation) return refreshing.promise;
   const promise = withSessionCookie(async () => {
+      assertSessionGeneration(generation);
+      const retryAt = refreshRetryAt(generation);
+      if (retryAt > Date.now()) throw new SessionRestoreError(retryAt);
       const request = () => {
         assertSessionGeneration(generation);
         return observeFetch(BASE, "/auth/refresh", {
@@ -85,19 +102,28 @@ async function refreshSession(): Promise<AuthResponse | null> {
         }
       }
       assertSessionGeneration(generation);
-      if (res.status === 401) return null;
-      if (res.status === 403) {
-        const body = await res.json() as { restriction?: Restriction };
+      if (res.status === 401 || res.status === 403) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; restriction?: Restriction };
+        assertSessionGeneration(generation);
+        if (res.status === 401 && (body.error === "No session" || body.error === "Session expired")) return null;
         if (body.restriction) throw new ApiError(403, restrictionText(body.restriction), undefined, body.restriction);
       }
       if (!res.ok) {
-        const seconds = Number(res.headers.get("Retry-After"));
-        throw new SessionRestoreError(seconds > 0 ? seconds * 1000 : undefined);
+        const seconds = retrySeconds(res);
+        if (res.status !== 429 && !seconds) throw new SessionRestoreError();
+        const until = Date.now() + Math.max(1, seconds ?? 15) * 1000;
+        refreshCooldown = { generation, until };
+        try { localStorage.setItem(REFRESH_COOLDOWN_KEY, JSON.stringify(refreshCooldown)); } catch { /* Storage is optional. */ }
+        throw new SessionRestoreError(until);
       }
       const data = (await res.json()) as AuthResponse;
       assertSessionGeneration(generation);
       setAccessToken(data.accessToken);
       return data;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof SessionChanged || error instanceof SessionRestoreError || error instanceof ApiError) throw error;
+      throw new SessionRestoreError();
     })
     .finally(() => {
       if (refreshing?.promise === promise) refreshing = null;
@@ -175,7 +201,7 @@ export async function api<T>(
 
   if (res.status === 401 && retry && !path.startsWith("/auth/")) {
     const currentToken = getAccessToken();
-    const refreshed = Boolean(currentToken && currentToken !== token) || await refresh();
+    const refreshed = Boolean(currentToken && currentToken !== token) || (await refreshSession()) !== null;
     assertSessionGeneration(generation);
     if (refreshed) return api<T>(path, options, false);
   }
@@ -247,7 +273,9 @@ export async function api<T>(
     if (data.restriction?.kind === "account" && !path.startsWith("/auth/")) {
       window.dispatchEvent(new CustomEvent("account-restricted", { detail: data.restriction }));
     }
-    throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : safe, data.error ?? fallback, data.restriction);
+    const wait = res.status === 429 ? retrySeconds(res) : undefined;
+    throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : wait
+      ? `Слишком много запросов. Повторите через ${wait} с.` : safe, data.error ?? fallback, data.restriction);
   }
   const result = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
   assertSessionGeneration(generation);

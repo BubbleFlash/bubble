@@ -64,7 +64,7 @@ function enqueue(base: string, event: Omit<ClientNetworkEvent, "at">) {
   schedule(1500);
 }
 
-function retrySeconds(response: Response) {
+export function retrySeconds(response: Response) {
   const header = response.headers.get("Retry-After");
   if (!header) return undefined;
   const seconds = /^\d+$/.test(header)
@@ -120,7 +120,7 @@ export async function observeFetch(
 
 export function reportSocketIssue(
   base: string,
-  kind: "socket-connect" | "socket-drop" | "socket-limit",
+  kind: Extract<ClientNetworkEvent["kind"], `socket-${string}`>,
 ) {
   enqueue(base, { method: "OTHER", route: "/socket.io", kind });
 }

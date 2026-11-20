@@ -54,7 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [blocked, setBlocked] = useState<Restriction>();
-  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [restoreFailed, setRestoreFailed] = useState<{ limited: boolean }>();
+  const transientFailures = useRef(0);
   const [confirmed, setConfirmed] = useState(false);
 
   const setUser = useCallback((next: AccountUser | null) => {
@@ -88,7 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setConfirmed(false);
     closeTabQueries();
     setBlocked(undefined);
-    setRestoreFailed(false);
+    transientFailures.current = 0;
+    setRestoreFailed(undefined);
     qc.clear();
     // The other tab has already written the new cached profile. Clear only this tab's view.
     currentUser.current = null;
@@ -115,8 +117,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let alive = true;
     const generation = sessionGeneration();
     let timer: number | undefined;
-    const retry = () => setRestoreAttempt((attempt) => attempt + 1);
-    setRestoreFailed(false);
+    let retryAt = 0;
+    const retry = () => {
+      if (!alive || Date.now() < retryAt || navigator.onLine === false) return;
+      alive = false;
+      setLoading(true);
+      setRestoreAttempt((attempt) => attempt + 1);
+    };
+    setRestoreFailed(undefined);
     const restore = readSessionHint() === "guest" ? Promise.resolve(null) : bootSession(restoreAttempt > 0);
     void restore.then((res) => {
       if (!alive || generation !== sessionGeneration()) return;
@@ -133,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setConfirmed(Boolean(res));
       setLoading(false);
+      transientFailures.current = 0;
     }).catch((error: unknown) => {
       if (!alive) return;
       if (error instanceof SessionChanged) {
@@ -146,11 +155,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
-      setRestoreFailed(true);
-      // Honour the API's cooldown. Other transient failures get one automatic retry.
-      const delay = error instanceof SessionRestoreError ? error.retryAfterMs : undefined;
-      if (delay || restoreAttempt === 0) timer = window.setTimeout(retry, delay ?? 3000);
-      window.addEventListener("online", retry, { once: true });
+      retryAt = error instanceof SessionRestoreError ? error.retryAt ?? 0 : 0;
+      setRestoreFailed({ limited: retryAt > Date.now() });
+      const delay = retryAt
+        ? Math.max(0, retryAt - Date.now())
+        : [2000, 5000, 12_000][transientFailures.current++];
+      if (delay !== undefined && (retryAt || navigator.onLine !== false)) {
+        timer = window.setTimeout(retry, delay + 250 + Math.random() * 750);
+      }
+      window.addEventListener("online", retry);
     });
     return () => {
       alive = false;
@@ -226,8 +239,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   </main>;
   if (restoreFailed) return (
     <main role="alert" className="card">
-      <p>Не удалось проверить сеанс. Попробуйте ещё раз чуть позже.</p>
-      <button className="btn" onClick={() => setRestoreAttempt((attempt) => attempt + 1)}>Повторить</button>
+      <p>{restoreFailed.limited
+        ? "Сервер попросил сделать паузу. Попробуем восстановить сеанс автоматически."
+        : "Пока не удалось проверить сеанс. Повторите попытку, когда соединение восстановится."}</p>
+      <button className="btn" disabled={restoreFailed.limited} onClick={() => {
+        transientFailures.current = 0;
+        setLoading(true);
+        setRestoreAttempt((attempt) => attempt + 1);
+      }}>Повторить</button>
     </main>
   );
   if (loading) return <PageSkeleton />;

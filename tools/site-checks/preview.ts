@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { build, preview } from "vite";
+import { Server } from "socket.io";
 
 export default async function startPreview() {
   const root = resolve(__dirname, "../../apps/web");
@@ -10,6 +11,10 @@ export default async function startPreview() {
     await server.close();
     throw new Error("Local preview could not bind to loopback");
   }
+  const sockets = new Server(server.httpServer, { serveClient: false, transports: ["websocket", "polling"] });
   process.env.BUBBLE_CHECK_PREVIEW_URL = `http://127.0.0.1:${address.port}`;
-  return () => server.close();
+  return () => {
+    sockets.engine.close();
+    return server.close();
+  };
 }

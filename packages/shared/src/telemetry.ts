@@ -7,6 +7,8 @@ export const networkKinds = [
   "offline",
   "timeout",
   "socket-connect",
+  "socket-auth",
+  "socket-fallback",
   "socket-drop",
   "socket-limit",
   "closed",
@@ -16,6 +18,7 @@ export const telemetryLimiters = [
   "global-ip",
   "refresh-account",
   "refresh-ip",
+  "refresh-lookup-ip",
   "upload",
   "report",
   "auth",
@@ -104,6 +107,16 @@ export function telemetryRoute(path: string): string {
     }
   }
   return "/other";
+}
+
+export function telemetryPage(path: string): string {
+  const clean = path.split(/[?#]/, 1)[0]!.replace(/\/+$/, "") || "/";
+  if (/^\/(?:explore|music|settings|notifications|login|register|news|search|contact|plus|friends|verify-email|forgot-password|reset-password|confirm-email-change|insights)?$/.test(clean)) return clean;
+  if (/^\/u\/[^/]+$/.test(clean)) return "/u/:username";
+  if (/^\/u\/[^/]+\/music$/.test(clean)) return "/u/:username/music";
+  if (/^\/c\/[^/]+$/.test(clean)) return "/c/:slug";
+  if (/^\/friends\/[^/]+$/.test(clean)) return "/friends/:username";
+  return telemetryRoute(clean);
 }
 
 export const requestIdPattern = /^(?:[0-9]{1,12}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i;

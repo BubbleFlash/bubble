@@ -22,6 +22,8 @@ const kinds: Record<NetworkIncidentRow["kind"], string> = {
   timeout: "Тайм-аут",
   closed: "Ответ прерван",
   "socket-connect": "Socket.IO не подключился",
+  "socket-auth": "Socket.IO отклонил сеанс",
+  "socket-fallback": "Socket.IO использует polling",
   "socket-drop": "Socket.IO оборвался",
   "socket-limit": "Лимит соединений Socket.IO",
 };

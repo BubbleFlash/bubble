@@ -1,5 +1,5 @@
 import { Link, Navigate, useSearchParams } from "react-router-dom";
-import { telemetryMethods, telemetryRoute } from "@commune/shared";
+import { telemetryMethods, telemetryPage, telemetryRoute } from "@commune/shared";
 import { TelemetryPanel } from "../components/AdminTelemetry";
 import { timeAgo } from "../components/PostCard";
 import { useErrorEvents, useResolveError } from "../hooks/useErrors";
@@ -41,7 +41,7 @@ function ErrorsPanel() {
           event.id,
           event.source,
           verb,
-          telemetryRoute(verb ? (path ?? "") : event.route),
+          event.source === "web" ? telemetryPage(event.route) : telemetryRoute(verb ? (path ?? "") : event.route),
           event.status,
           event.category ?? "unknown",
           event.upstreamStatus,

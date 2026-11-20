@@ -29,8 +29,8 @@ function limiter(
   });
 }
 
-// Only ordinary reads and the background view ping use the signed account budget.
-// Requests without a valid access token and other mutations keep the client IP budget.
+// Routine reads, likes and the background view ping use the signed account budget.
+// Requests without a valid access token and other mutations use the client IP budget.
 const accountReads = [
   /^\/api\/posts(?:\/[^/]+(?:\/comments)?)?\/?$/i,
   /^\/api\/users\/[^/]+(?:\/(?:posts|music|follow|friends(?:\/access)?))?\/?$/i,
@@ -38,15 +38,18 @@ const accountReads = [
   /^\/api\/communities(?:\/[^/]+(?:\/posts)?)?\/?$/i,
   /^\/api\/notifications(?:\/(?:unread-count|preferences))?\/?$/i,
   /^\/api\/(?:messages\/unread-count|moderation\/notices)\/?$/i,
+  /^\/api\/moderation\/reports\/?$/i,
   /^\/api\/(?:news|server-fundraiser|public\/posts)\/?$/i,
 ];
 const postView = /^\/api\/posts\/[^/]+\/view\/?$/i;
+const postLike = /^\/api\/posts\/[^/]+(?:\/comments\/[^/]+)?\/like\/?$/i;
 
 function browsingPrincipal(req: Request) {
   if (req.method === "GET" || req.method === "HEAD") {
     const path = req.path;
     return accountReads.some((route) => route.test(path)) ? requestPrincipal(req) : null;
   }
+  if (["POST", "PUT", "DELETE"].includes(req.method) && postLike.test(req.path)) return requestPrincipal(req);
   return req.method === "POST" && postView.test(req.path) ? requestPrincipal(req) : null;
 }
 
@@ -65,13 +68,16 @@ export const globalLimiter = limiter(
   300,
   "Too many requests, slow down.",
   {
-    skip: (req) => env.NODE_ENV === "test" || (req.method === "POST" && /^\/api\/client-network\/?$/i.test(req.path)),
+    skip: (req) => env.NODE_ENV === "test" || (req.method === "POST" && /^\/api\/(?:client-network|client-errors|auth\/refresh)\/?$/i.test(req.path)),
     keyGenerator(req) {
       const principal = browsingPrincipal(req);
       return principal ? accessKey(principal) : ipKey(req);
     },
   },
 );
+
+// Bound cookie lookups by IP before hitting Mongo. Other site activity must not exhaust this budget.
+export const refreshLookupLimiter = limiter("refresh-lookup-ip", 15 * 60 * 1000, 300, "Too many attempts, try again later.");
 
 export const refreshLimiter = limiter(
   (_req, res) => (res.locals.refreshSession ? "refresh-account" : "refresh-ip"),

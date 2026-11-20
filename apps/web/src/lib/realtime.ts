@@ -107,12 +107,13 @@ export function startRealtime(handlers: RealtimeHandlers): void {
     transports: ["websocket", "polling"],
     tryAllTransports: true,
     reconnectionDelay: 1000,
-    reconnectionDelayMax: 10_000,
+    reconnectionDelayMax: 30_000,
   });
   socket = s;
 
   s.on("connect", () => {
     authFailures = 0;
+    if (s.io.engine.transport.name === "polling") reportSocketIssue(API_BASE, "socket-fallback");
     setState({ connected: true });
     for (const id of wanted) joinNow(id);
     sendVisibility();
@@ -127,7 +128,10 @@ export function startRealtime(handlers: RealtimeHandlers): void {
   });
   s.on("connect_error", (err) => {
     setState({ connected: false });
-    if (err.message === "unauthorized") void renewAndReconnect();
+    if (err.message === "unauthorized") {
+      reportSocketIssue(API_BASE, "socket-auth");
+      void renewAndReconnect();
+    }
     else reportSocketIssue(API_BASE, err.message === "too_many_connections" ? "socket-limit" : "socket-connect");
   });
 

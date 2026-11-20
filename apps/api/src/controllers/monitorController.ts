@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import type { ClientErrorInput, ClientNetworkEvent, ErrorEventDTO, TelemetryHours } from "@commune/shared";
+import { telemetryPage } from "@commune/shared";
 import { ErrorEvent } from "../models/ErrorEvent.js";
 import { recordError } from "../services/errorTracker.js";
 import { notFound } from "../utils/errors.js";
@@ -30,9 +31,10 @@ export async function reportClientError(req: Request, res: Response) {
   const body = req.body as ClientErrorInput;
   await recordError({
     source: "web",
-    message: body.message,
-    stack: body.stack,
-    route: body.path.split("?")[0],
+    message: body.category === "chunk" ? "Не удалось загрузить модуль страницы" : body.message,
+    stack: body.category === "chunk" ? undefined : body.stack,
+    route: telemetryPage(body.path),
+    category: body.category,
   });
   res.status(204).end();
 }

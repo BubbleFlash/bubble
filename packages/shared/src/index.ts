@@ -792,6 +792,7 @@ export const clientErrorSchema = z.object({
   message: z.string().trim().min(1).max(300),
   stack: z.string().max(2000).optional(),
   source: z.enum(["window", "promise", "react"]),
+  category: z.enum(["chunk", "render"]).optional(),
   /** Page path only, never the query string. */
   path: z.string().max(200).default("/"),
 });

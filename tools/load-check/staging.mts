@@ -64,6 +64,8 @@ while (accounts.length < users) {
 }
 // Registration and login share the auth limiter. Honor its cooldown instead of bypassing it.
 let socketConnected = 0, socketErrors = 0, socketDisconnects = 0, active = 0, peakActive = 0;
+const connectedTransports: Record<string, number> = {};
+const socketErrorReasons: Record<string, number> = {};
 let failedWorkflows = 0;
 const sessions: Array<{ username: string; token: string; cookie: string }> = [];
 for (const account of accounts.slice(0, users)) {
@@ -99,10 +101,25 @@ const started = Date.now();
 const deadline = started + seconds * 1000;
 await Promise.all(sessions.map(async (session, index) => {
   await sleep(index * 100);
-  const socket = io(origin, { transports: ["websocket", "polling"], tryAllTransports: true, auth: { token: session.token }, reconnection: true });
-  socket.on("connect", () => { socketConnected++; active++; peakActive = Math.max(active, peakActive); });
-  socket.on("connect_error", () => { socketErrors++; });
-  socket.on("disconnect", () => { active--; socketDisconnects++; });
+  const socket = io(origin, { transports: ["websocket", "polling"], tryAllTransports: true,
+    extraHeaders: { Origin: origin }, auth: { token: session.token }, reconnection: true });
+  socket.on("connect", () => {
+    socketConnected++;
+    active++;
+    peakActive = Math.max(active, peakActive);
+    const transport = socket.io.engine.transport.name;
+    connectedTransports[transport] = (connectedTransports[transport] ?? 0) + 1;
+  });
+  socket.on("connect_error", (error) => {
+    socketErrors++;
+    const reason = ["websocket error", "xhr poll error", "unauthorized", "too_many_connections", "timeout"].includes(error.message)
+      ? error.message : "other";
+    socketErrorReasons[reason] = (socketErrorReasons[reason] ?? 0) + 1;
+  });
+  socket.on("disconnect", (reason) => {
+    active--;
+    if (reason !== "io client disconnect") socketDisconnects++;
+  });
   try {
     let refreshAt = Date.now() + 13 * 60_000;
     let actions = 0;
@@ -187,7 +204,8 @@ const endpoints = Object.fromEntries(Object.entries(stats).map(([name, row]) => 
   const percentile = (p: number) => Math.round(row.durations[Math.ceil(row.durations.length * p) - 1] ?? 0);
   return [name, { requests: row.durations.length, p95Ms: percentile(.95), p99Ms: percentile(.99), statuses: row.statuses, limiters: row.limiters }];
 }));
-const report = { started: new Date(started).toISOString(), seconds, users, peakActive, socketConnected, socketErrors, socketDisconnects, networkErrors, failedWorkflows, endpoints };
+const report = { started: new Date(started).toISOString(), seconds, users, peakActive, socketConnected,
+  connectedTransports, socketErrors, socketErrorReasons, socketDisconnects, networkErrors, failedWorkflows, endpoints };
 const path = `${directory}/staging-load-${users}-${Date.now()}.json`;
 await writeFile(path, JSON.stringify(report, null, 2));
 const csv = [["endpoint", "requests", "p95_ms", "p99_ms", "statuses", "limiters"], ...Object.entries(endpoints).map(([name, row]) =>
@@ -195,7 +213,7 @@ const csv = [["endpoint", "requests", "p95_ms", "p99_ms", "statuses", "limiters"
   .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
 await writeFile(path.replace(/\.json$/, ".csv"), `\uFEFF${csv}\r\n`);
 console.log(JSON.stringify({ path, ...report }, null, 2));
-if (peakActive < users || socketErrors || networkErrors || failedWorkflows ||
+if (peakActive < users || socketErrors || socketDisconnects || networkErrors || failedWorkflows ||
     Object.entries(endpoints).some(([name, row]) => !["register", "login"].includes(name) &&
       Object.entries(row.statuses).some(([status, count]) => count > 0 && (Number(status) === 429 || Number(status) >= 500)))) {
   process.exitCode = 1;
