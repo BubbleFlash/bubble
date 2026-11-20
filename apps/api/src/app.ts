@@ -17,6 +17,7 @@ import { uploadIsModerated } from "./services/uploadService.js";
 import { createDownloadUrl, getObject } from "./services/storageService.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import * as testGate from "./controllers/testGateController.js";
 import { randomUUID } from "node:crypto";
 import { observeApi } from "./services/telemetry.js";
 
@@ -61,6 +62,8 @@ export function createApp() {
     }),
   );
   app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After", LIMITER_HEADER, "X-Request-Id", "CF-Ray"] }));
+  app.get("/api/internal/test-gate/status", asyncHandler(testGate.status));
+  app.post("/api/internal/test-gate/verify", express.json({ limit: "4kb" }), asyncHandler(testGate.verify));
   app.get("/api/internal/session", asyncHandler(async (req, res, next) => {
     if (!hasRealtimeSecret(req)) return next();
     res.set("Cache-Control", "no-store");
@@ -156,6 +159,8 @@ export function createApp() {
   // registered before the JSON parser.
   app.post("/api/webhooks/lemonsqueezy", rawBody, asyncHandler(lemonSqueezyWebhook));
 
+  // The site editor saves four long texts together; all other routes keep the smaller limit.
+  app.use("/api/admin/site-content", express.json({ limit: "512kb" }));
   app.use(express.json({ limit: "10kb" }));
   app.use(cookieParser());
 

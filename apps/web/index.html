@@ -24,7 +24,7 @@
     ></script>
 
     <!-- Icons and installable web app (PWA) -->
-    <link rel="icon" type="image/png" href="/favicon-v3.png" />
+    <link rel="icon" type="image/png" href="/favicon-v4.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-v3.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -73,8 +73,8 @@
           var hint = localStorage.getItem("commune_session");
           var path = location.pathname;
           if (path === "/news" && hint === "guest") start("/news?topic=top", "/api/news?topic=top");
-          if (hint === "guest" && (path === "/" || path === "/explore"))
-            start("/public/posts", "/api/public/posts");
+          if (hint === "guest" && (path === "/" || path === "/explore" || path === "/about"))
+            start("/site-content", "/api/site-content");
         } catch (e) {}
       })();
     </script>

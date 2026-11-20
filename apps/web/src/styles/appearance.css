@@ -388,6 +388,7 @@
 .account-settings-form fieldset { display: grid; gap: 12px; min-width: 0; padding: 0; margin: 12px 0; border: 0; }
 .account-settings-form label { display: grid; gap: 4px; width: min(100%, 360px); }
 .account-settings-form input { width: 100%; min-width: 0; }
+.account-settings-dialog .aero-titlebar h2 { align-self: center; line-height: 1.2; }
 .aero-home .account-delete-button { margin-top: 16px; }
 .aero-home .account-delete-button:not(:disabled) { justify-self: start; font-size: 0.875rem; color: var(--aero-color-error-text); }
 .aero-home .account-delete-button:is(:hover, :active):not(:disabled) { color: var(--aero-color-error-text); }

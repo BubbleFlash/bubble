@@ -7,9 +7,8 @@ import { notificationLabels, notificationTarget, notificationText } from "../lib
 import { timeAgo } from "./PostCard";
 import { RowsSkeleton } from "./Skeleton";
 
-export default function NotificationList({ compact, openInNewTab, onItems, onSelect }: {
+export default function NotificationList({ compact, onItems, onSelect }: {
   compact?: boolean;
-  openInNewTab?: boolean;
   onItems: (items: NotificationDTO[]) => void;
   onSelect?: (item: NotificationDTO, event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
@@ -60,10 +59,8 @@ export default function NotificationList({ compact, openInNewTab, onItems, onSel
           <Link
             key={item.id}
             to={notificationTarget(item)}
-            target={openInNewTab ? "_blank" : undefined}
-            rel={openInNewTab ? "noopener noreferrer" : undefined}
             className={`card notification${item.read ? "" : " unread"}`}
-            aria-description={`${item.read ? "Прочитано" : "Не прочитано"}${openInNewTab ? ". Откроется в новой вкладке." : ""}`}
+            aria-description={item.read ? "Прочитано" : "Не прочитано"}
             onClick={(event) => onSelect?.(item, event)}
           >
             <span><strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}</span>

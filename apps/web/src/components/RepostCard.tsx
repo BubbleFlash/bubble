@@ -2,8 +2,8 @@ import { displayNameOf, type RepostPreviewDTO } from "@commune/shared";
 import { Link } from "react-router-dom";
 import Avatar, { ProfileAvatar } from "./Avatar";
 import Icon from "./Icon";
-import ImageGallery from "./ImageGallery";
-import { LinkedText, LinkPreview } from "./LinkContent";
+import PostImages from "./PostImages";
+import PostText from "./PostText";
 import MusicAttachments from "./MusicAttachments";
 
 export default function RepostCard({
@@ -37,17 +37,17 @@ export default function RepostCard({
           </Link>
         </div>
       </div>
-      {preview.content && <><p className="post-body"><LinkedText text={preview.content} /></p><LinkPreview text={preview.content} /></>}
+      {preview.content && <PostText text={preview.content} />}
       {preview.kind === "post" && (
         <>
-          {preview.imageUrls.length > 0 && <ImageGallery images={preview.imageUrls} alt={`Изображение пользователя ${displayNameOf(author)}`} />}
+          {preview.imageUrls.length > 0 && <PostImages images={preview.imageUrls} adult={preview.adult} alt={`Изображение пользователя ${displayNameOf(author)}`} />}
           {preview.musicAttachments.length > 0 && (
             guest
               ? preview.musicAttachments.map((track) => <p className="muted" key={track.id}>{track.unavailable ? "Трек недоступен" : `${track.artist} — ${track.title}`}</p>)
               : <MusicAttachments attachments={preview.musicAttachments} source={`${source}:${preview.postId}`} />
           )}
           {preview.repost && <RepostCard preview={preview.repost} source={source} guest={guest} />}
-          {preview.community && <p className="muted"><Link to={`/u/${author.username}`}>{displayNameOf(author)}</Link></p>}
+          {preview.community && author.id && <p className="muted community-post-author"><Link to={`/u/${author.username}`}>{displayNameOf(author)}</Link>{preview.hideAuthor && <span title="Автор скрыт для остальных пользователей" aria-label="Автор скрыт для остальных пользователей"> <Icon name="eye-off" size={15} /></span>}</p>}
         </>
       )}
     </aside>

@@ -13,7 +13,7 @@ function wasDismissed(): boolean {
 
 /** Offline notice, "new version" prompt and "install app" prompt, stacked at the bottom. */
 export default function PwaBanner() {
-  const { updateReady, canInstall } = usePwa();
+  const { updateReady, canInstall, updating } = usePwa();
   const online = useOnline();
   const [installHidden, setInstallHidden] = useState(wasDismissed);
 
@@ -40,9 +40,9 @@ export default function PwaBanner() {
       {updateReady && (
         <div className="pwa-bar" role="status">
           <span>Доступна новая версия Bubble.</span>
-          <button className="btn" onClick={applyUpdate}>
+          <button className="btn" onClick={applyUpdate} disabled={updating}>
 
-            Обновить
+            {updating ? "Обновление…" : "Обновить"}
           </button>
         </div>
       )}

@@ -140,7 +140,8 @@ export async function getProfile(req: Request, res: Response) {
 
 export async function userPosts(req: Request, res: Response) {
   const user = await findByUsername(req.params.username);
-  await sendPostPage(req, res, { author: user._id });
+  const showHidden = String(user._id) === req.userId || req.userRole === "admin" || req.userRole === "moderator";
+  await sendPostPage(req, res, { author: user._id, ...(!showHidden && { hideAuthor: { $ne: true } }) });
 }
 
 /** Toggles following. Returns the updated profile so the UI can refresh counts in one step. */

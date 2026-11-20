@@ -69,6 +69,8 @@ import * as contact from "../controllers/contactController.js";
 import * as messages from "../controllers/messageController.js";
 import * as news from "../controllers/newsController.js";
 import * as serverFundraiser from "../controllers/serverFundraiserController.js";
+import * as developmentWidget from "../controllers/developmentWidgetController.js";
+import * as siteContent from "../controllers/siteContentController.js";
 import * as billing from "../controllers/billingController.js";
 import * as insights from "../controllers/insightsController.js";
 import * as admin from "../controllers/adminController.js";
@@ -85,6 +87,7 @@ import * as wallpapers from "../controllers/wallpaperController.js";
 import * as users from "../controllers/userController.js";
 import * as relationships from "../controllers/relationshipController.js";
 import * as moderation from "../controllers/moderationController.js";
+import * as testGate from "../controllers/testGateController.js";
 import { requireActive, requireAdmin, requireAuth, requireModerator, requirePlus, requirePublishing } from "../middleware/auth.js";
 import {
   authLimiter,
@@ -125,6 +128,14 @@ const privateMusicResponse: RequestHandler = (_req, res, next) => {
  */
 const adminOnly = [requireAuth, requireActive, requireAdmin];
 const staff = [requireAuth, requireActive, requireModerator];
+router.get("/admin/test-gate", ...adminOnly, asyncHandler(testGate.getSettings));
+router.put("/admin/test-gate", ...adminOnly, asyncHandler(testGate.updateSettings));
+router.get("/admin/development-widget", ...adminOnly, asyncHandler(developmentWidget.settings));
+router.put("/admin/development-widget", ...adminOnly, asyncHandler(developmentWidget.update));
+router.get("/admin/site-content", ...adminOnly, asyncHandler(siteContent.getContent));
+router.put("/admin/site-content", ...adminOnly, asyncHandler(siteContent.updateContent));
+router.get("/admin/site-team", ...adminOnly, asyncHandler(siteContent.getTeamSettings));
+router.put("/admin/site-team", ...adminOnly, asyncHandler(siteContent.updateTeamSettings));
 
 // Health checks. /health only says the process is up; /health/ready also checks the database
 // and is the one for an uptime monitor. Neither reveals versions, paths or settings.
@@ -198,6 +209,7 @@ router.get(
   validate(paginationSchema, "query"),
   asyncHandler(publicApi.listPosts),
 );
+router.get("/public/posts/:id", publicLimiter, asyncHandler(publicApi.getPost));
 
 // Uploads (auth and rate limit run before the file is parsed)
 router.post(
@@ -525,6 +537,14 @@ router.post("/admin/users/:username/unban", ...adminOnly, asyncHandler(admin.unb
 // News (public: guests see it too) and the Contact form
 router.get("/news", publicLimiter, validate(newsQuerySchema, "query"), asyncHandler(news.list));
 router.get("/server-fundraiser", publicLimiter, asyncHandler(serverFundraiser.get));
+router.get("/development-widget", publicLimiter, asyncHandler(developmentWidget.latest));
+router.get("/site-updates", publicLimiter, asyncHandler(developmentWidget.updates));
+router.get("/site-content", publicLimiter, asyncHandler(siteContent.getContent));
+router.get("/site-team", publicLimiter, asyncHandler(siteContent.team));
+router.get("/online-count", publicLimiter, asyncHandler(async (_req, res) => {
+  const { onlineCount } = await import("../services/realtime.js");
+  res.json({ count: await onlineCount() });
+}));
 router.post("/contact", contactLimiter, validate(contactSchema), asyncHandler(contact.send));
 
 // Web Push (notifications when the site is closed)

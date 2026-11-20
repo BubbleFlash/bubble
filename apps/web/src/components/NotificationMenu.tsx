@@ -65,8 +65,10 @@ export default function NotificationMenu({ count, onNavigateToItem }: {
           <NotificationList compact onItems={remember} onSelect={(item, event) => {
             if (!event.defaultPrevented && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
               onNavigateToItem();
+              close(item.read ? [] : [item]);
+            } else {
+              close([]);
             }
-            close(item.read ? [] : [item]);
           }} />
           <Link className="notification-popup-link" to="/notifications" onClick={() => close()}>
             Открыть страницу уведомлений

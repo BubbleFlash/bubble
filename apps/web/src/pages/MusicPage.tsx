@@ -1,12 +1,13 @@
 import { useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ALLOWED_MUSIC_TYPES, MAX_MUSIC_BYTES } from "@commune/shared";
 import type { MusicTrackDTO, MusicUploadTicket } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 import MusicTrackList from "../components/MusicTrackList";
 import { useAuth } from "../store/auth";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
+import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
 type MusicScope = "all" | "mine";
 
 const MUSIC_TABS = [
@@ -67,17 +68,20 @@ export default function MusicPage() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const tabRefs = useRef<Partial<Record<MusicScope, HTMLButtonElement>>>({});
 
-  const tracksQuery = useQuery({
+  const tracksQuery = useInfiniteQuery({
     queryKey: ["music", scope, search, user?.id],
-    queryFn: () =>
-      api<MusicTrackDTO[]>(
-        withQuery("/music", {
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      api<{ tracks: MusicTrackDTO[]; nextCursor: string | null }>(
+        withQuery("/music/picker", {
           scope,
           q: search.trim() || undefined,
-          limit: "50",
-        }),
+          cursor: pageParam,
+        }), { signal },
       ),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
+  const sentinel = useLoadMoreOnVisible(() => void tracksQuery.fetchNextPage({ cancelRefetch: false }), Boolean(tracksQuery.hasNextPage && !tracksQuery.isFetching && !tracksQuery.isError));
 
   const uploadMutation = useMutation({
     mutationFn: async ({
@@ -137,7 +141,7 @@ export default function MusicPage() {
     },
   });
 
-  const tracks = tracksQuery.data ?? [];
+  const tracks = [...new Map((tracksQuery.data?.pages ?? []).flatMap((page) => page.tracks).map((track) => [track.id, track])).values()];
 
   function selectFile(selectedFile: File | undefined) {
     const selection = ++fileSelection.current;
@@ -406,6 +410,8 @@ export default function MusicPage() {
               )}
 
               <MusicTrackList tracks={tracks} source={`music:${user?.id}:${scope}`} />
+              {tracksQuery.hasNextPage && <div ref={sentinel} aria-hidden="true" />}
+              {tracksQuery.hasNextPage && <button className="btn btn-ghost block" disabled={tracksQuery.isFetching} onClick={() => void tracksQuery.fetchNextPage()}>{tracksQuery.isFetchingNextPage ? "Загрузка…" : "Загрузить ещё"}</button>}
             </section>
           )}
         </div>

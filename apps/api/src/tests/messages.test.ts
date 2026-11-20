@@ -36,7 +36,7 @@ describe("schemas", () => {
   it("trim and bound message text", () => {
     expect(sendMessageSchema.parse({ text: "  hi  " }).text).toBe("hi");
     expect(sendMessageSchema.safeParse({ text: "   " }).success).toBe(false);
-    expect(sendMessageSchema.safeParse({ text: "x".repeat(1001) }).success).toBe(false);
+    expect(sendMessageSchema.safeParse({ text: "x".repeat(2001) }).success).toBe(false);
   });
   it("contact form needs a real email and message", () => {
     const ok = { name: "Sam", email: "SAM@Example.com", message: "Hello there, friend" };

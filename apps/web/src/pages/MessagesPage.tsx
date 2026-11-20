@@ -80,6 +80,25 @@ function Composer({
   const sending = useRef(false);
   useLayoutEffect(() => {
     const input = field.current;
+    const overlay = mirror.current;
+    if (!input || !overlay) return;
+    const sync = () => {
+      const style = getComputedStyle(input);
+      const scrollbar = input.offsetWidth - input.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth);
+      overlay.style.right = `${Math.max(0, scrollbar)}px`;
+      overlay.style.lineHeight = style.lineHeight;
+      overlay.style.letterSpacing = style.letterSpacing;
+      overlay.style.wordSpacing = style.wordSpacing;
+      overlay.scrollTop = input.scrollTop;
+      overlay.scrollLeft = input.scrollLeft;
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [text, fontRevision]);
+  useLayoutEffect(() => {
+    const input = field.current;
     if (!input) return;
     const update = () => {
       const style = getComputedStyle(input);

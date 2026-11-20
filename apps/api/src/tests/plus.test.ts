@@ -133,13 +133,16 @@ describe("Plus features", () => {
   });
   const longText = "x".repeat(600);
 
-  it("blocks long posts for free accounts", async () => {
+  it("allows long posts for free accounts", async () => {
     asUser({ plusUntil: null });
-    const create = vi.spyOn(Post, "create");
+    const author = { _id: oid(), username: "sam", avatarUrl: null, plusUntil: null };
+    vi.spyOn(Post, "create").mockResolvedValue({ _id: oid() } as never);
+    vi.spyOn(Post, "findById").mockReturnValue({
+      populate: () => ({ populate: () => ({ lean: () => Promise.resolve(row(author, longText)) }) }),
+    } as never);
     const res = await request(app).post("/api/posts").set(auth).send({ content: longText });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/Plus/);
-    expect(create).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(res.body.author.plus).toBe(false);
   });
 
   it("allows long posts for Plus members and marks the author", async () => {

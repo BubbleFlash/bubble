@@ -13,13 +13,21 @@ interface BeforeInstallPromptEvent extends Event {
 interface PwaState {
   updateReady: boolean;
   canInstall: boolean;
+  updating: boolean;
 }
 
-let state: PwaState = { updateReady: false, canInstall: false };
+let state: PwaState = { updateReady: false, canInstall: false, updating: false };
 const listeners = new Set<() => void>();
 let installEvent: BeforeInstallPromptEvent | null = null;
 let waitingWorker: ServiceWorker | null = null;
 let updateRequested = false;
+let updateReloaded = false;
+
+function reloadForUpdate() {
+  if (updateReloaded) return;
+  updateReloaded = true;
+  window.location.reload();
+}
 
 function setState(patch: Partial<PwaState>) {
   state = { ...state, ...patch };
@@ -35,8 +43,17 @@ export const usePwa = () => useSyncExternalStore(subscribe, () => state);
 
 /** Tells the waiting service worker to take over; the page reloads once it has. */
 export function applyUpdate() {
+  if (updateRequested) return;
   updateRequested = true;
-  waitingWorker?.postMessage({ type: "SKIP_WAITING" });
+  setState({ updating: true });
+  // A worker may have activated in another tab since the banner appeared.
+  void navigator.serviceWorker.getRegistration().then((registration) => {
+    const worker = registration?.waiting ?? (waitingWorker?.state === "installed" ? waitingWorker : null);
+    if (!worker) return reloadForUpdate();
+    worker.postMessage({ type: "SKIP_WAITING" });
+    // Older or failed workers may never claim this page.
+    window.setTimeout(reloadForUpdate, 5000);
+  }).catch(reloadForUpdate);
 }
 
 /** Shows the browser's own install dialog. Only works after the user clicks something. */
@@ -89,7 +106,7 @@ export function registerServiceWorker() {
 
   // Reload only when the user asked for the update, never on the very first install.
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (updateRequested) window.location.reload();
+    if (updateRequested) reloadForUpdate();
   });
 }
 

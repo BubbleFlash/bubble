@@ -278,6 +278,22 @@ describe("active users (for push notifications)", () => {
     const res = await fetch(`${base}/internal/active`, { method: "POST", body: "{}" });
     expect(res.status).toBe(401);
   });
+
+  it("counts distinct connected accounts and protects the count", async () => {
+    const first = client({ token: token(ALICE) });
+    const second = client({ token: token(ALICE) });
+    const bob = client({ token: token(BOB) });
+    await Promise.all([connected(first), connected(second), connected(bob)]);
+    const count = () => fetch(`${base}/internal/online-count`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.internalSecret}` }, body: "{}" });
+    expect(await (await count()).json()).toEqual({ count: 2 });
+    first.close();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await (await count()).json()).toEqual({ count: 2 });
+    second.close();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await (await count()).json()).toEqual({ count: 1 });
+    expect((await fetch(`${base}/internal/online-count`, { method: "POST", body: "{}" })).status).toBe(401);
+  });
 });
 
 describe("health", () => {

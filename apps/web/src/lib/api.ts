@@ -67,6 +67,13 @@ export class SessionRestoreError extends Error {
   }
 }
 
+function checkTestGate(res: Response) {
+  if (res.redirected && new URL(res.url).pathname === "/__test_gate/login") {
+    window.location.assign("/__test_gate/login");
+    throw new Error("Для продолжения войдите на тестовый стенд.");
+  }
+}
+
 const REFRESH_COOLDOWN_KEY = "bubble-refresh-cooldown";
 let refreshCooldown: { generation: string; until: number } | undefined;
 
@@ -86,11 +93,14 @@ async function refreshSession(): Promise<AuthResponse | null> {
       assertSessionGeneration(generation);
       const retryAt = refreshRetryAt(generation);
       if (retryAt > Date.now()) throw new SessionRestoreError(retryAt);
-      const request = () => {
+      const request = async () => {
         assertSessionGeneration(generation);
-        return observeFetch(BASE, "/auth/refresh", {
+        const response = await observeFetch(BASE, "/auth/refresh", {
           method: "POST", credentials: "include", signal: AbortSignal.timeout(10_000),
         });
+        assertSessionGeneration(generation);
+        checkTestGate(response);
+        return response;
       };
       let res = await request();
       if (res.status === 401 && !navigator.locks && readSessionHint() === "1") {
@@ -198,6 +208,7 @@ export async function api<T>(
   const earlyRes = early ? await observeFetch(BASE, path, {}, early).catch(() => undefined) : undefined;
   const res = earlyRes?.ok ? earlyRes : await send();
   assertSessionGeneration(generation);
+  checkTestGate(res);
 
   if (res.status === 401 && retry && !path.startsWith("/auth/")) {
     const currentToken = getAccessToken();
@@ -220,6 +231,7 @@ export async function api<T>(
             : "Something went wrong";
     const known: Record<string, string> = {
       "Invalid input": "Проверьте введённые данные.",
+      "Set test access credentials first": "Сначала задайте логин и пароль тестового доступа.",
       "Invalid email or password": "Неверный адрес почты или пароль.",
       "Current password is incorrect": "Текущий пароль указан неверно.",
       "Email delivery is unavailable": "Отправка писем сейчас недоступна. Попробуйте позже.",
@@ -269,6 +281,7 @@ export async function api<T>(
       "Too many attempts, try again later.": "Слишком много попыток. Попробуйте позже.",
     };
     const safe = (data.error && known[data.error]) ||
+      (path === "/auth/register" && res.status === 409 ? "Этот адрес почты или ID профиля уже заняты." : "") ||
       (res.status === 413 ? "Файл слишком большой." : res.status === 429 ? "Слишком много запросов. Попробуйте позже." : `Не удалось выполнить запрос (код ${res.status}).`);
     if (data.restriction?.kind === "account" && !path.startsWith("/auth/")) {
       window.dispatchEvent(new CustomEvent("account-restricted", { detail: data.restriction }));
@@ -277,9 +290,9 @@ export async function api<T>(
     throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : wait
       ? `Слишком много запросов. Повторите через ${wait} с.` : safe, data.error ?? fallback, data.restriction);
   }
-  const result = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  const body = await res.text();
   assertSessionGeneration(generation);
-  return result;
+  return body ? JSON.parse(body) as T : undefined as T;
 }
 
 /** Builds "/path?a=1&b=2", skipping undefined or empty values. */

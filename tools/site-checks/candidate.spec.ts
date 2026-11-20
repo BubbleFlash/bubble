@@ -64,7 +64,13 @@ async function installFixtures(
     }
     if (path === "/posts") return route.fulfill({ json: { items: posts, nextCursor: null } });
     if (path === "/public/posts") return route.fulfill({ json: { items: [], nextCursor: null } });
-    if (path === "/music") return route.fulfill({ json: [] });
+    if (path === "/site-content") return route.fulfill({ json: {
+      about: "Bubble — независимая социальная сеть.", benefits: "", principles: "", rules: "",
+    } });
+    if (path === "/site-team") return route.fulfill({ json: { groups: {
+      developers: [], artists: [], testers: [], moderators: [], administrators: [],
+    } } });
+    if (path === "/music/picker") return route.fulfill({ json: { tracks: [], nextCursor: null } });
     if (path === "/posts/fixture-0") return route.fulfill({ json: posts[0] });
     if (path === "/music/library/status") return route.fulfill({ json: { ids: [] } });
     if (path === "/link-preview") return route.fulfill({ json: { preview: null } });
@@ -180,7 +186,11 @@ for (const status of [401, 403] as const) {
         : { restriction: { kind: "account", reason: "Тестовое ограничение", until: null } } });
     });
     await page.goto(origin);
-    await expect(page.getByRole("heading", { name: status === 401 ? "Ваше место для общения" : "Аккаунт заблокирован" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: status === 401 ? "Твой уголок интернета" : "Аккаунт заблокирован" })).toBeVisible();
+    if (status === 401) {
+      await expect(page.getByText("Bubble — независимая социальная сеть.", { exact: true })).toBeVisible();
+      await expect(page.getByRole("tab", { name: "Войти", exact: true })).toBeVisible();
+    }
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
     await page.clock.fastForward(30_000);
     expect(requests).toBe(1);
@@ -211,7 +221,7 @@ test("ordinary API failure stays on the page without reloading", async ({ page }
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
   let requests = 0, navigations = 0;
-  await page.route("**/api/music?**", (route) => {
+  await page.route((url) => url.pathname === "/api/music/picker", (route) => {
     requests++;
     return route.fulfill({ status: 503, json: {} });
   });
@@ -219,7 +229,8 @@ test("ordinary API failure stays on the page without reloading", async ({ page }
   await page.goto(`${origin}/music`);
   await expect(page.getByRole("heading", { name: "Музыка", exact: true })).toBeVisible();
   await expect.poll(() => requests).toBe(2);
-  await expect(page.getByText(/Не удалось/).first()).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "Моя библиотека" }).getByRole("alert"))
+    .toHaveText("Не удалось выполнить запрос (код 503).");
   expect(navigations).toBe(1);
 });
 

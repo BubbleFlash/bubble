@@ -20,12 +20,19 @@ export async function listPickerMusic(userId: string, query: { scope: "all" | "m
         { $sort: { _id: -1 } },
         { $lookup: { from: MusicTrack.collection.name, localField: "trackId", foreignField: "_id", as: "track" } },
         { $unwind: "$track" },
-        { $replaceRoot: { newRoot: { $mergeObjects: ["$track", { cursorId: "$_id" }] } } },
+        { $replaceRoot: { newRoot: { $mergeObjects: ["$track", { cursorId: "$_id", libraryAddedAt: "$createdAt" }] } } },
         { $match: search },
         { $limit: 51 },
       ]);
   const page = rows.slice(0, 50);
-  const tracks = page.map((track) => ({ id: track._id.toString(), title: track.title, artist: track.artist, duration: track.duration ?? null, mimeType: track.mimeType, size: track.size, addedAt: null, addedByMe: query.scope === "mine" }));
+  const entries = query.scope === "all" && page.length
+    ? await UserMusic.find({ userId, trackId: { $in: page.map((track) => track._id) } }).select("trackId createdAt").lean()
+    : [];
+  const addedById = new Map(entries.map((entry) => [String(entry.trackId), entry.createdAt]));
+  const tracks = page.map((track) => {
+    const added = query.scope === "mine" ? (track as { libraryAddedAt?: Date }).libraryAddedAt : addedById.get(String(track._id));
+    return { id: track._id.toString(), title: track.title, artist: track.artist, duration: track.duration ?? null, mimeType: track.mimeType, size: track.size, addedAt: added?.toISOString() ?? null, addedByMe: query.scope === "mine" || Boolean(added) };
+  });
   const last = page[page.length - 1];
   return { tracks, nextCursor: rows.length > 50 && last ? ("cursorId" in last ? last.cursorId : last._id).toString() : null };
 }

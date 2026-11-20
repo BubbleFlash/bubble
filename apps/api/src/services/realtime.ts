@@ -71,6 +71,12 @@ export async function onlineUsers(ids: string[]): Promise<Set<string>> {
   return new Set(Array.isArray(res?.online) ? res.online : []);
 }
 
+/** Number of distinct connected accounts; null means realtime is unavailable. */
+export async function onlineCount(): Promise<number | null> {
+  const res = await post<{ count?: unknown }>("/internal/online-count", {});
+  return typeof res?.count === "number" && Number.isSafeInteger(res.count) && res.count >= 0 ? res.count : null;
+}
+
 /** For tests. */
 export function resetRealtimeBreaker() {
   skipUntil = 0;

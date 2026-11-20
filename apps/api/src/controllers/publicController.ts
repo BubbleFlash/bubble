@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import type { Page, PostDTO } from "@commune/shared";
 import { Post } from "../models/Post.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, publicPostFilter } from "../services/postAccess.js";
-import { badRequest } from "../utils/errors.js";
+import { badRequest, notFound } from "../utils/errors.js";
 import type { PopulatedPost } from "../utils/serializers.js";
 import { presentPosts } from "./postController.js";
 
@@ -31,4 +31,12 @@ export async function listPosts(_req: Request, res: Response) {
   };
   res.set("Cache-Control", "no-store");
   res.json(body);
+}
+
+export async function getPost(req: Request, res: Response) {
+  if (!mongoose.isValidObjectId(req.params.id)) throw notFound("Post not found");
+  const post = await Post.findOne({ ...publicPostFilter, _id: req.params.id }).populate("author", AUTHOR_FIELDS).populate("community", COMMUNITY_FIELDS).lean() as unknown as PopulatedPost | null;
+  if (!post?.author) throw notFound("Post not found");
+  const [result] = await presentPosts(undefined, [post]);
+  res.set("Cache-Control", "no-store").json(result);
 }

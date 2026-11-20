@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("open the deployed site and load the public feed", async ({ page, baseURL }, info) => {
+test("open the deployed guest homepage and check the public feed API", async ({ page, baseURL }, info) => {
   const origin = new URL(baseURL!).origin;
-  const endpoints = new Set(["/api/auth/refresh", "/api/public/posts", "/api/news"]);
+  const endpoints = new Set(["/api/auth/refresh", "/api/site-content", "/api/public/posts", "/api/news"]);
   const responses: object[] = [];
   const failures: object[] = [];
   const errors: string[] = [];
@@ -41,23 +41,26 @@ test("open the deployed site and load the public feed", async ({ page, baseURL }
     const session = page.waitForResponse(
       (response) => response.url() === `${origin}/api/auth/refresh`,
     );
-    const feed = page.waitForResponse(
+    const about = page.waitForResponse(
       (response) =>
         new URL(response.url()).origin === origin &&
-        new URL(response.url()).pathname === "/api/public/posts",
+        new URL(response.url()).pathname === "/api/site-content",
     );
     // If navigation fails, outstanding response observers will reject when Playwright closes the page.
-    void Promise.allSettled([session, feed]);
+    void Promise.allSettled([session, about]);
     const document = await page.goto("/", { waitUntil: "domcontentloaded", timeout: 20_000 });
     expect(document?.status(), "HTML response").toBe(200);
     expect((await session).status(), "Session check for a visitor without cookies").toBe(401);
-    const publicPosts = await feed;
-    expect(publicPosts.status(), "Public feed response").toBe(200);
-    const body = await publicPosts.json();
-    expect(Array.isArray(body.items), "Public feed returned a list of posts").toBe(true);
-    await expect(page.getByRole("heading", { name: "Ваше место для общения" })).toBeVisible();
-    if (body.items.length > 0) await expect(page.locator("article.post").first()).toBeVisible();
-    else await expect(page.getByText("Здесь пока пусто. Опубликуйте первую запись!")).toBeVisible();
+    expect((await about).status(), "Project information response").toBe(200);
+    await expect(page.getByRole("heading", { name: "Твой уголок интернета" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Почему Bubble?" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Войти", exact: true })).toBeVisible();
+    const publicFeed = await page.evaluate(async () => {
+      const response = await fetch("/api/public/posts");
+      return { status: response.status, hasItems: response.ok && Array.isArray((await response.json()).items) };
+    });
+    expect(publicFeed.status, "Public feed response").toBe(200);
+    expect(publicFeed.hasItems, "Public feed returned a list of posts").toBe(true);
     expect(errors, "Unhandled page errors").toEqual([]);
   } finally {
     const navigation = await page

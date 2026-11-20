@@ -115,10 +115,11 @@ export const communityListSchema = z.object({
 });
 
 /** Paid-post prices are in US cents: $1.00 to $500.00. */
-/** Free accounts can write 500 characters per post; Commune Plus members 2000. */
-export const FREE_POST_LENGTH = 500;
+/** All accounts can write up to 2000 characters per post. */
+export const FREE_POST_LENGTH = 2000;
 export const PLUS_POST_LENGTH = 2000;
-export const COMMUNITY_POST_LENGTH = 1000;
+export const COMMUNITY_POST_LENGTH = 2000;
+export const COMMENT_MAX_LENGTH = 1000;
 
 export const musicTrackIdsSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i).transform((id) => id.toLowerCase())).max(10).refine((ids) => new Set(ids).size === ids.length, "Duplicate music tracks");
 
@@ -143,13 +144,14 @@ export type CreateRepostInput = z.infer<typeof createRepostSchema>;
 
 export const createPostSchema = z
   .object({
-    // The limit for free accounts is enforced on the server.
     content: z.string().trim().max(PLUS_POST_LENGTH),
     imageUrl: uploadUrlSchema.nullish(),
     imageUrls: z.array(uploadUrlSchema).max(10).optional(),
     musicTrackIds: musicTrackIdsSchema.optional(),
     // Slug of a community the author belongs to; the post then appears in that community.
     community: communitySlugSchema.nullish(),
+    hideAuthor: z.boolean().optional(),
+    adult: z.boolean().optional(),
     visibility: postVisibilitySchema.optional(),
     // Older clients sent null for these fields on ordinary posts.
     priceCents: z.null().optional(),
@@ -172,7 +174,9 @@ export const updateCommunityPostSchema = z.object({
   content: z.string().trim().max(COMMUNITY_POST_LENGTH).optional(),
   imageUrls: z.array(uploadUrlSchema).max(10).optional(),
   musicTrackIds: musicTrackIdsSchema.optional(),
-}).strict().refine((value) => value.content !== undefined || value.imageUrls !== undefined || value.musicTrackIds !== undefined, {
+  hideAuthor: z.boolean().optional(),
+  adult: z.boolean().optional(),
+}).strict().refine((value) => value.content !== undefined || value.imageUrls !== undefined || value.musicTrackIds !== undefined || value.hideAuthor !== undefined || value.adult !== undefined, {
   message: "Provide a change to save",
 });
 export type UpdateCommunityPostInput = z.infer<typeof updateCommunityPostSchema>;
@@ -202,7 +206,7 @@ export type FriendsAccessDTO =
 
 export const COMMENTS_PAGE_SIZE = 200;
 export const createCommentSchema = z.object({
-  content: z.string().trim().min(1).max(300),
+  content: z.string().trim().min(1).max(COMMENT_MAX_LENGTH),
   parentId: objectIdSchema.optional(),
   mention: z.string().trim().min(1).max(100).optional(),
 });
@@ -318,7 +322,7 @@ export const reportQuerySchema = paginationSchema.omit({ feed: true }).extend({
 
 // ---- Direct messages, news and contact ----
 
-export const MESSAGE_MAX_LENGTH = 1000;
+export const MESSAGE_MAX_LENGTH = 2000;
 export const editMessageSchema = z.object({ text: z.string().trim().max(MESSAGE_MAX_LENGTH) }).strict();
 export const linkPreviewSchema = z.object({ url: z.string().max(2048).url() });
 export const sendMessageSchema = z.object({
@@ -444,6 +448,8 @@ export interface AuthorDTO {
 export interface PostDTO {
   id: string;
   content: string;
+  hideAuthor?: boolean;
+  adult?: boolean;
   imageUrl: string | null;
   imageUrls?: string[];
   musicAttachments: MusicAttachmentDTO[];
@@ -475,6 +481,8 @@ export type RepostPreviewDTO =
   | (RepostPreviewContent & { kind: "comment"; commentId: string })
   | (RepostPreviewContent & {
       kind: "post";
+      hideAuthor?: boolean;
+      adult?: boolean;
       imageUrls: string[];
       musicAttachments: MusicAttachmentDTO[];
       community?: { slug: string; name: string; avatarUrl?: string | null };

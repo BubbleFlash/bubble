@@ -1,4 +1,4 @@
-import { displayNameOf, type CommentDTO } from "@commune/shared";
+import { COMMENT_MAX_LENGTH, displayNameOf, type CommentDTO } from "@commune/shared";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAddComment, useComments, useSetCommentLike } from "../hooks/usePosts";
@@ -72,7 +72,7 @@ export default function InlineComments({ postId, focusedId }: { postId: string; 
           setContent((draft) => {
             const oldPrefix = replying ? `${displayNameOf(replying.author)}, ` : "";
             const rest = oldPrefix && draft.startsWith(oldPrefix) ? draft.slice(oldPrefix.length) : draft;
-            return `${name}, ${rest}`.slice(0, 300);
+            return `${name}, ${rest}`.slice(0, COMMENT_MAX_LENGTH);
           });
           setReplying(comment);
           field.current?.focus();

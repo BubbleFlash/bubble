@@ -12,14 +12,14 @@
  *
  * Bump VERSION to force every client to drop its old caches.
  */
-const VERSION = "v9";
+const VERSION = "v11";
 const STATIC_CACHE = `commune-static-${VERSION}`;
 const SHELL_CACHE = `commune-shell-${VERSION}`;
 const KNOWN_CACHES = [STATIC_CACHE, SHELL_CACHE];
 
 const OFFLINE_URL = "/offline.html";
 const SHELL_KEY = "/__shell";
-const PRECACHE = [OFFLINE_URL, "/favicon-v3.png", "/icons/icon-192-v3.png", "/icons/icon-512-v3.png"];
+const PRECACHE = [OFFLINE_URL, "/favicon-v4.png", "/icons/icon-192-v3.png", "/icons/icon-512-v3.png"];
 const NAVIGATION_TIMEOUT_MS = 4000;
 
 self.addEventListener("install", (event) => {

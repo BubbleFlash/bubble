@@ -15,7 +15,7 @@ publisher's own page. No API key is needed. If every feed fails the API answers 
 
 ## Messages
 One-to-one conversations. New messages appear within a few seconds (the page re-checks every 4 seconds;
-this works on Vercel serverless, which has no WebSockets). Limits: 1000 characters per message, 60 messages
+this works on Vercel serverless, which has no WebSockets). Limits: 2000 characters per message, 60 messages
 per 10 minutes, 20 new conversations per hour. Suspended accounts cannot send or receive. Unread counts show
 as badges.
 

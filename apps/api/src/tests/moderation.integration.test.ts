@@ -9,6 +9,7 @@ vi.mock("../services/storageService.js", () => storage);
 import { createApp } from "../app.js";
 import { User } from "../models/User.js";
 import { Post } from "../models/Post.js";
+import { Community } from "../models/Community.js";
 import { Report } from "../models/Report.js";
 import { CommentReport } from "../models/CommentReport.js";
 import { Comment } from "../models/Comment.js";
@@ -74,6 +75,63 @@ integration("moderation on isolated MongoDB", () => {
     await User.updateOne({ _id: ids.moderator }, { $set: { role: "user" } });
     expect((await app.get("/api/moderation/users").set(auth("moderator"))).status).toBe(403);
     await User.updateOne({ _id: ids.moderator }, { $set: { role: "moderator" } });
+  });
+
+  it("requires staff and a reason for deleting another user's post, and records the reason", async () => {
+    const entry = await Post.create({ author: ids.user, content: "Проверка" });
+    const path = "/moderation/content/post/" + entry._id;
+    expect((await post("reporter", path, { state: "removed", reason: "Спам" })).status).toBe(403);
+    expect((await post("moderator", path, { state: "removed", reason: "  " })).status).toBe(400);
+    expect((await post("moderator", path, { state: "removed", reason: "Спам" })).status).toBe(204);
+    const saved = await Post.findById(entry._id).lean();
+    expect(saved?.moderationEvents).toEqual(expect.arrayContaining([expect.objectContaining({ action: "removed", reason: "Спам" })]));
+  });
+
+  it("lets only admins configure the public development widget and selects the latest visible post", async () => {
+    const community = await Community.create({ slug: "dev_widget", name: "Разработка", creator: ids.admin });
+    expect((await app.put("/api/admin/development-widget").set(auth("moderator")).send({ communitySlug: "dev_widget" })).status).toBe(403);
+    expect((await app.put("/api/admin/development-widget").set(auth("admin")).send({ communitySlug: "missing" })).status).toBe(404);
+    expect((await app.put("/api/admin/development-widget").set(auth("admin")).send({ communitySlug: "dev_widget" })).status).toBe(200);
+    expect((await app.get("/api/development-widget")).body.post).toBeNull();
+    await Post.create({ author: ids.admin, community: community._id, content: "Старая запись", createdAt: new Date("2024-01-01") });
+    const newest = await Post.create({ author: ids.admin, community: community._id, content: "Новая запись", createdAt: new Date("2024-02-01") });
+    await Post.create({ author: ids.admin, community: community._id, content: "Скрытая", moderationState: "hidden", createdAt: new Date("2024-03-01") });
+    expect((await app.get("/api/development-widget")).body.post).toMatchObject({ id: String(newest._id), content: "Новая запись" });
+    expect((await app.get("/api/site-updates")).body.posts.map((item: { id: string }) => item.id)).toEqual([String(newest._id), expect.any(String)]);
+    expect((await app.put("/api/admin/development-widget").set(auth("admin")).send({ communitySlug: "" })).status).toBe(200);
+    expect((await app.get("/api/development-widget")).body.post).toBeNull();
+  });
+
+  it("publishes editable site texts with administrator-only writes and a current staff list", async () => {
+    const initial = await app.get("/api/site-content");
+    expect(initial.status).toBe(200);
+    expect(initial.body.rules).toContain("Правила сообщества Bubble");
+    expect(initial.body.about).not.toContain("Cow-a-banga");
+    expect(initial.body.about).toContain("Присоединяйся к разработке");
+    const replacement = { ...initial.body, rules: "Обновлённые правила" };
+    expect((await app.put("/api/admin/site-content").set(auth("moderator")).send(replacement)).status).toBe(403);
+    expect((await app.put("/api/admin/site-content").set(auth("reporter")).send(replacement)).status).toBe(403);
+    expect((await app.put("/api/admin/site-content").set(auth("admin")).send({ ...replacement, rules: " " })).status).toBe(400);
+    expect((await app.put("/api/admin/site-content").set(auth("admin")).send(replacement)).status).toBe(200);
+    expect((await app.get("/api/site-content")).body.rules).toBe("Обновлённые правила");
+    const staff = await app.get("/api/site-team");
+    expect(staff.body.members).toEqual(expect.arrayContaining([expect.objectContaining({ username: "admin", role: "admin" }), expect.objectContaining({ username: "moderator", role: "moderator" })]));
+    expect(staff.body.members).not.toEqual(expect.arrayContaining([expect.objectContaining({ username: "reporter" })]));
+  });
+
+  it("stores team members by account and reflects renamed profiles", async () => {
+    const groups = { developers: ["REPORTER"], artists: [], testers: ["reporter"] };
+    expect((await app.put("/api/admin/site-team").set(auth("moderator")).send(groups)).status).toBe(403);
+    expect((await app.put("/api/admin/site-team").set(auth("admin")).send(groups)).status).toBe(200);
+    await User.updateOne({ _id: ids.reporter }, { $set: { username: "renamed", displayName: "Новое имя" } });
+    const publicTeam = await app.get("/api/site-team");
+    expect(publicTeam.body.groups.developers).toEqual([expect.objectContaining({ username: "renamed", displayName: "Новое имя" })]);
+    expect(publicTeam.body.groups.testers).toEqual([expect.objectContaining({ username: "renamed" })]);
+    expect(publicTeam.body.groups.moderators).toEqual(expect.arrayContaining([expect.objectContaining({ username: "moderator" })]));
+    expect((await app.get("/api/admin/site-team").set(auth("admin"))).body.developers).toEqual(["renamed"]);
+    expect((await app.put("/api/admin/site-team").set(auth("admin")).send({ ...groups, developers: ["missing"] })).status).toBe(400);
+    expect((await app.get("/api/site-team")).body.groups.developers[0].username).toBe("renamed");
+    await User.updateOne({ _id: ids.reporter }, { $set: { username: "reporter" }, $unset: { displayName: 1 } });
   });
 
   it("closes reports and prevents deleted content from being restored while retaining shared files", async () => {

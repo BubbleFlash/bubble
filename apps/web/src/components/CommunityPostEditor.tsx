@@ -8,6 +8,8 @@ import EmojiInputButton from "./EmojiInputButton";
 
 export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; onClose: () => void }) {
   const [content, setContent] = useState(post.content);
+  const [adult, setAdult] = useState(Boolean(post.adult));
+  const [hideAuthor, setHideAuthor] = useState(Boolean(post.hideAuthor));
   const [images, setImages] = useState(post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
   const [music, setMusic] = useState(post.musicAttachments ?? []);
   const [newMusic, setNewMusic] = useState<MusicTrackDTO[]>([]);
@@ -26,7 +28,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
   const contentChanged = content.trim() !== post.content;
   const imagesChanged = images.length !== (post.imageUrls?.length || Number(Boolean(post.imageUrl))) || Boolean(imageDraft.images.length);
   const musicChanged = music.length !== (post.musicAttachments?.length ?? 0) || Boolean(newMusic.length);
-  const changed = contentChanged || imagesChanged || musicChanged;
+  const changed = contentChanged || imagesChanged || musicChanged || adult !== Boolean(post.adult) || hideAuthor !== Boolean(post.hideAuthor);
 
   return (
     <form className="community-post-editor" onSubmit={(event) => {
@@ -38,6 +40,8 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
         ...(contentChanged ? { content } : {}),
         ...(imagesChanged ? { imageUrls: nextImages } : {}),
         ...(musicChanged ? { musicTrackIds: nextTracks } : {}),
+        ...(adult !== Boolean(post.adult) ? { adult } : {}),
+        ...(hideAuthor !== Boolean(post.hideAuthor) ? { hideAuthor } : {}),
       }, { onSuccess: onClose });
     }}>
       <label>
@@ -96,6 +100,8 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
       }} />
       {(imageDraft.error || attachmentError) && <p className="error" role="alert">{imageDraft.error ?? attachmentError}</p>}
       {update.error && <p className="error" role="alert">{update.error.message}</p>}
+      <label className="row"><input type="checkbox" checked={adult} onChange={(event) => setAdult(event.target.checked)} /> Фото 18+</label>
+      <label className="row"><input type="checkbox" checked={hideAuthor} onChange={(event) => setHideAuthor(event.target.checked)} /> Скрыть автора</label>
       <div className="community-post-editor__actions">
         <button className="aero-button" type="button" disabled={imageCount >= 10 || update.isPending} onClick={() => fileInput.current?.click()}>Добавить фото</button>
         <button className="aero-button" type="button" disabled={musicCount >= 10 || update.isPending} onClick={() => setMusicOpen(true)}>Добавить музыку</button>
