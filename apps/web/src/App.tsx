@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "re
 import type { ReactNode } from "react";
 import type { NotificationDTO } from "@commune/shared";
 import { useAuth } from "./store/auth";
+import { useMusicPlayer } from "./store/music";
 import AeroTitlebar from "./components/AeroTitlebar";
 import Header, { AUTH_PATHS } from "./components/Header";
 import FeedPage from "./pages/FeedPage";
@@ -12,6 +13,7 @@ import LeftNav from "./components/LeftNav";
 import RightRail from "./components/RightRail";
 import BottomNav from "./components/BottomNav";
 import { PageSkeleton } from "./components/Skeleton";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { useNotificationReadSession, useProfile } from "./hooks/useSocial";
 import { useStoredFont } from "./lib/siteFont";
 import { appearanceStyle } from "./lib/appearance";
@@ -64,7 +66,7 @@ const TITLES: Record<string, string> = {
   "/confirm-email-change": "Смена почты",
   "/admin": "Администрирование",
   "/moderation": "Модерация",
-  "/admin/errors": "Ошибки",
+  "/admin/errors": "Мониторинг",
   "/music": "Музыка",
 };
 
@@ -120,8 +122,11 @@ function AppRoutes({ onNotificationItems, onNavigateToNotification, onWallpaperP
   onWallpaperPreview?: (path?: string | null) => void;
   onOpacityPreview?: (value?: number) => void;
 }) {
+  const { pathname } = useLocation();
+  const { track } = useMusicPlayer();
   return (
-    <Suspense fallback={<PageSkeleton />}>
+    <ErrorBoundary routeKey={pathname} preservePlayback={Boolean(track)}>
+      <Suspense fallback={<PageSkeleton />}>
       <Routes>
         <Route path="/login" element={<SiteInfoPage />} />
         <Route path="/register" element={<SiteInfoPage />} />
@@ -239,7 +244,8 @@ function AppRoutes({ onNotificationItems, onNavigateToNotification, onWallpaperP
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Suspense>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 

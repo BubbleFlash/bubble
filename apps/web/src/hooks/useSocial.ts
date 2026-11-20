@@ -17,6 +17,8 @@ import type {
 } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 import { useAuth } from "../store/auth";
+import { readAcrossTabs, sharedStaleTime } from "../lib/tabQueries";
+import { isRealtimeConnected } from "../lib/realtime";
 
 export function useProfile(username: string, enabled = Boolean(username), live = false) {
   const { user } = useAuth();
@@ -188,7 +190,7 @@ export function useUpdateProfile() {
 }
 
 export function useNotifications(type: NotificationType | undefined, compact = false) {
-  const { user } = useAuth();
+  const { user, confirmed } = useAuth();
   return useInfiniteQuery({
     queryKey: ["notifications", user?.id, type, compact],
     initialPageParam: undefined as string | undefined,
@@ -197,17 +199,23 @@ export function useNotifications(type: NotificationType | undefined, compact = f
       { signal },
     ),
     getNextPageParam: (last) => compact ? undefined : last.nextCursor ?? undefined,
-    enabled: Boolean(user), refetchInterval: 30_000, refetchOnWindowFocus: true, staleTime: 0,
+    enabled: confirmed, refetchInterval: () => (isRealtimeConnected() ? 90_000 : 30_000),
+    refetchOnWindowFocus: (query) => !isRealtimeConnected() || query.state.isInvalidated,
+    staleTime: 15_000,
   });
 }
 
-/** Polls every 30 seconds while the tab is open. */
+/** Shares the latest REST count while retaining fallback reconciliation. */
 export function useUnreadCount(enabled: boolean) {
+  const { confirmed } = useAuth();
+  const qc = useQueryClient();
+  const key = ["unread-count"];
   return useQuery({
-    queryKey: ["unread-count"],
-    queryFn: () => api<{ count: number }>("/notifications/unread-count"),
-    enabled,
-    refetchInterval: 30_000,
+    queryKey: key,
+    queryFn: ({ signal }) => readAcrossTabs(qc, key, 25_000, () => api<{ count: number }>("/notifications/unread-count", { signal }), signal),
+    enabled: enabled && confirmed,
+    staleTime: (query) => sharedStaleTime(key, query.state.dataUpdatedAt, 25_000),
+    refetchInterval: () => (isRealtimeConnected() ? 90_000 : 30_000),
     refetchOnWindowFocus: true,
   });
 }

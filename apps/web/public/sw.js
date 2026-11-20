@@ -7,12 +7,12 @@
  *  - Shows push notifications (new messages, likes, comments, follows) when the site is closed.
  *
  * What it deliberately does NOT do:
- *  - It never touches /api/* or /uploads/*, or any non-GET or cross-origin request. Account
+ *  - It never touches /api/*, /uploads/* or /socket.io/*, or any non-GET or cross-origin request. Account
  *    data, tokens and paid content are never stored in a cache.
  *
  * Bump VERSION to force every client to drop its old caches.
  */
-const VERSION = "v10";
+const VERSION = "v11";
 const STATIC_CACHE = `commune-static-${VERSION}`;
 const SHELL_CACHE = `commune-shell-${VERSION}`;
 const KNOWN_CACHES = [STATIC_CACHE, SHELL_CACHE];
@@ -33,7 +33,7 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const names = await caches.keys();
       await Promise.all(
-        names.filter((n) => !KNOWN_CACHES.includes(n)).map((n) => caches.delete(n)),
+        names.filter((n) => /^commune-(static|shell)-/.test(n) && !KNOWN_CACHES.includes(n)).map((n) => caches.delete(n)),
       );
       await self.clients.claim();
     })(),
@@ -50,7 +50,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/uploads/")) return;
+  if (/^\/(?:api|uploads|socket\.io)(?:\/|$)/.test(url.pathname)) return;
   if (url.pathname === "/sw.js") return;
 
   if (request.mode === "navigate") {
@@ -70,8 +70,7 @@ async function handleNavigation(request) {
   try {
     const response = await fetchWithTimeout(request, NAVIGATION_TIMEOUT_MS);
     if (response.ok && (response.headers.get("content-type") || "").includes("text/html")) {
-      const cache = await caches.open(SHELL_CACHE);
-      await cache.put(SHELL_KEY, response.clone());
+      await caches.open(SHELL_CACHE).then((cache) => cache.put(SHELL_KEY, response.clone())).catch(() => undefined);
     }
     return response;
   } catch {
@@ -83,15 +82,18 @@ async function handleNavigation(request) {
 function fetchWithTimeout(request, ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(request, { signal: controller.signal, cache: "no-cache" }).finally(() => clearTimeout(timer));
 }
 
 async function cacheFirst(request) {
-  const cache = await caches.open(STATIC_CACHE);
-  const cached = await cache.match(request);
+  const cache = await caches.open(STATIC_CACHE).catch(() => undefined);
+  const cached = await cache?.match(request).catch(() => undefined);
   if (cached) return cached;
   const response = await fetch(request);
-  if (response.ok) await cache.put(request, response.clone());
+  // A proxy may serve the SPA shell for a missing module. Never cache it under an asset URL.
+  if (cache && response.ok && !(response.headers.get("content-type") || "").includes("text/html")) {
+    await cache.put(request, response.clone()).catch(() => undefined);
+  }
   return response;
 }
 

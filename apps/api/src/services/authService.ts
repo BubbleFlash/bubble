@@ -109,14 +109,23 @@ export async function login(input: LoginInput, res: Response) {
   return issueSession(res, user);
 }
 
-/** Rotates the refresh token: the presented token is consumed and a new one issued. */
-export async function refresh(presented: string | undefined, res: Response) {
+export async function findRefreshSession(presented: string | undefined) {
   if (!presented) throw unauthorized("No session");
-  const record = await RefreshToken.findOneAndDelete({ tokenHash: hashToken(presented) });
-  if (!record || record.expiresAt.getTime() < Date.now()) {
-    clearRefreshCookie(res);
+  return RefreshToken.findOne({ tokenHash: hashToken(presented), expiresAt: { $gt: new Date() } })
+    .select("user sessionVersion")
+    .lean();
+}
+
+export type RefreshSession = NonNullable<Awaited<ReturnType<typeof findRefreshSession>>>;
+
+/** Only consume the token after checking its budget. Concurrent rotations have one winner. */
+export async function refresh(session: RefreshSession | null, res: Response) {
+  if (!session) {
+    // This response might arrive after another tab has already rotated the same cookie.
     throw unauthorized("Session expired");
   }
+  const record = await RefreshToken.findOneAndDelete({ _id: session._id, expiresAt: { $gt: new Date() } });
+  if (!record) throw unauthorized("Session expired");
   const user = await User.findById(record.user);
   if (!user || user.deletionExpiresAt || user.anonymizedAt) {
     clearRefreshCookie(res);

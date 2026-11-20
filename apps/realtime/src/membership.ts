@@ -1,4 +1,6 @@
 import { log } from "./log.js";
+import { setTimeout as sleep } from "node:timers/promises";
+import { TokenBucket } from "./limits.js";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -17,6 +19,7 @@ const MAX_ENTRIES = 5000;
  */
 export class Membership {
   private cache = new Map<string, Entry>();
+  private sessionFailureLog = new TokenBucket(10, 1 / 10);
 
   constructor(
     private readonly apiUrl: string,
@@ -24,15 +27,27 @@ export class Membership {
     private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
-  async sessionAllowed(token: string): Promise<boolean> {
+  async sessionAllowed(token: string, initialHandshake = false): Promise<boolean> {
+    let result = await this.checkSession(token);
+    if (initialHandshake && (result === "network" || result >= 500)) {
+      await sleep(250);
+      result = await this.checkSession(token);
+    }
+    if (result === "network" || (result !== 204 && result !== 401 && result !== 403)) {
+      if (this.sessionFailureLog.take()) log("warn", "Session check unavailable", { result, initialHandshake });
+    }
+    return result === 204;
+  }
+
+  private async checkSession(token: string): Promise<number | "network"> {
     try {
       const response = await this.fetchImpl(this.apiUrl + "/api/internal/session", {
         headers: { Authorization: "Bearer " + this.secret, "X-Session-Token": token },
         signal: AbortSignal.timeout(4000),
       });
-      return response.status === 204;
+      return response.status;
     } catch {
-      return false;
+      return "network";
     }
   }
 

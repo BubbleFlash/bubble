@@ -662,6 +662,7 @@ export interface NotificationDTO {
 export interface NotificationNewEvent {
   notification?: NotificationDTO;
   sound?: boolean;
+  readStateChanged?: boolean;
 }
 
 export interface UploadResponse {
@@ -799,6 +800,7 @@ export const clientErrorSchema = z.object({
   message: z.string().trim().min(1).max(300),
   stack: z.string().max(2000).optional(),
   source: z.enum(["window", "promise", "react"]),
+  category: z.enum(["chunk", "render"]).optional(),
   /** Page path only, never the query string. */
   path: z.string().max(200).default("/"),
 });
@@ -810,12 +812,17 @@ export interface ErrorEventDTO {
   message: string;
   route: string;
   status: number | null;
+  category?: string;
+  upstreamStatus?: number | null;
+  requestId?: string;
   stack: string;
   count: number;
   firstSeen: string;
   lastSeen: string;
   resolved: boolean;
 }
+
+export * from "./telemetry.js";
 
 // ---- Realtime (Socket.IO) ----
 

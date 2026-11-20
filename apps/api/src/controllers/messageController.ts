@@ -208,7 +208,7 @@ async function markConversationRead(convo: LeanConversation, me: string, otherId
     { $set: { [counter]: 0 } },
   );
   if (result.modifiedCount) {
-    await emitToUsers([otherId], "message:read", { conversationId, readerId: me });
+    await emitToUsers([otherId, me], "message:read", { conversationId, readerId: me });
   }
 }
 

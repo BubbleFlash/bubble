@@ -9,7 +9,7 @@ import { logger } from "./config/logger.js";
 import { asyncHandler } from "./utils/errors.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import { noStore, originGuard } from "./middleware/security.js";
-import { globalLimiter } from "./middleware/rateLimit.js";
+import { clientNetworkLimiter, globalLimiter, LIMITER_HEADER } from "./middleware/rateLimit.js";
 import { lemonSqueezyWebhook, rawBody } from "./controllers/paymentController.js";
 import { router } from "./routes/index.js";
 import { hasRealtimeSecret, verifySession } from "./controllers/internalController.js";
@@ -18,6 +18,8 @@ import { createDownloadUrl, getObject } from "./services/storageService.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import * as testGate from "./controllers/testGateController.js";
+import { randomUUID } from "node:crypto";
+import { observeApi } from "./services/telemetry.js";
 
 export function createApp() {
   const app = express();
@@ -32,6 +34,7 @@ export function createApp() {
   app.use(
     pinoHttp({
       logger,
+      genReqId: () => randomUUID(),
       serializers: {
         req: (req: { id?: unknown; method?: string; url?: string }) => ({
           id: req.id,
@@ -40,6 +43,10 @@ export function createApp() {
         }),
         res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
       },
+      customSuccessObject(_req, res, log) {
+        const limiter = res.getHeader(LIMITER_HEADER);
+        return limiter ? { ...log, limiter } : log;
+      },
       autoLogging: { ignore: (req) => req.url === "/api/health" },
     }),
   );
@@ -47,13 +54,14 @@ export function createApp() {
     res.set("X-Request-Id", String(req.id));
     next();
   });
+  app.use(observeApi);
   app.use(
     helmet({
       // The web app runs on another origin and must be allowed to display uploaded images.
       crossOriginResourcePolicy: { policy: "cross-origin" },
     }),
   );
-  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After"] }));
+  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After", LIMITER_HEADER, "X-Request-Id", "CF-Ray"] }));
   app.get("/api/internal/test-gate/status", asyncHandler(testGate.status));
   app.post("/api/internal/test-gate/verify", express.json({ limit: "4kb" }), asyncHandler(testGate.verify));
   app.get("/api/internal/session", asyncHandler(async (req, res, next) => {
@@ -61,6 +69,7 @@ export function createApp() {
     res.set("Cache-Control", "no-store");
     await verifySession(req, res);
   }));
+  app.post("/api/client-network", clientNetworkLimiter);
   app.use(globalLimiter);
 
   // Uploaded images and fonts. Revalidate before reuse so moderation still takes effect.
@@ -103,7 +112,7 @@ export function createApp() {
           ? await getObject(`uploads/${file}`, validator)
           : await getObject(`uploads/${file}`);
       } catch (err) {
-        if (err instanceof Error && (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304) {
+        if (validator && err instanceof Error && (err.name === "NotModified" || (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304)) {
           res.status(304).set("Cache-Control", "private, no-cache").end();
           return;
         }

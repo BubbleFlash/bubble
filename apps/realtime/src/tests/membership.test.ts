@@ -4,6 +4,18 @@ import { Membership } from "../membership.js";
 const ID = "cccccccccccccccccccccccc";
 
 describe("Membership", () => {
+  it("retries a temporary outage once on initial connection and honors explicit denial", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const membership = new Membership("http://api.test", "secret", fetchMock);
+    expect(await membership.sessionAllowed("fixture", true)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await membership.sessionAllowed("fixture", true)).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("asks the API with the shared secret and caches the answer", async () => {
     const fetchMock = vi.fn(
       async () => new Response(JSON.stringify({ participants: ["a", "b"] }), { status: 200 }),

@@ -62,6 +62,7 @@ function tokenAccount(record: Awaited<ReturnType<typeof consumeToken>>) {
 }
 
 export async function sendVerificationEmail(user: Recipient) {
+  if (isProd && !env.RESEND_API_KEY) throw new AppError(503, "Email delivery is unavailable");
   const token = await createToken(user, "verify_email");
   const link = `${env.CLIENT_ORIGIN}/verify-email?token=${token}`;
   await sendMail(verifyEmailMail(user.email, user.displayName || user.username, link));

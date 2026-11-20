@@ -72,10 +72,9 @@
           };
           var hint = localStorage.getItem("commune_session");
           var path = location.pathname;
-          start("/news?topic=top", "/api/news?topic=top");
-          if (hint !== "guest")
-            start("/auth/refresh", "/api/auth/refresh", { method: "POST", credentials: "include" });
-          else if (path === "/" || path === "/explore" || path === "/about") start("/site-content", "/api/site-content");
+          if (path === "/news" && hint === "guest") start("/news?topic=top", "/api/news?topic=top");
+          if (hint === "guest" && (path === "/" || path === "/explore" || path === "/about"))
+            start("/site-content", "/api/site-content");
         } catch (e) {}
       })();
     </script>
