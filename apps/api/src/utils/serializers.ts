@@ -52,6 +52,8 @@ export interface PopulatedPost {
   moderationState?: string | null;
   _id: Types.ObjectId;
   content: string;
+  hideAuthor?: boolean;
+  adult?: boolean;
   imageUrl?: string | null;
   imageUrls?: string[];
   musicTrackIds?: Types.ObjectId[];
@@ -179,6 +181,8 @@ export function toPostDTO(p: PopulatedPost, likedByMe: boolean, musicAttachments
   return {
     id: p._id.toString(),
     content: p.content,
+    hideAuthor: Boolean(p.hideAuthor && p.community),
+    adult: Boolean(p.adult),
     imageUrl: p.imageUrl ?? null,
     imageUrls: p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [],
     musicAttachments,

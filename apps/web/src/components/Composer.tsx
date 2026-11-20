@@ -21,6 +21,8 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
   const [musicPickerOpen, setMusicPickerOpen] = useState(false);
   const imageDraft = useImageDraft();
   const [privatePost, setPrivatePost] = useState(false);
+  const [hideAuthor, setHideAuthor] = useState(false);
+  const [adult, setAdult] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const create = useCreatePost();
@@ -43,6 +45,8 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
         content,
         imageUrls: imageDraft.images.map((image) => image.url!),
         musicTrackIds: music.map((track) => track.id),
+        adult,
+        ...(communitySlug ? { hideAuthor } : {}),
         ...(communitySlug ? { community: communitySlug } : {}),
         ...(privatePost && !communitySlug ? { visibility: "friends" } : {}),
       },
@@ -53,6 +57,8 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           setMusic([]);
           imageDraft.clear();
           setPrivatePost(false);
+          setHideAuthor(false);
+          setAdult(false);
         },
       },
     );
@@ -91,7 +97,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
       {music.length > 0 && <div className="music-attachments">{music.map((track) => <div className="music-attachments__row" key={track.id}><div className="music-page__track-info"><strong>{track.title}</strong><span>{track.artist}</span></div><button type="button" className="btn btn-ghost" aria-label={`Удалить ${track.title}`} onClick={() => setMusic((tracks) => tracks.filter((item) => item.id !== track.id))}>×</button></div>)}</div>}
       {musicPickerOpen && <MusicAttachmentPicker selected={music} onChange={setMusic} onClose={() => setMusicPickerOpen(false)} />}
       <div className="composer-footer">
-        <span className="row">
+        <span className="row composer-controls">
           <input
             ref={fileRef}
             type="file"
@@ -102,14 +108,17 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           />
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost composer-attachment"
             onClick={() => fileRef.current?.click()}
             disabled={imageDraft.images.length >= 10}
             aria-label="Прикрепить изображение"
+            title="Прикрепить изображение"
           >
-            <Icon name="image" size={20} /> Фото
+            <Icon name="image" size={20} />
           </button>
-          <button type="button" className="btn btn-ghost" onClick={() => setMusicPickerOpen(true)}><Icon name="music" size={20} /> Музыка</button>
+          <button type="button" className="btn btn-ghost composer-attachment" aria-label="Прикрепить музыку" title="Прикрепить музыку" onClick={() => setMusicPickerOpen(true)}><Icon name="music" size={20} /></button>
+          <label className="row post-visibility"><input className="aero-checkbox" type="checkbox" aria-label="Фото 18+" checked={adult} onChange={(e) => setAdult(e.target.checked)} /> 18+</label>
+          {communitySlug && <label className="row post-visibility"><input className="aero-checkbox" type="checkbox" checked={hideAuthor} onChange={(e) => setHideAuthor(e.target.checked)} /> Скрыть автора</label>}
           {!communitySlug && (
             <label className="row post-visibility">
               <input className="aero-checkbox" type="checkbox" checked={privatePost} onChange={(e) => setPrivatePost(e.target.checked)} />

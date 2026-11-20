@@ -1,12 +1,13 @@
 import { contentModerationFields } from "./moderationFields.js";
 import { Schema, model } from "mongoose";
+import { COMMENT_MAX_LENGTH } from "@commune/shared";
 
 const commentSchema = new Schema(
   {
     ...contentModerationFields,
     post: { type: Schema.Types.ObjectId, ref: "Post", required: true },
     author: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    content: { type: String, required: true, trim: true, maxlength: 300 },
+    content: { type: String, required: true, trim: true, maxlength: COMMENT_MAX_LENGTH },
     parent: { type: Schema.Types.ObjectId, ref: "Comment" },
     mention: { name: { type: String }, username: { type: String } },
   },

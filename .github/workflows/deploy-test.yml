@@ -41,6 +41,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test test-server access gate
+        run: node --test tools/test-gate/server.test.mjs
+
       - name: Build
         run: npm run build
 
@@ -95,6 +98,16 @@ jobs:
             ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-web:${{ github.sha }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      - name: Build and push test access gate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tools/test-gate/Dockerfile
+          push: true
+          tags: ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-gate:${{ github.sha }}
+          cache-from: type=gha,scope=gate
+          cache-to: type=gha,mode=max,scope=gate
   deploy:
     name: Deploy test server
     runs-on: ubuntu-latest
@@ -133,8 +146,9 @@ jobs:
           export API_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-api:${DEPLOY_SHA}"
           export REALTIME_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-realtime:${DEPLOY_SHA}"
           export WEB_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-web:${DEPLOY_SHA}"
+          export TEST_GATE_IMAGE="ghcr.io/${{ env.IMAGE_OWNER }}/test-bubble-gate:${DEPLOY_SHA}"
 
-          docker compose --env-file .env.production -f docker-compose.prod.yml pull
-          docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans
-          docker compose --env-file .env.production -f docker-compose.prod.yml ps
+          docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.test-gate.yml pull
+          docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.test-gate.yml up -d --remove-orphans
+          docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.test-gate.yml ps
           REMOTE

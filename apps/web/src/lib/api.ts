@@ -64,12 +64,20 @@ export class SessionRestoreError extends Error {
   }
 }
 
+function checkTestGate(res: Response) {
+  if (res.redirected && new URL(res.url).pathname === "/__test_gate/login") {
+    window.location.assign("/__test_gate/login");
+    throw new Error("Для продолжения войдите на тестовый стенд.");
+  }
+}
+
 async function refreshSession(): Promise<AuthResponse | null> {
   refreshing ??= (
     takeEarly("/auth/refresh") ??
     fetch(`${BASE}/auth/refresh`, { method: "POST", credentials: "include" })
   )
     .then(async (res) => {
+      checkTestGate(res);
       if (res.status === 401) return null;
       if (res.status === 403) {
         const body = await res.json() as { restriction?: Restriction };
@@ -149,6 +157,7 @@ export async function api<T>(
   const early = !options.method && !options.body && retry ? takeEarly(path) : undefined;
   const earlyRes = early ? await early.catch(() => undefined) : undefined;
   const res = earlyRes?.ok ? earlyRes : await send();
+  checkTestGate(res);
 
   if (res.status === 401 && retry && !path.startsWith("/auth/")) {
     if (await refresh()) return api<T>(path, options, false);
@@ -167,6 +176,7 @@ export async function api<T>(
             : "Something went wrong";
     const known: Record<string, string> = {
       "Invalid input": "Проверьте введённые данные.",
+      "Set test access credentials first": "Сначала задайте логин и пароль тестового доступа.",
       "Invalid email or password": "Неверный адрес почты или пароль.",
       "Current password is incorrect": "Текущий пароль указан неверно.",
       "Email delivery is unavailable": "Отправка писем сейчас недоступна. Попробуйте позже.",

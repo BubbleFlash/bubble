@@ -1,0 +1,21 @@
+services:
+  api:
+    environment:
+      TEST_GATE_SECRET: ${TEST_GATE_SECRET:?Set TEST_GATE_SECRET}
+  test-gate:
+    image: ${TEST_GATE_IMAGE:?Set TEST_GATE_IMAGE}
+    restart: unless-stopped
+    environment:
+      TEST_GATE_SECRET: ${TEST_GATE_SECRET:?Set TEST_GATE_SECRET}
+      TEST_GATE_API_URL: http://api:4000
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+  web:
+    volumes:
+      - ./nginx/test-gate.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      test-gate:
+        condition: service_started

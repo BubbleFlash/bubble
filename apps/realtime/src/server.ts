@@ -109,7 +109,7 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
 
     if (
       req.method === "POST" &&
-      (path === "/internal/emit" || path === "/internal/disconnect" || path === "/internal/active" || path === "/internal/online")
+      (path === "/internal/emit" || path === "/internal/disconnect" || path === "/internal/active" || path === "/internal/online" || path === "/internal/online-count")
     ) {
       if (!safeEqual(bearer(req.headers.authorization), config.internalSecret)) {
         return send(res, 401, { error: "Unauthorized" });
@@ -124,6 +124,8 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
         string,
         unknown
       >;
+
+      if (path === "/internal/online-count") return send(res, 200, { count: online.size });
 
       if (path === "/internal/active" || path === "/internal/online") {
         const ids = input.userIds;

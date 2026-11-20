@@ -91,13 +91,9 @@ function CommunityView({ slug }: { slug: string }) {
             {canOpenManagement && <ProfileAction icon="settings" label="Управление группой" onClick={() => setManaging(true)} />}
             {c.myRole !== "owner" &&
               (c.joinedByMe ? (
-                <button className="btn btn-outline" disabled={busy} onClick={() => window.confirm("Выйти из группы?") && leave.mutate()}>
-                  Выйти из группы
-                </button>
+                <ProfileAction icon="person_remove" label="Выйти из группы" disabled={busy} onClick={() => { if (window.confirm("Выйти из группы?")) leave.mutate(); }} />
               ) : (
-                <button className="btn" disabled={busy} onClick={() => join.mutate()}>
-                  Вступить
-                </button>
+                <ProfileAction icon="person_add" label="Вступить в группу" className="btn" disabled={busy} onClick={() => join.mutate()} />
               ))}
           </div>
         </div>

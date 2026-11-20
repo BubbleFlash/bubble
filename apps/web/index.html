@@ -24,7 +24,7 @@
     ></script>
 
     <!-- Icons and installable web app (PWA) -->
-    <link rel="icon" type="image/png" href="/favicon-v3.png" />
+    <link rel="icon" type="image/png" href="/favicon-v4.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-v3.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -75,7 +75,7 @@
           start("/news?topic=top", "/api/news?topic=top");
           if (hint !== "guest")
             start("/auth/refresh", "/api/auth/refresh", { method: "POST", credentials: "include" });
-          else if (path === "/" || path === "/explore") start("/public/posts", "/api/public/posts");
+          else if (path === "/" || path === "/explore" || path === "/about") start("/site-content", "/api/site-content");
         } catch (e) {}
       })();
     </script>

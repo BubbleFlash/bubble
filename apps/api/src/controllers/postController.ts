@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
-import { COMMENTS_PAGE_SIZE, FREE_POST_LENGTH } from "@commune/shared";
+import { COMMENTS_PAGE_SIZE } from "@commune/shared";
 import type { CreateCommentInput, CreateRepostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { changeContent } from "../services/moderationService.js";
 import { visibleContent } from "../models/moderationFields.js";
@@ -21,7 +21,6 @@ import { User } from "../models/User.js";
 import { loadPostMusic, validateMusicTrackIds } from "../services/postMusic.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, loadPost, loadReadablePostAuthor, readablePostFilter } from "../services/postAccess.js";
 import { presentReposts, reactionSource, repostCounts, validateRepostSource } from "../services/repostService.js";
-import { isPlusActive } from "../utils/plan.js";
 import { badRequest, conflict, forbidden, notFound } from "../utils/errors.js";
 import {
   toCommentDTO,
@@ -53,7 +52,7 @@ export async function presentPosts(userId: string | undefined, posts: PopulatedP
     const target = reactionSource(post);
     return [String(target), target] as const;
   })).values()];
-  const [liked, online, counts, previews, music, memberships, readableTargets] = await Promise.all([
+  const [liked, online, counts, previews, music, memberships, readableTargets, viewer] = await Promise.all([
     userId ? likedSet(userId, ids) : new Set<string>(),
     onlineUsers(posts.map((post) => post.author._id.toString())),
     repostCounts(ids),
@@ -66,6 +65,7 @@ export async function presentPosts(userId: string | undefined, posts: PopulatedP
       const rows = await Post.find({ ...filter, _id: { $in: shareTargets } }).select("_id").lean();
       return rows.map((row) => row._id);
     }) : [],
+    userId && posts.some((post) => post.hideAuthor && post.community) ? User.findById(userId).select("role").lean() : null,
   ]);
   const membershipIds = new Map(memberships.map((row) => [String(row.community), row._id]));
   const readable = new Set(readableTargets.map(String));
@@ -75,8 +75,11 @@ export async function presentPosts(userId: string | undefined, posts: PopulatedP
     const accessible = !p.repost || readable.has(root);
     const role = p.community && userId ? communityRole(p.community, userId, membershipIds.get(String(p.community._id))) : null;
     const canManage = p.community && canManageCommunityPost(p.community, role, p.author._id.equals(userId));
+    const revealAuthor = !p.hideAuthor || !p.community || p.author._id.equals(userId) || viewer?.role === "admin" || viewer?.role === "moderator" || meetsCommunityRole(role, "editor");
+    const dto = toPostDTO(p, accessible && liked.has(key), music.get(key), online.has(p.author._id.toString()));
+    if (!revealAuthor) dto.author = { id: "", username: "", displayName: "Автор скрыт", avatarUrl: null, plus: false };
     return {
-      ...toPostDTO(p, accessible && liked.has(key), music.get(key), online.has(p.author._id.toString())),
+      ...dto,
       likeCount: accessible ? p.likeCount : 0,
       ...(p.repost ? { likePostId: accessible ? root : null } : {}),
       repostCount: counts.get(key) ?? 0,
@@ -123,6 +126,7 @@ export async function listPosts(req: Request, res: Response) {
     // Posts from people I follow, plus my own.
     const follows = await Follow.find({ follower: req.userId }).select("following").lean();
     baseFilter.author = { $in: [...follows.map((f) => f.following), req.userId] };
+    baseFilter.$and = [{ $or: [{ hideAuthor: { $ne: true } }, { author: req.userId }] }];
   }
   await sendPostPage(req, res, baseFilter);
 }
@@ -131,16 +135,6 @@ export async function getPost(req: Request, res: Response) {
   const post = await loadPost(param(req, "id"), req.userId!);
   const [dto] = await presentPosts(req.userId, [post]);
   res.json(dto);
-}
-
-async function requirePostLength(userId: string, content: string) {
-  // Long posts are a Commune Plus feature.
-  if (content.length > FREE_POST_LENGTH) {
-    const author = await User.findById(userId).select("plusUntil").lean();
-    if (!isPlusActive(author?.plusUntil)) {
-      throw forbidden(`Posts over ${FREE_POST_LENGTH} characters need Commune Plus`);
-    }
-  }
 }
 
 async function postingCommunity(userId: string, slug?: string | null) {
@@ -155,13 +149,14 @@ async function postingCommunity(userId: string, slug?: string | null) {
 }
 
 export async function createPost(req: Request, res: Response) {
-  if (!req.body.community) await requirePostLength(req.userId!, req.body.content);
   const communityId = await postingCommunity(req.userId!, req.body.community);
   const musicTrackIds: string[] = req.body.musicTrackIds ?? [];
   await validateMusicTrackIds(musicTrackIds);
   const created = await Post.create({
     author: req.userId,
     community: communityId,
+    hideAuthor: Boolean(communityId && req.body.hideAuthor),
+    adult: Boolean(req.body.adult),
     content: req.body.content,
     visibility: req.body.visibility,
     imageUrl: req.body.imageUrls?.[0] ?? req.body.imageUrl ?? null,
@@ -185,7 +180,6 @@ export async function createPost(req: Request, res: Response) {
 export async function createRepost(req: Request, res: Response) {
   const userId = req.userId!;
   const { source, content, community } = req.body as CreateRepostInput;
-  if (!community) await requirePostLength(userId, content);
   const [original, communityId] = await Promise.all([
     validateRepostSource(source, userId),
     postingCommunity(userId, community),
@@ -238,7 +232,7 @@ export async function updatePost(req: Request, res: Response) {
     throw forbidden("You cannot edit this community post");
   }
 
-  const { content, imageUrls, musicTrackIds } = req.body as UpdateCommunityPostInput;
+  const { content, imageUrls, musicTrackIds, hideAuthor, adult } = req.body as UpdateCommunityPostInput;
   const images = imageUrls ?? (post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
   const music = musicTrackIds ?? post.musicTrackIds ?? [];
   if (!(content ?? post.content) && !images.length && !music.length && !post.repost) {
@@ -252,6 +246,8 @@ export async function updatePost(req: Request, res: Response) {
     { _id: id, community: post.community._id, updatedAt: post.updatedAt ?? { $exists: false } },
     { $set: {
       ...(content === undefined ? {} : { content }),
+      ...(hideAuthor === undefined ? {} : { hideAuthor }),
+      ...(adult === undefined ? {} : { adult }),
       ...(imageUrls ? { imageUrls, imageUrl: imageUrls[0] ?? null } : {}),
       ...(musicTrackIds ? { musicTrackIds } : {}),
     } },

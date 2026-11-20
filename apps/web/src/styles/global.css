@@ -1648,7 +1648,7 @@ video {
 
 @media (max-width: 767px) {
   .chat {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     height: calc(100dvh - 100px);
   }
 

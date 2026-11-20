@@ -79,10 +79,12 @@ Add to `.env` (see `.env.example`):
 
 ```
 REALTIME_URL=http://localhost:4100
+REALTIME_PORT=4100
 REALTIME_SECRET=<any 32+ characters>
 API_URL=http://localhost:4000
-VITE_REALTIME_URL=http://localhost:4100
 ```
+
+Set `VITE_REALTIME_URL=http://localhost:4100` in `apps/web/.env.local` for Vite.
 
 `npm run dev` then starts the API, the web app and the realtime service.
 

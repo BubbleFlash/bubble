@@ -103,6 +103,20 @@ export function useDeletePost() {
   });
 }
 
+export function useModeratePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api<void>(`/moderation/content/post/${id}`, { method: "POST", body: { state: "removed", reason } }),
+    onSuccess: (_result, { id }) => {
+      qc.removeQueries({ queryKey: ["post", id], exact: true });
+      for (const key of [["feed"], ["post"], ["search", "posts"], ["public", "posts"], ["thread"], ["moderation"]]) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
+}
+
 export function useUpdateCommunityPost(id: string) {
   const qc = useQueryClient();
   return useMutation({

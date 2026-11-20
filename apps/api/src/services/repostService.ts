@@ -8,6 +8,9 @@ import { notFound } from "../utils/errors.js";
 import { toAuthor, type PopulatedComment, type PopulatedPost } from "../utils/serializers.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, loadPost, readablePostFilter } from "./postAccess.js";
 import { loadPostMusic } from "./postMusic.js";
+import { User } from "../models/User.js";
+import { Membership } from "../models/Membership.js";
+import { communityRole, meetsCommunityRole } from "./communityAccess.js";
 
 type Source = NonNullable<PopulatedPost["repost"]>;
 const PREVIEW_DEPTH = 3;
@@ -55,6 +58,12 @@ export async function presentReposts(
     presentReposts(nestedPosts.map((post) => post.repost), userId, depth - 1),
   ]);
   const nestedById = new Map(nestedPosts.map((post, index) => [String(post._id), nested[index]]));
+  const hidden = selected.filter((post) => post.hideAuthor && post.community);
+  const [viewer, memberships] = userId && hidden.length ? await Promise.all([
+    User.findById(userId).select("role").lean(),
+    Membership.find({ user: userId, community: { $in: hidden.map((post) => post.community!._id) } }).select("community").lean(),
+  ]) : [null, []];
+  const membershipIds = new Map(memberships.map((row) => [String(row.community), row._id]));
 
   return sources.map((source): RepostPreviewDTO | undefined => {
     if (!source) return;
@@ -75,8 +84,11 @@ export async function presentReposts(
     }
     return {
       kind: "post",
+      hideAuthor: Boolean(post.hideAuthor && post.community),
+      adult: Boolean(post.adult),
       postId,
-      author: toAuthor(post.author),
+      author: post.hideAuthor && post.community && String(post.author._id) !== userId && viewer?.role !== "admin" && viewer?.role !== "moderator" && !meetsCommunityRole(userId ? communityRole(post.community, userId, membershipIds.get(String(post.community._id))) : null, "editor")
+        ? { id: "", username: "", displayName: "Автор скрыт", avatarUrl: null, plus: false } : toAuthor(post.author),
       content: post.content,
       createdAt: post.createdAt.toISOString(),
       imageUrls: post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : [],

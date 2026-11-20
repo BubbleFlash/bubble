@@ -517,6 +517,22 @@
 .image-gallery__item { display: block; min-width: 0; padding: 0; border: 0; border-radius: 8px; overflow: hidden; background: transparent; cursor: pointer; }
 .image-gallery__item img { display: block; width: 100%; height: 180px; object-fit: contain; }
 .image-draft { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow-y: auto; }
+.post-text__body { position: relative; min-width: 0; }
+.post-images { position: relative; overflow: hidden; border-radius: 6px; }
+.post-images--concealed .post-images__gallery { filter: blur(24px); pointer-events: none; }
+.post-images__cover { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgb(85 93 101 / 79%); color: white; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; cursor: pointer; font: inherit; font-weight: 700; }
+.post-images__show { padding: 5px 12px; border: 1px solid #fff9; border-radius: 5px; background: #ffffff33; }
+.community-post-author:has([aria-label]) a { color: var(--aero-color-text-muted); }
+.site-information { display: grid; gap: 18px; padding: 20px; overflow-wrap: anywhere; }
+.site-information h1, .site-information h2, .site-information p { margin: 0 0 8px; }
+.site-information__text { white-space: pre-wrap; line-height: 1.55; }
+.site-information__links { display: flex; flex-wrap: wrap; gap: 12px; }
+.site-content-editor { display: grid; gap: 12px; }
+.site-content-editor label { display: grid; gap: 5px; }
+.site-content-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.site-content-editor > button { justify-self: start; }
+.post-text__body .post-read-more { font-size: inherit; line-height: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.composer > .image-draft { margin-top: 8px; }
 .image-draft .image-preview { flex: 0 0 90px; width: 90px; margin: 0; }
 .image-draft .image-preview img { width: 90px; height: 72px; object-fit: cover; }
 .image-draft .image-preview p { font-size: 11px; overflow-wrap: anywhere; }

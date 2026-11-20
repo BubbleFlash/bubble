@@ -12,6 +12,11 @@ import MusicAttachments from "../components/MusicAttachments";
 import Icon, { type IconName } from "../components/Icon";
 import AeroTitlebar from "../components/AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
+import TestGateSettings from "../components/TestGateSettings";
+import { violationReasons } from "../lib/moderationReasons";
+import DevelopmentWidgetSettings from "../components/DevelopmentWidgetSettings";
+import SiteContentSettings from "../components/SiteContentSettings";
+import SiteTeamSettings from "../components/SiteTeamSettings";
 
 type Kind = "post" | "comment" | "wallpaper";
 type State = "published" | "hidden" | "removed" | "withdrawn";
@@ -105,7 +110,7 @@ const entities: Record<string, string> = {
 };
 
 const reasonOptions = {
-  violation: ["Спам", "Оскорбления или травля", "Разжигание ненависти", "Насилие или угрозы", "Нарушение правил сообщества"],
+  violation: violationReasons,
   restore: ["Пересмотр решения", "Ошибка модерации", "Нарушение устранено"],
   dismiss: ["Жалоба необоснованна", "Нарушение не обнаружено", "Недостаточно данных"],
   resolve: ["Приняты меры", "Нарушение устранено", "Обращение рассмотрено"],
@@ -311,10 +316,12 @@ function ModerationHelp() {
         <h2 id={titleId}>Информация о модерации</h2>
       </AeroTitlebar>
       <div className="aero-dialog__body moderation-help-body">
-        <p><strong>Жалобы.</strong> Просматривайте сообщения о записях, комментариях и фонах. Скрывайте или удаляйте материал, отклоняйте жалобу либо закрывайте её как решённую.</p>
-        <p><strong>Пользователи.</strong> Ищите аккаунты, просматривайте историю и применяйте или снимайте ограничения и предупреждения.</p>
-        <p><strong>Контент.</strong> Просматривайте скрытые и удалённые материалы. Скрытые материалы можно восстановить.</p>
-        <p><strong>Журнал.</strong> Проверяйте действия модераторов и администраторов и причины решений.</p>
+        <p><strong>Сначала проверьте контекст.</strong> Откройте жалобу, сам материал и историю автора. Если данных недостаточно или нарушения нет, отклоните жалобу и укажите причину.</p>
+        <p><strong>Нарушающий материал.</strong> Скройте запись, комментарий или фон, если решение может потребовать пересмотра: скрытое можно восстановить во вкладке «Контент». Удаление необратимо. Чужую запись также можно удалить прямо из её карточки с указанием причины.</p>
+        <p><strong>После проверки жалобы.</strong> Если меры приняты или нарушение устранено, отметьте жалобу рассмотренной. При скрытии или удалении открытые жалобы на материал закрываются автоматически.</p>
+        <p><strong>Действия с пользователем.</strong> Во вкладке «Пользователи» найдите аккаунт и изучите историю. Предупреждение фиксирует нарушение; запрет публикаций ограничивает публикации на выбранный срок; временная блокировка ограничивает доступ на выбранный срок. При ошибке или пересмотре решения снимите ограничение или предупреждение с причиной.</p>
+        <p><strong>Полномочия.</strong> Только администратор назначает и снимает модераторов и применяет бессрочную блокировку. Модератор не может применять меры к администраторам и другим модераторам.</p>
+        <p><strong>Журнал.</strong> Проверяйте автора действия, дату и причину. Указывайте понятную причину каждого решения, чтобы его можно было пересмотреть.</p>
         <button type="button" className="btn" onClick={() => dialog.current?.close()}>Понятно</button>
       </div>
     </dialog>
@@ -828,7 +835,7 @@ export default function ModerationPage() {
         <ModerationHelp />
       </div>
       <nav className="tabs feed-tabs moderation-tabs" aria-label="Панель модерации">
-        {["Жалобы", "Пользователи", "Контент", "Журнал"].map((name) => (
+        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Тестовый доступ", "Дневник", "Тексты"] : [])].map((name) => (
           <button
             key={name}
             className={"tab" + (section === name ? " active" : "")}
@@ -857,6 +864,9 @@ export default function ModerationPage() {
         />
       )}
       {section === "Журнал" && <HistoryList />}
+      {section === "Тестовый доступ" && user.role === "admin" && <TestGateSettings />}
+      {section === "Дневник" && user.role === "admin" && <DevelopmentWidgetSettings />}
+      {section === "Тексты" && user.role === "admin" && <><SiteContentSettings /><SiteTeamSettings /></>}
       {section === "Контент" && <Content send={send} />}
       {section === "Пользователи" &&
         (selected ? (

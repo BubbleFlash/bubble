@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         writeSessionHint("1");
         setUser(res.user);
       } else {
-        qc.clear();
+        if (readSessionHint() !== "guest" || currentUser.current) qc.clear();
         writeSessionHint("guest");
         setUser(null);
       }

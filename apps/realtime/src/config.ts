@@ -33,9 +33,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     errors.push("REALTIME_SECRET must be at least 32 characters (the same value as the API)");
   const clientOrigin = origin(clean(env.CLIENT_ORIGIN), "CLIENT_ORIGIN", errors);
   const apiUrl = origin(clean(env.API_URL), "API_URL", errors);
-  const port = Number(env.PORT ?? 4100);
+  const port = Number(env.REALTIME_PORT ?? env.PORT ?? 4100);
   if (!Number.isInteger(port) || port < 0 || port > 65535)
-    errors.push("PORT must be a valid port number");
+    errors.push("REALTIME_PORT or PORT must be a valid port number");
   if (errors.length > 0)
     throw new Error(`Invalid realtime configuration:\n  ${errors.join("\n  ")}`);
   return { port, clientOrigin, jwtSecret, internalSecret, apiUrl, maxConnectionsPerUser: 8 };
