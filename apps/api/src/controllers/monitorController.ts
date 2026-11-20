@@ -43,6 +43,9 @@ function toDTO(e: {
   message: string;
   route?: string | null;
   status?: number | null;
+  category?: string | null;
+  upstreamStatus?: number | null;
+  requestId?: string | null;
   stack?: string | null;
   count?: number | null;
   firstSeen: Date;
@@ -55,6 +58,9 @@ function toDTO(e: {
     message: e.message,
     route: e.route ?? "",
     status: e.status ?? null,
+    category: e.category ?? "unknown",
+    upstreamStatus: e.upstreamStatus ?? null,
+    requestId: e.requestId ?? "",
     stack: e.stack ?? "",
     count: e.count ?? 1,
     firstSeen: e.firstSeen.toISOString(),

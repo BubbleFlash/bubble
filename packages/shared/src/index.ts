@@ -803,6 +803,9 @@ export interface ErrorEventDTO {
   message: string;
   route: string;
   status: number | null;
+  category?: string;
+  upstreamStatus?: number | null;
+  requestId?: string;
   stack: string;
   count: number;
   firstSeen: string;

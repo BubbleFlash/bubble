@@ -105,6 +105,7 @@ export function startRealtime(handlers: RealtimeHandlers): void {
     // A function, so every (re)connect uses the newest access token.
     auth: (cb) => cb({ token: getAccessToken() }),
     transports: ["websocket", "polling"],
+    tryAllTransports: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 10_000,
   });

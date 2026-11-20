@@ -109,7 +109,7 @@ export function createApp() {
           ? await getObject(`uploads/${file}`, validator)
           : await getObject(`uploads/${file}`);
       } catch (err) {
-        if (err instanceof Error && (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304) {
+        if (validator && err instanceof Error && (err.name === "NotModified" || (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304)) {
           res.status(304).set("Cache-Control", "private, no-cache").end();
           return;
         }

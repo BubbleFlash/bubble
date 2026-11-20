@@ -26,6 +26,9 @@ function ErrorsPanel() {
         "method",
         "route",
         "status",
+        "category",
+        "upstream_status",
+        "request_id",
         "count",
         "first_seen_utc",
         "last_seen_utc",
@@ -40,6 +43,9 @@ function ErrorsPanel() {
           verb,
           telemetryRoute(verb ? (path ?? "") : event.route),
           event.status,
+          event.category ?? "unknown",
+          event.upstreamStatus,
+          event.requestId,
           event.count,
           event.firstSeen,
           event.lastSeen,
@@ -81,6 +87,11 @@ function ErrorsPanel() {
             </span>
           </div>
           <p className="muted">{e.route}</p>
+          {(e.category && e.category !== "unknown" || e.upstreamStatus || e.requestId) && <p className="muted small">
+            {e.category && e.category !== "unknown" && `Категория: ${e.category} `}
+            {e.upstreamStatus && `· Ответ внешнего сервиса: ${e.upstreamStatus} `}
+            {e.requestId && `· Request ID: ${e.requestId}`}
+          </p>}
           {e.stack && (
             <details>
               <summary className="muted">Трассировка ошибки</summary>

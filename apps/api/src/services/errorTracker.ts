@@ -11,6 +11,9 @@ export interface ErrorReport {
   stack?: string;
   route?: string;
   status?: number | null;
+  category?: "storage" | "mail" | "database" | "network" | "unknown";
+  upstreamStatus?: number | null;
+  requestId?: string;
 }
 
 /** Stored errors never contain tokens, emails or query strings, even if the message did. */
@@ -77,12 +80,15 @@ export async function recordError(report: ErrorReport): Promise<void> {
       stack: scrub(report.stack ?? "").slice(0, 2000),
       route: scrub(report.route ?? "").slice(0, 200),
       status: report.status ?? null,
+      category: report.category ?? "unknown",
+      upstreamStatus: report.upstreamStatus ?? null,
+      requestId: /^[a-f0-9-]{36}$/i.test(report.requestId ?? "") ? report.requestId : "",
     };
     const fingerprint = fingerprintOf(clean);
     const now = new Date();
     const known = await ErrorEvent.findOneAndUpdate(
       { fingerprint },
-      { $inc: { count: 1 }, $set: { lastSeen: now, resolved: false } },
+      { $inc: { count: 1 }, $set: { lastSeen: now, resolved: false, category: clean.category, upstreamStatus: clean.upstreamStatus, requestId: clean.requestId } },
     ).lean();
     if (known) return;
     if ((await eventCount()) >= MAX_EVENTS) return;

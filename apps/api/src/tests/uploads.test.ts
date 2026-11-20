@@ -199,6 +199,14 @@ describe("POST /api/uploads", () => {
     expect(storage.getObject).toHaveBeenCalledWith(`uploads/${"a".repeat(32)}.png`, '"image-v1"');
   });
 
+  it("accepts a named NotModified response when a cached image is revalidated", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Not modified"), { name: "NotModified" }));
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png`).set("If-None-Match", '"image-v1"');
+    expect(response.status).toBe(304);
+  });
+
   it("does not fetch an image referenced only by moderated content", async () => {
     env.S3_DIRECT_IMAGES = true;
     env.S3_PUBLIC_ENDPOINT = "https://storage.example.test";
