@@ -250,8 +250,7 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
     expect(await chrome.evaluate((node) => {
       const bottom = node.getBoundingClientRect().bottom;
       const left = node.getBoundingClientRect().left;
-      return node.contains(document.elementFromPoint(left + 2, bottom - 2))
-        && getComputedStyle(node).backgroundColor !== "rgba(0, 0, 0, 0)";
+      return node.contains(document.elementFromPoint(left + 2, bottom - 2));
     })).toBe(true);
     await expect(page.locator(".aero-window > .shell")).toHaveCSS("clip-path", "none");
   }
@@ -277,6 +276,86 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
     contentType: "application/json",
   });
   expect(runtimeErrors).toEqual([]);
+});
+
+test("feed navigation jumps to the top and refreshes only the first page", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const requests: string[] = [];
+  await page.route("**/api/posts?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const cursor = params.get("cursor");
+    requests.push(`${params.get("feed")}:${cursor ?? "first"}`);
+    return route.fulfill({ json: cursor
+      ? { items: posts.slice(12, 24), nextCursor: null }
+      : { items: posts.slice(0, 12), nextCursor: "next" } });
+  });
+  await page.goto(origin);
+  const tab = page.getByRole("tab", { name: "Все записи" });
+  const cards = page.locator("article.feed-post");
+  await tab.click();
+  await expect(cards).toHaveCount(12);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(cards).toHaveCount(24);
+
+  const feedLink = page.getByRole("link", { name: "Лента", exact: true }).filter({ visible: true });
+  const requestCount = requests.length;
+  expect(await feedLink.evaluate((link: HTMLAnchorElement) => {
+    if (window.scrollY < 100) throw new Error("Expected a scrolled feed");
+    link.click();
+    return window.scrollY;
+  })).toBe(0);
+  await expect.poll(() => requests.slice(requestCount)).toEqual(["all:first"]);
+  await expect(cards).toHaveCount(12);
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+
+  expect(await tab.evaluate((button: HTMLButtonElement) => {
+    window.scrollTo(0, 600);
+    button.click();
+    return window.scrollY;
+  })).toBe(0);
+  await expect.poll(() => requests.slice(requestCount)).toEqual(["all:first", "all:first"]);
+});
+
+test("Firefox keeps the Aero title bar stable while the feed scrolls", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "firefox");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.goto(origin);
+  await expect(page.locator("article.feed-post").first()).toBeVisible();
+  const chrome = page.locator(".aero-window-chrome");
+  await expect(chrome).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const bar = (await chrome.locator(":scope > .aero-titlebar").boundingBox())!;
+  // Sample the same viewport pixels inside the glass, away from its borders and buttons.
+  const clip = {
+    x: Math.ceil(bar.x) + 4,
+    y: Math.ceil(bar.y) + 4,
+    width: Math.floor(bar.width) - 114,
+    height: Math.floor(bar.height) - 8,
+  };
+  // Firefox can round a locator screenshot's crop differently when sticky.
+  // Read the same coordinates from the full viewport instead.
+  const sampleGlass = async () => page.evaluate(async ({ png, clip }) => {
+    const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const canvas = new OffscreenCanvas(clip.width, clip.height);
+    const context = canvas.getContext("2d")!;
+    context.drawImage(bitmap, -clip.x, -clip.y);
+    bitmap.close();
+    return Array.from(context.getImageData(0, 0, clip.width, clip.height).data);
+  }, { png: (await page.screenshot({ scale: "css" })).toString("base64"), clip });
+  const atTop = await sampleGlass();
+
+  await page.mouse.move(200, 400);
+  for (const delta of [2400, -950, 1800]) {
+    const before = await page.evaluate(() => window.scrollY);
+    await page.mouse.wheel(0, delta);
+    await expect.poll(async () => Math.abs(await page.evaluate(() => window.scrollY) - before)).toBeGreaterThan(200);
+    const scrolled = await sampleGlass();
+    const changed = scrolled.filter((channel, index) => Math.abs(channel - atTop[index]!) > 12);
+    expect(changed.length / atTop.length, `title bar after scrolling ${delta}px`).toBeLessThan(0.01);
+  }
+  await info.attach("firefox-scrolled-header", { body: await page.screenshot(), contentType: "image/png" });
 });
 
 for (const failure of ["offline", "rate-limited", "unavailable"] as const) {
@@ -367,9 +446,7 @@ test("ordinary API failure stays on the page without reloading", async ({ page }
   expect(navigations).toBe(1);
 });
 
-test("a failed route preserves the global player until an explicit reload", async ({ page }) => {
-  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
-  await installFixtures(page, origin);
+async function installMusicFixture(page: Page, origin: string) {
   // The real audio element plays a fixture signal with no network or media dependencies.
   const frameCount = 8000 * 30;
   const wav = Buffer.alloc(44 + frameCount, 128);
@@ -377,8 +454,28 @@ test("a failed route preserves the global player until an explicit reload", asyn
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(8000, 28);
   wav.writeUInt16LE(1, 32); wav.writeUInt16LE(8, 34); wav.write("data", 36); wav.writeUInt32LE(frameCount, 40);
-  await page.route("**/api/music/track-0/play", (route) => route.fulfill({ json: { url: `${origin}/fixture.wav` } }));
-  await page.route("**/fixture.wav", (route) => route.fulfill({ contentType: "audio/wav", body: wav }));
+  await page.route(/\/api\/music\/track-[012]\/play$/, (route) => route.fulfill({ json: { url: `${origin}/fixture.wav` } }));
+  await page.route(/\/api\/music\/track-[012]\/library$/, (route) => route.fulfill({ json: { added: false } }));
+  await page.route("**/fixture.wav", (route) => {
+    const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
+    const headers = { "Accept-Ranges": "bytes" };
+    if (!range) return route.fulfill({ contentType: "audio/wav", headers, body: wav });
+    const start = Number(range[1]);
+    const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+    if (start > end) return route.fulfill({ status: 416, headers: { ...headers, "Content-Range": `bytes */${wav.length}` } });
+    return route.fulfill({
+      status: 206,
+      contentType: "audio/wav",
+      headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${wav.length}` },
+      body: wav.subarray(start, end + 1),
+    });
+  });
+}
+
+test("a failed route preserves the global player until an explicit reload", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
   await page.route(musicChunk, (route) => route.fulfill({ status: 404 }));
   await page.goto(origin);
   await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
@@ -389,7 +486,7 @@ test("a failed route preserves the global player until an explicit reload", asyn
     await page.getByRole("button", { name: "Открыть меню", exact: true }).filter({ visible: true }).first().click();
   }
   await page.getByRole("link", { name: "Музыка", exact: true }).filter({ visible: true }).first().click();
-  await expect(page.getByText("Обновление страницы остановит плеер.")).toBeVisible();
+  await expect(page.getByText("После обновления страницы плеер восстановит очередь.")).toBeVisible();
   await expect(player.getByRole("button", { name: "Пауза", exact: true })).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem("bubble_chunk_reloaded_at"))).toBeNull();
   await Promise.all([
@@ -397,6 +494,70 @@ test("a failed route preserves the global player until an explicit reload", asyn
     page.getByRole("button", { name: "Обновить страницу" }).click(),
   ]);
   await expect(page.getByRole("heading", { name: "Страница не загрузилась" })).toBeVisible();
+  await expect(player.getByText("Исполнитель — Тестовый трек", { exact: true })).toBeVisible();
+});
+
+test("the player restores the queue and position after reload", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.addInitScript(() => {
+    // Block only the first automatic play attempt in the restored document.
+    if (sessionStorage.getItem("test-block-autoplay") !== "1") return;
+    sessionStorage.removeItem("test-block-autoplay");
+    const play = HTMLMediaElement.prototype.play;
+    let firstAttempt = true;
+    HTMLMediaElement.prototype.play = function () {
+      if (!firstAttempt) return play.call(this);
+      firstAttempt = false;
+      return Promise.reject(new DOMException("Autoplay blocked", "NotAllowedError"));
+    };
+  });
+  const attachments = posts.slice(0, 3).map((post, index) => ({
+    ...post.musicAttachments[0]!, title: `Трек ${index + 1}`, duration: 30,
+  }));
+  await page.route("**/api/posts?*", (route) => route.fulfill({
+    json: { items: [{ ...posts[0], musicAttachments: attachments }], nextCursor: null },
+  }));
+  await page.goto(origin);
+  await page.getByRole("button", { name: "Воспроизвести Трек 2", exact: true }).click();
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  const pause = player.getByRole("button", { name: "Пауза", exact: true });
+  const play = player.getByRole("button", { name: "Воспроизвести", exact: true });
+  const position = player.getByRole("slider", { name: "Позиция воспроизведения" });
+  await expect(pause).toBeVisible();
+  await expect.poll(() => position.inputValue().then(Number)).toBeGreaterThan(3);
+  await player.getByRole("button", { name: "Перемешивание" }).click();
+  await player.getByRole("button", { name: "Повтор выключен" }).click();
+  await page.evaluate(() => sessionStorage.setItem("test-block-autoplay", "1"));
+  const savedPosition = Number(await position.inputValue());
+
+  const newUrl = page.waitForResponse("**/api/music/track-1/play");
+  await page.reload();
+  await newUrl;
+  await expect(play).toBeEnabled();
+  await expect(player.getByRole("alert")).toHaveCount(0);
+  await expect.poll(async () => Math.abs(Number(await position.inputValue()) - savedPosition)).toBeLessThan(1);
+  await expect(player.getByRole("button", { name: "Повтор всего списка" })).toBeVisible();
+  await expect(player.getByRole("button", { name: "Перемешивание" })).toHaveAttribute("aria-pressed", "true");
+  await player.getByRole("button", { name: "Показать очередь" }).click();
+  const titles = player.locator(".music-player__queue-title");
+  await expect(titles).toHaveCount(3);
+  await expect(titles.first()).toHaveText("Исполнитель — Трек 2");
+  await player.getByRole("button", { name: "Перемешивание" }).click();
+  await expect(titles).toHaveText(["Исполнитель — Трек 1", "Исполнитель — Трек 2", "Исполнитель — Трек 3"]);
+  await play.click();
+  await expect(pause).toBeVisible();
+  await player.getByRole("button", { name: "Следующий трек" }).click();
+  await expect(player.locator(".music-player__title")).toHaveText("Исполнитель — Трек 3");
+  await expect(pause).toBeVisible();
+  await pause.click();
+  await page.reload();
+  await expect(player.locator(".music-player__title")).toHaveText("Исполнитель — Трек 3");
+  await expect(play).toBeEnabled();
+  await player.getByRole("button", { name: "Закрыть плеер" }).click();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Воспроизвести Трек 2", exact: true })).toBeVisible();
   await expect(player).toHaveCount(0);
 });
 

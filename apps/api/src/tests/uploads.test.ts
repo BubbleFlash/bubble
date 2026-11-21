@@ -124,10 +124,17 @@ describe("POST /api/uploads", () => {
     expect(storage.uploadObject).not.toHaveBeenCalled();
   });
 
-  it("rejects files over 4 MB", async () => {
+  it("accepts a GIF larger than 4 MB up to the 10 MB limit", async () => {
+    const image = Buffer.concat([gif, Buffer.alloc(10 * 1024 * 1024 - gif.length)]);
+    const res = await request(app).post("/api/uploads").set(auth).attach("file", image, "large.gif");
+    expect(res.status).toBe(201);
+    expect(storage.uploadObject).toHaveBeenCalled();
+  });
+
+  it("rejects files over 10 MB", async () => {
     const big = Buffer.concat([
       png,
-      Buffer.alloc(4 * 1024 * 1024),
+      Buffer.alloc(10 * 1024 * 1024),
     ]);
 
     const res = await request(app)
@@ -136,7 +143,7 @@ describe("POST /api/uploads", () => {
       .attach("file", big, "big.png");
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/4 MB/);
+    expect(res.body.error).toMatch(/10 MB/);
     expect(storage.uploadObject).not.toHaveBeenCalled();
   });
 

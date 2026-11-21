@@ -16,6 +16,8 @@ import SearchBox from "./SearchBox";
 import NotificationMenu from "./NotificationMenu";
 import ReportMenu from "./ReportMenu";
 import { navigationFor } from "../lib/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { openFeed } from "../lib/feedNavigation";
 
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
 export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/confirm-email-change"];
@@ -27,6 +29,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
   minimal?: boolean;
 }) {
   const { user, logout } = useAuth();
+  const queryClient = useQueryClient();
   const { pathname } = useLocation();
   const confirmLogout = () => {
     if (window.confirm("Вы уверены, что хотите выйти из аккаунта?")) void logout();
@@ -65,7 +68,10 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
 
   const navClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? " active" : ""}`;
   const item = (to: string, icon: IconName, label: string, extra?: ReactNode, end = false) => (
-    <NavLink to={to} end={end} className={navClass} onClick={() => setOpen(false)}>
+    <NavLink to={to} end={end} className={navClass} onClick={(event) => {
+      setOpen(false);
+      if (user && to === "/") openFeed(event, queryClient, pathname);
+    }}>
       <NavigationIcon name={icon} size={20} />
       {label}
       {extra}
