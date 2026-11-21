@@ -58,7 +58,7 @@ export const uploadUrlSchema = z
   .regex(/^\/uploads\/[a-f0-9]{32}\.(png|jpg|gif|webp)$/, "Invalid image reference");
 
 /** Largest image the API accepts. Stays under the 4.5 MB request limit of Vercel functions. */
-export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 /** Largest photo a person may pick; the app shrinks it before uploading. */
 export const MAX_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;

@@ -128,7 +128,7 @@ function CommunityView({ slug }: { slug: string }) {
           {team.isError && <p className="error">Не удалось загрузить управляющих. <button className="btn btn-ghost" onClick={() => void team.refetch()}>Повторить</button></p>}
           <div className="community-team">
             {team.data?.pages.flatMap((page) => page.items).map((person) => <Link className="community-team__person" key={person.id} to={`/u/${person.username}`}>
-              <Avatar username={person.username} displayName={person.displayName ?? undefined} url={person.avatarUrl} size={48} />
+              <Avatar username={person.username} displayName={person.displayName ?? undefined} url={person.avatarUrl} size={48} trackOnline />
               <span><strong>{person.displayName || person.username}</strong><small className="muted">{person.note || COMMUNITY_ROLES[person.role]}</small></span>
             </Link>)}
           </div>

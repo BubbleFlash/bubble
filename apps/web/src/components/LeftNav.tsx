@@ -9,6 +9,7 @@ import type { IconName } from "./Icon";
 import NavigationIcon from "./NavigationIcon";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
+import { openFeed } from "../lib/feedNavigation";
 
 /** Left column for members on wide screens: brand and primary navigation. */
 export default function LeftNav() {
@@ -28,7 +29,7 @@ export default function LeftNav() {
   const link = (to: string, icon: IconName, label: string, count = 0, end = false) => (
     <NavLink
       to={to}
-      onClick={() => { if (to === "/" && location.pathname === "/") { void qc.invalidateQueries({ queryKey: ["feed", "all"] }); void qc.invalidateQueries({ queryKey: ["feed", "following"] }); } }}
+      onClick={to === "/" ? (event) => openFeed(event, qc, location.pathname) : undefined}
       onPointerEnter={() => prefetchRoute(to)}
       onTouchStart={() => prefetchRoute(to)}
       onFocus={() => prefetchRoute(to)}

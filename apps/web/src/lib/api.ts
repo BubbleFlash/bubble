@@ -276,7 +276,7 @@ export async function api<T>(
       "Invalid JSON": "Не удалось обработать запрос.",
       "Invalid request": "Не удалось обработать запрос.",
       "Invalid or expired access token": "Срок сеанса истёк. Войдите снова.",
-      "Image must be 4 MB or smaller": "Размер изображения не должен превышать 4 МБ.",
+      "Image must be 10 MB or smaller": "Размер изображения не должен превышать 10 МБ.",
       "Too many requests, slow down.": "Слишком много запросов. Попробуйте позже.",
       "Too many attempts, try again later.": "Слишком много попыток. Попробуйте позже.",
     };

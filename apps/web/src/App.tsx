@@ -328,6 +328,9 @@ export default function App() {
     return () => observer.disconnect();
   }, [projectLanding]);
   useLayoutEffect(() => {
+    // Firefox uses the stationary wallpaper mask. Clipping the full feed on every
+    // scroll frame can leave a gap while its compositor moves the sticky header.
+    if (CSS.supports("-moz-appearance", "none")) return;
     const home = homeRef.current;
     const chrome = chromeRef.current;
     const content = home?.querySelector<HTMLElement>(".aero-window > .shell");

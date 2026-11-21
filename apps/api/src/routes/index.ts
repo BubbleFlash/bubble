@@ -223,6 +223,7 @@ router.get(
   asyncHandler(publicApi.listPosts),
 );
 router.get("/public/posts/:id", publicLimiter, asyncHandler(publicApi.getPost));
+router.get("/profile-presence", requireAuth, publicLimiter, asyncHandler(users.onlineProfiles));
 
 // Uploads (auth and rate limit run before the file is parsed)
 router.post(
