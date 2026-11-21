@@ -98,6 +98,28 @@
 .aero-home .guest-access .auth--compact { margin: 0; padding: 12px; border: 0; box-shadow: none; background: transparent; gap: 10px; }
 .guest-access .auth--compact label, .guest-access .auth--compact input { min-width: 0; width: 100%; box-sizing: border-box; }
 .guest-access .auth--compact p { margin: 0; }
+.auth-confirmation-email { font-weight: 700; overflow-wrap: anywhere; }
+.auth-captcha {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--aero-color-border);
+  border-radius: var(--aero-radius-control);
+  background: var(--aero-color-notice-surface);
+}
+.auth-captcha img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--aero-color-border-strong);
+  border-radius: var(--aero-radius-control);
+}
+.auth-captcha__image-row { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+.auth-captcha__image-row img { min-width: 0; flex: 0 1 200px; }
+.auth-captcha__refresh { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
+.material-symbols-rounded { font-family: 'Material Symbols Rounded'; font-weight: normal; font-style: normal; font-size: 24px; line-height: 1; letter-spacing: normal; text-transform: none; white-space: nowrap; word-wrap: normal; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; }
 .aero-home .auth-flow .auth { margin: 0; padding: 14px; border: 0; box-shadow: none; background: transparent; gap: 10px; }
 .auth-flow .auth h1 { font-size: 1.15rem; }
 .auth-flow .auth label, .auth-flow .auth input { min-width: 0; width: 100%; box-sizing: border-box; }
@@ -579,6 +601,19 @@ html[data-aero-no-scroll]:has(.aero-home)::-webkit-scrollbar-thumb {
   .aero-app.aero-home { box-shadow: none; }
   .aero-home .aero-fixed-frame::before { backdrop-filter: none; -webkit-backdrop-filter: none; }
   .aero-home :is(.feed-tabs, .bottom-nav) { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  /* Keep the header edge covered during compositor scrolling and fractional zoom. */
+  .aero-home .aero-window-chrome {
+    background-color: var(--aero-color-canvas);
+    border-radius: 8px 8px 0 0;
+  }
+  .aero-home .aero-window-chrome::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 -1px;
+    height: 1px;
+    background: var(--aero-color-header-border);
+    pointer-events: none;
+  }
   /* Keep the scrolling surface opaque while reducing overlapping paint layers. */
   .aero-home .shell { background: var(--aero-gradient-panel); background-color: var(--aero-color-canvas); }
 }

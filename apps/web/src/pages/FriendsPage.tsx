@@ -6,7 +6,6 @@ import { Link, useParams } from "react-router-dom";
 import type { UserSummaryDTO } from "@commune/shared";
 import Avatar from "../components/Avatar";
 import PlusBadge from "../components/PlusBadge";
-import OnlineStatus from "../components/OnlineStatus";
 import {
   useFriendRequests,
   useFriends,
@@ -37,9 +36,8 @@ function PersonRow({ person, tab, isMe }: { person: UserSummaryDTO; tab: Tab; is
   return (
     <div className="card person friend-list-row">
       <Link className="friend-person-link" to={`/u/${encodeURIComponent(person.username)}`}>
-        <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={44} />
+        <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={44} trackOnline online={person.online} />
         <strong>{displayNameOf(person)}</strong>
-        <OnlineStatus online={person.online} />
         <PlusBadge plus={person.plus} />
       </Link>
       {isMe && tab !== "people" && (

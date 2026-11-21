@@ -6,6 +6,7 @@ export interface RepostOption {
   name: string;
   username: string;
   avatarUrl?: string | null;
+  online?: boolean;
 }
 
 export default function RepostSelect({ label, options, value, onChange, searchable = false }: {
@@ -34,7 +35,7 @@ export default function RepostSelect({ label, options, value, onChange, searchab
   return <div className="repost-dialog__field repost-select" ref={root}>
     <span>{label}</span>
     <div className="repost-select__control">
-      {selected && <Avatar username={selected.username} displayName={selected.name} url={selected.avatarUrl} size={28} preview />}
+      {selected && <Avatar username={selected.username} displayName={selected.name} url={selected.avatarUrl} size={28} preview online={selected.online} />}
       {searchable && open ? <input ref={input} aria-label={label} role="combobox" aria-expanded="true" aria-controls={listId} autoComplete="off" placeholder="Найти диалог" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => {
         if (event.key === "Escape") { event.stopPropagation(); setOpen(false); setSearch(""); }
         if (event.key === "Enter" && matches.length) { event.preventDefault(); onChange(matches[0]!.value); setOpen(false); setSearch(""); }
@@ -55,7 +56,7 @@ export default function RepostSelect({ label, options, value, onChange, searchab
       }
     }}>
       {matches.map((item) => <button type="button" role="option" aria-selected={item.value === value} key={item.value} onClick={() => { onChange(item.value); setOpen(false); setSearch(""); }}>
-        <Avatar username={item.username} displayName={item.name} url={item.avatarUrl} size={28} preview />
+        <Avatar username={item.username} displayName={item.name} url={item.avatarUrl} size={28} preview online={item.online} />
         <span>{item.name}</span>
       </button>)}
       {!matches.length && <p className="muted">Ничего не найдено.</p>}

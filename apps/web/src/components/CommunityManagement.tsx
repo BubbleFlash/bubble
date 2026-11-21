@@ -266,7 +266,7 @@ function MemberList({ community, scope, onTransferred }: {
         {rows.map((member) => (
           <li key={member.id}>
             <div className="community-management__identity">
-              <Avatar username={member.username} displayName={member.displayName ?? undefined} url={member.avatarUrl} size={36} />
+              <Avatar username={member.username} displayName={member.displayName ?? undefined} url={member.avatarUrl} size={36} trackOnline />
               <span>
                 <Link to={`/u/${member.username}`}>{displayNameOf(member)}</Link>
                 <small className="muted">@{member.username} · {COMMUNITY_ROLES[member.role]}</small>

@@ -62,6 +62,7 @@ const userSchema = new Schema(
     // against the clock, so access ends on time even if a cancellation webhook is missed.
     plusUntil: { type: Date, default: null },
     emailVerified: { type: Boolean, default: false },
+    registrationPending: { type: Boolean, default: false },
     // Which push notifications this person wants (they can still be turned off per device).
     pushMessages: { type: Boolean, default: true },
     pushSocial: { type: Boolean, default: true },

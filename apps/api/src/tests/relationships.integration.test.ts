@@ -80,6 +80,16 @@ integration("relationships with isolated local MongoDB", () => {
     await Follow.deleteMany({ $or: [{ follower: owner, following: { $in: [viewer, third] } }, { follower: third, following: owner }] });
   });
 
+  it("looks up avatar presence in one authenticated request", async () => {
+    const presence = vi.spyOn(realtime, "onlineUsers").mockResolvedValue(new Set([String(owner)]));
+    const path = "/api/profile-presence?usernames=OWNER,missing_profile";
+    expect((await request(app).get(path)).status).toBe(401);
+    const result = await request(app).get(path).set(auth);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ online: ["owner"] });
+    expect(presence.mock.calls).toEqual([[[String(owner)]]]);
+  });
+
   it("stores hidden events and restores them when enabled, with category-specific read state", async () => {
     const recipient = third.toString();
     const authorization = { Authorization: `Bearer ${signAccessToken(recipient)}` };

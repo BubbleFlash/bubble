@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  accountActionRules,
+  maxChatCreateLimit,
   maxRateLimitWindowSeconds,
   rateLimitDefaults,
   rateLimitNames,
@@ -18,7 +20,7 @@ const ruleLabels: Record<RateLimitName, string> = {
   "refresh-lookup-ip": "Восстановление сеанса: проверка cookie",
   "refresh-ip": "Восстановление сеанса без действительной cookie",
   "refresh-account": "Восстановление сеанса по аккаунту",
-  auth: "Вход, регистрация и действия с аккаунтом",
+  auth: "Вход и действия с аккаунтом",
   email: "Запросы на отправку писем",
   search: "Поиск людей и записей",
   public: "Публичные страницы по IP",
@@ -28,8 +30,10 @@ const ruleLabels: Record<RateLimitName, string> = {
   upload: "Загрузка файлов",
   report: "Жалобы",
   "community-create": "Создание сообществ",
-  message: "Отправка, правка и удаление сообщений",
-  "chat-create": "Создание переписок",
+  "post-create": "Публикации и репосты",
+  "comment-create": "Комментарии и ответы",
+  message: "Отправка личных сообщений",
+  "chat-create": "Начало новых переписок",
   "messages-read": "Отметка сообщений прочитанными",
   push: "Настройки push-уведомлений",
   "push-test": "Тестовые push-уведомления",
@@ -38,15 +42,21 @@ const ruleLabels: Record<RateLimitName, string> = {
   "client-error": "Отчёты об ошибках браузера",
   "client-network": "Отчёты о сетевых сбоях",
 };
+const actionRules = new Set<RateLimitName>(accountActionRules);
+const windowUnits = { seconds: 1, minutes: 60, hours: 3600 };
+type WindowUnit = keyof typeof windowUnits;
 
 function RuleEditor({ name, rule }: { name: RateLimitName; rule: RateLimitRule }) {
   const client = useQueryClient();
   const defaults = rateLimitDefaults[name];
-  const [draft, setDraft] = useState<{ enabled: boolean; limit: string; windowSeconds: string }>();
+  const isAction = actionRules.has(name);
+  const unit = isAction && rule.windowSeconds % 3600 === 0 ? "hours" : isAction && rule.windowSeconds % 60 === 0 ? "minutes" : "seconds";
+  const [draft, setDraft] = useState<{ enabled: boolean; limit: string; window: string; unit: WindowUnit }>();
   const values = draft ?? {
     enabled: rule.enabled,
     limit: String(rule.limit),
-    windowSeconds: String(rule.windowSeconds),
+    window: String(rule.windowSeconds / windowUnits[unit]),
+    unit,
   };
   const save = useMutation({
     mutationFn: (body: RateLimitRule) => api<RateLimitRule>(`${path}/${name}`, { method: "PUT", body }),
@@ -63,7 +73,7 @@ function RuleEditor({ name, rule }: { name: RateLimitName; rule: RateLimitRule }
   return (
     <form className="moderation-action" onSubmit={(event) => {
       event.preventDefault();
-      save.mutate({ enabled: values.enabled, limit: Number(values.limit), windowSeconds: Number(values.windowSeconds) });
+      save.mutate({ enabled: values.enabled, limit: Number(values.limit), windowSeconds: Number(values.window) * windowUnits[values.unit] });
     }}>
       <label>
         <span className="row">
@@ -77,22 +87,31 @@ function RuleEditor({ name, rule }: { name: RateLimitName; rule: RateLimitRule }
         </span>
       </label>
       <label>
-        Запросов за окно
+        {isAction ? "Действий за период" : "Запросов за период"}
         <input
-          type="number" min={1} step={1} required
+          type="number" min={1} max={name === "chat-create" ? maxChatCreateLimit : undefined} step={1} required
           value={values.limit} disabled={save.isPending}
           onChange={(event) => setDraft({ ...values, limit: event.target.value })}
         />
       </label>
       <label>
-        Окно (секунды)
+        {isAction ? "Период" : "Период (секунды)"}
         <input
-          type="number" min={1} max={maxRateLimitWindowSeconds} step={1} required
-          value={values.windowSeconds} disabled={save.isPending}
-          onChange={(event) => setDraft({ ...values, windowSeconds: event.target.value })}
+          type="number" min={1} max={Math.floor(maxRateLimitWindowSeconds / windowUnits[values.unit])} step={1} required
+          value={values.window} disabled={save.isPending}
+          onChange={(event) => setDraft({ ...values, window: event.target.value })}
         />
       </label>
-      <p className="muted small">Исходный порог — {defaults.limit} запросов за {defaults.windowSeconds} с.</p>
+      {isAction && <label>
+        Единица периода
+        <select value={values.unit} disabled={save.isPending}
+          onChange={(event) => setDraft({ ...values, unit: event.target.value as WindowUnit })}>
+          <option value="seconds">Секунды</option>
+          <option value="minutes">Минуты</option>
+          <option value="hours">Часы</option>
+        </select>
+      </label>}
+      <p className="muted small">Исходный порог — {defaults.limit} за {defaults.windowSeconds / 60} мин.</p>
       <button className="btn" disabled={!draft || save.isPending}>
         {save.isPending ? "Сохранение…" : "Сохранить правило"}
       </button>
@@ -104,21 +123,21 @@ function RuleEditor({ name, rule }: { name: RateLimitName; rule: RateLimitRule }
 
 export default function RateLimitSettings() {
   const client = useQueryClient();
-  const [selected, setSelected] = useState<RateLimitName>("global-ip");
+  const [selected, setSelected] = useState<RateLimitName>("post-create");
   const settings = useQuery({ queryKey, queryFn: () => api<RateLimitSettingsDTO>(path), retry: false });
   const data = settings.data;
   const save = useMutation({
-    mutationFn: (enabled: boolean) => api<Pick<RateLimitSettingsDTO, "enabled">>(path, { method: "PUT", body: { enabled } }),
+    mutationFn: ({ enabled, captcha }: { enabled: boolean; captcha?: boolean }) =>
+      api<Partial<Pick<RateLimitSettingsDTO, "enabled" | "captchaEnabled">>>(captcha ? `${path}/captcha` : path, { method: "PUT", body: { enabled } }),
     onMutate: () => client.cancelQueries({ queryKey }),
-    onSuccess: ({ enabled }) => {
-      client.setQueryData<RateLimitSettingsDTO>(queryKey, (current) => current && { ...current, enabled });
+    onSuccess: (result) => {
+      client.setQueryData<RateLimitSettingsDTO>(queryKey, (current) => current && { ...current, ...result });
     },
   });
 
   return (
     <section className="card moderation-card">
-      <h2>Лимиты запросов</h2>
-      <p>Общий переключатель включает выбранные правила. Редактировать их можно в любом режиме.</p>
+      <h2>Лимиты и защита от спама</h2>
       {settings.isPending && <p role="status">Загрузка…</p>}
       {settings.isLoadingError && (
         <>
@@ -128,25 +147,38 @@ export default function RateLimitSettings() {
       )}
       {data && (
         <>
-          <p role="status">{data.enabled ? "Лимиты включены." : "Лимиты выключены."}</p>
+          <p role="status">{data.enabled ? "Общие лимиты API включены." : "Общие лимиты API выключены."}</p>
           <button
             className="btn"
             disabled={save.isPending}
-            onClick={() => save.mutate(!data.enabled)}
+            onClick={() => save.mutate({ enabled: !data.enabled })}
           >
-            {save.isPending ? "Сохранение…" : data.enabled ? "Выключить лимиты" : "Включить лимиты"}
+            {data.enabled ? "Выключить общие лимиты" : "Включить общие лимиты"}
           </button>
+          <p>Лимиты действий по аккаунту включаются в каждом правиле отдельно.</p>
           {save.isError && <p className="error" role="alert">Не удалось сохранить настройку.</p>}
           <label>
             Правило API
             <select value={selected} onChange={(event) => setSelected(event.target.value as RateLimitName)}>
-              {rateLimitNames.map((name) => (
-                <option key={name} value={name}>{ruleLabels[name]}{data.rules[name].enabled ? "" : " (выкл.)"}</option>
-              ))}
+              <optgroup label="Действия по аккаунту">
+                {accountActionRules.map((name) => (
+                  <option key={name} value={name}>{ruleLabels[name]}{data.rules[name].enabled ? "" : " (выкл.)"}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Общие правила API">
+                {rateLimitNames.filter((name) => !actionRules.has(name)).map((name) => (
+                  <option key={name} value={name}>{ruleLabels[name]}{data.rules[name].enabled ? "" : " (выкл.)"}</option>
+                ))}
+              </optgroup>
             </select>
           </label>
-          <p className="muted small">Один запрос может учитываться в общем лимите и в правиле для действия.</p>
           <RuleEditor key={selected} name={selected} rule={data.rules[selected]} />
+          <h3>Капча при регистрации по почте</h3>
+          <p role="status">{data.captchaEnabled ? "Капча включена." : "Капча выключена."}</p>
+          <button type="button" className="btn" disabled={save.isPending}
+            onClick={() => save.mutate({ enabled: !data.captchaEnabled, captcha: true })}>
+            {data.captchaEnabled ? "Выключить капчу" : "Включить капчу"}
+          </button>
         </>
       )}
     </section>

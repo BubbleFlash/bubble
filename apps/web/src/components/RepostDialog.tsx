@@ -121,7 +121,7 @@ export default function RepostDialog({ source, onClose, onSuccess }: {
           )}
           {destination === "message" && (
             <>
-              <RepostSelect label="Диалог" searchable value={recipient} onChange={setRecipient} options={(conversations.data ?? []).map((item) => ({ value: item.id, username: item.other.username, name: displayNameOf(item.other), avatarUrl: item.other.avatarUrl }))} />
+              <RepostSelect label="Диалог" searchable value={recipient} onChange={setRecipient} options={(conversations.data ?? []).map((item) => ({ value: item.id, username: item.other.username, name: displayNameOf(item.other), avatarUrl: item.other.avatarUrl, online: item.other.online ?? false }))} />
               {conversations.isLoading && <p role="status">Загрузка диалогов…</p>}
               {conversations.isError && <p role="alert" className="error">{conversations.error.message}</p>}
               {conversations.isSuccess && !conversations.data.length && <p className="muted">Диалогов пока нет.</p>}

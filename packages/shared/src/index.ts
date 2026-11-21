@@ -12,7 +12,13 @@ export const registerSchema = z.object({
   username: usernameSchema,
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8).max(128),
+  captcha: z.object({
+    id: z.string().regex(/^[a-f0-9]{48}$/),
+    answer: z.string().trim().max(24),
+  }).optional(),
 });
+
+export type RegistrationCaptcha = { required: false } | { required: true; id: string; image: string };
 
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -850,7 +856,6 @@ export interface TypingEvent {
   typing: boolean;
 }
 export interface PresenceEvent {
-  conversationId: string;
   userId: string;
   online: boolean;
 }

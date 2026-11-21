@@ -6,6 +6,7 @@ import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
 import { notificationLabels, notificationTarget, notificationText } from "../lib/notifications";
 import { timeAgo } from "./PostCard";
 import { RowsSkeleton } from "./Skeleton";
+import Avatar from "./Avatar";
 
 export default function NotificationList({ compact, onItems, onSelect }: {
   compact?: boolean;
@@ -63,7 +64,10 @@ export default function NotificationList({ compact, onItems, onSelect }: {
             aria-description={item.read ? "Прочитано" : "Не прочитано"}
             onClick={(event) => onSelect?.(item, event)}
           >
-            <span><strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}</span>
+            <span className="row">
+              <Avatar username={item.actor.username} displayName={item.actor.displayName} size={24} trackOnline />
+              <span><strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}</span>
+            </span>
             <time className="muted small" dateTime={item.createdAt}>{timeAgo(item.createdAt)}</time>
           </Link>
         ))}

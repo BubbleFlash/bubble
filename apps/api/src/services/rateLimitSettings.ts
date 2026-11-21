@@ -6,7 +6,7 @@ import { RateLimitSettings, type StoredRateLimitRules } from "../models/RateLimi
 
 const settingsId = "rate-limits";
 const cacheMs = 5_000;
-const defaultPolicy = { enabled: false, revision: "", rules: {} as StoredRateLimitRules };
+const defaultPolicy = { enabled: false, revision: "", captchaRevision: null as string | null, rules: {} as StoredRateLimitRules };
 let lastKnown = defaultPolicy;
 let cached: { expiresAt: number; value: Promise<typeof defaultPolicy> } | undefined;
 
@@ -14,7 +14,12 @@ export async function readRateLimitSettings() {
   const row = await RateLimitSettings.findById(settingsId)
     .setOptions({ timeoutMS: 1_000 })
     .lean();
-  return row ? { enabled: row.enabled, revision: row.revision, rules: row.rules ?? {} } : defaultPolicy;
+  return row ? {
+    enabled: row.enabled,
+    revision: row.revision,
+    captchaRevision: row.captchaRevision ?? null,
+    rules: row.rules ?? {},
+  } : defaultPolicy;
 }
 
 export function rateLimitPolicy(): Promise<typeof defaultPolicy> {
@@ -44,6 +49,14 @@ export function saveRateLimitSettings(enabled: boolean) {
   return updateSettings({
     enabled,
     revision: { $cond: [{ $eq: ["$enabled", enabled] }, "$revision", randomUUID()] },
+  });
+}
+
+export function saveCaptchaSettings(enabled: boolean) {
+  return updateSettings({
+    enabled: { $ifNull: ["$enabled", false] },
+    revision: { $ifNull: ["$revision", ""] },
+    captchaRevision: enabled ? { $ifNull: ["$captchaRevision", randomUUID()] } : null,
   });
 }
 

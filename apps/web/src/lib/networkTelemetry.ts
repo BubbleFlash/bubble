@@ -64,13 +64,13 @@ function enqueue(base: string, event: Omit<ClientNetworkEvent, "at">) {
   schedule(1500);
 }
 
-export function retrySeconds(response: Response) {
+export function retrySeconds(response: Response, maxSeconds = 86_400) {
   const header = response.headers.get("Retry-After");
   if (!header) return undefined;
   const seconds = /^\d+$/.test(header)
     ? Number(header)
     : Math.ceil((Date.parse(header) - Date.now()) / 1000);
-  return Number.isFinite(seconds) ? Math.min(Math.max(0, seconds), 86_400) : undefined;
+  return Number.isFinite(seconds) ? Math.min(Math.max(0, seconds), maxSeconds) : undefined;
 }
 
 export async function observeFetch(
