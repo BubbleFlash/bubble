@@ -12,6 +12,8 @@ export function usableAccountFilter(prefix = "") {
   const until = prefix + "accountRestriction.until";
   return {
     [prefix + "banned"]: { $ne: true },
+    [prefix + "deletionExpiresAt"]: null,
+    [prefix + "anonymizedAt"]: null,
     $nor: [{ [reason]: { $type: "string" }, $or: [{ [until]: null }, { [until]: { $gt: new Date() } }] }],
   };
 }

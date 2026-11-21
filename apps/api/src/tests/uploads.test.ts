@@ -16,6 +16,7 @@ const storage = vi.hoisted(() => ({
   uploadObject: vi.fn(),
   getObject: vi.fn(),
   deleteObject: vi.fn(),
+  createDownloadUrl: vi.fn(),
 }));
 
 vi.mock("../services/storageService.js", () => storage);
@@ -25,11 +26,13 @@ import { User } from "../models/User.js";
 import { Community } from "../models/Community.js";
 import { Wallpaper } from "../models/Wallpaper.js";
 import { createApp } from "../app.js";
+import { env } from "../config/env.js";
 import { detectImageType } from "../utils/images.js";
 import { signAccessToken } from "../utils/tokens.js";
 import { mockUser } from "./helpers.js";
 
 const app = createApp();
+const originalDelivery = { direct: env.S3_DIRECT_IMAGES, endpoint: env.S3_PUBLIC_ENDPOINT };
 
 const auth = {
   Authorization: `Bearer ${signAccessToken("507f1f77bcf86cd799439011")}`,
@@ -59,10 +62,13 @@ const webp = Buffer.concat([
 ]);
 
 beforeEach(() => {
+  env.S3_DIRECT_IMAGES = false;
   mockUser({ role: "user", banned: false });
 });
 
 afterEach(() => {
+  env.S3_DIRECT_IMAGES = originalDelivery.direct;
+  env.S3_PUBLIC_ENDPOINT = originalDelivery.endpoint;
   vi.clearAllMocks();
 });
 
@@ -163,6 +169,7 @@ describe("POST /api/uploads", () => {
       },
       ContentType: "image/png",
       ContentLength: png.length,
+      ETag: '"image-v1"',
     });
 
     const res = await request(app).get(
@@ -172,6 +179,8 @@ describe("POST /api/uploads", () => {
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/image\/png/);
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["cache-control"]).toBe("private, no-cache");
+    expect(res.headers.etag).toBe('"image-v1"');
     expect(Buffer.compare(res.body, png)).toBe(0);
 
     expect(storage.getObject).toHaveBeenCalledWith(
@@ -179,16 +188,76 @@ describe("POST /api/uploads", () => {
     );
   });
 
+  it("revalidates cached bytes in storage without downloading them again", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Not modified"), { $metadata: { httpStatusCode: 304 } }));
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png`).set("If-None-Match", '"image-v1"');
+    expect(response.status).toBe(304);
+    expect(response.text).toBe("");
+    expect(response.headers["cache-control"]).toBe("private, no-cache");
+    expect(storage.getObject).toHaveBeenCalledWith(`uploads/${"a".repeat(32)}.png`, '"image-v1"');
+  });
+
+  it("accepts a named NotModified response when a cached image is revalidated", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Not modified"), { name: "NotModified" }));
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png`).set("If-None-Match", '"image-v1"');
+    expect(response.status).toBe(304);
+  });
+
   it("does not fetch an image referenced only by moderated content", async () => {
+    env.S3_DIRECT_IMAGES = true;
+    env.S3_PUBLIC_ENDPOINT = "https://storage.example.test";
     vi.spyOn(Post, "exists").mockResolvedValueOnce({ _id: new Types.ObjectId() }).mockResolvedValueOnce(null);
     vi.spyOn(User, "exists").mockResolvedValueOnce(null);
     vi.spyOn(Community, "exists").mockResolvedValueOnce(null);
     vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
     storage.getObject.mockClear();
 
-    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png`);
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png?direct=1`).set("If-None-Match", '"image-v1"');
     expect(response.status).toBe(404);
+    expect(response.headers["cache-control"]).toBe("no-store");
     expect(storage.getObject).not.toHaveBeenCalled();
+    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("redirects opted-in images only after moderation checks and signs a short noncached URL", async () => {
+    env.S3_DIRECT_IMAGES = true;
+    env.S3_PUBLIC_ENDPOINT = "https://storage.example.test";
+    const post = vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.createDownloadUrl.mockResolvedValueOnce("https://storage.example.test/signed-image");
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png?direct=1`);
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe("https://storage.example.test/signed-image");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(storage.createDownloadUrl).toHaveBeenCalledWith(`uploads/${"a".repeat(32)}.png`, 60, undefined, "no-store");
+    expect(post.mock.invocationCallOrder[0]).toBeLessThan(storage.createDownloadUrl.mock.invocationCallOrder[0]!);
+    expect(storage.getObject).not.toHaveBeenCalled();
+  });
+
+  it.each(["disabled", "no public endpoint", "proxy fallback", "signing error"])("keeps the image proxy available: %s", async (mode) => {
+    env.S3_DIRECT_IMAGES = mode !== "disabled";
+    env.S3_PUBLIC_ENDPOINT = mode === "no public endpoint" ? undefined : "https://storage.example.test";
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    if (mode === "signing error") storage.createDownloadUrl.mockRejectedValueOnce(new Error("Signing unavailable"));
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png${mode === "proxy fallback" ? "" : "?direct=1"}`);
+    expect(response.status).toBe(200);
+    expect(Buffer.compare(response.body, png)).toBe(0);
+    expect(storage.getObject).toHaveBeenCalledOnce();
+    if (mode !== "signing error") expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a deleted object as a cache hit", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Missing"), { name: "NoSuchKey" }));
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png`).set("If-None-Match", '"image-v1"');
+    expect(response.status).toBe(404);
+    expect(response.headers["cache-control"]).toBe("no-store");
   });
 
   it("does not serve a hidden wallpaper even if it is still selected as a background", async () => {

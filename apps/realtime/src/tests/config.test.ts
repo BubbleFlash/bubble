@@ -15,6 +15,10 @@ describe("loadConfig", () => {
     expect(c.port).toBe(5000);
   });
 
+  it("uses the separate realtime port when the API port is also set", () => {
+    expect(loadConfig({ ...good, PORT: "4000", REALTIME_PORT: "4100" }).port).toBe(4100);
+  });
+
   it("lists every problem at once", () => {
     expect(() => loadConfig({ JWT_ACCESS_SECRET: "short" })).toThrow(
       /JWT_ACCESS_SECRET[\s\S]*REALTIME_SECRET[\s\S]*CLIENT_ORIGIN[\s\S]*API_URL/,

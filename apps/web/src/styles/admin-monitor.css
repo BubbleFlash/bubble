@@ -1,0 +1,99 @@
+.admin-monitor {
+  min-width: 0;
+}
+
+.admin-monitor .tab {
+  text-decoration: none;
+}
+
+.admin-monitor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.admin-monitor-toolbar p {
+  align-self: center;
+  margin: 0;
+}
+
+.admin-monitor-control {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-monitor-actions {
+  flex-wrap: wrap;
+  margin-inline-start: auto;
+}
+
+.admin-monitor-note {
+  margin: 12px 0;
+}
+
+.admin-monitor-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.admin-monitor-kpis .card {
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.admin-monitor-kpis dd {
+  margin: 4px 0 0;
+  font-size: 1.25em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-monitor-table-wrap {
+  max-width: 100%;
+  overflow: auto;
+  padding: 0;
+}
+
+.admin-monitor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-monitor-table :is(th, td) {
+  padding: 9px 10px;
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid var(--aero-color-border, var(--border));
+}
+
+.admin-monitor-table thead {
+  background: var(--aero-gradient-panel);
+}
+
+.admin-monitor-table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.admin-monitor-table code {
+  overflow-wrap: anywhere;
+}
+
+.admin-monitor-network {
+  min-width: 570px;
+}
+
+.admin-monitor-network span {
+  display: block;
+}
+
+.admin-monitor-network details {
+  max-width: 195px;
+}
+
+.admin-monitor-more {
+  margin-block: 8px;
+}

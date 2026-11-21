@@ -5,6 +5,8 @@ import { releasePushOnLogout } from "../lib/push";
 import { api, ApiError, restrictionText, type Restriction, bootSession, readSessionHint, SessionRestoreError, setAccessToken, writeSessionHint } from "../lib/api";
 import { PageSkeleton } from "../components/Skeleton";
 import { useQueryClient } from "@tanstack/react-query";
+import { announceSessionChange, SessionChanged, sessionGeneration, subscribeSessionChanges, withSessionCookie } from "../lib/browserSession";
+import { closeTabQueries, startTabQueries } from "../lib/tabQueries";
 
 // The last known profile, shown instantly on the next visit while the session is re-checked.
 const USER_KEY = "commune_user";
@@ -29,6 +31,7 @@ function cacheUser(user: AccountUser | null) {
 interface AuthState {
   user: AccountUser | null;
   loading: boolean;
+  confirmed: boolean;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   loginWithGoogle: (credential: string) => Promise<void>;
@@ -51,7 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [blocked, setBlocked] = useState<Restriction>();
-  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [restoreFailed, setRestoreFailed] = useState<{ limited: boolean }>();
+  const transientFailures = useRef(0);
+  const [confirmed, setConfirmed] = useState(false);
 
   const setUser = useCallback((next: AccountUser | null) => {
     if (currentUser.current?.id !== next?.id) {
@@ -70,11 +75,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onBlocked = (event: Event) => {
       setBlocked((event as CustomEvent<Restriction>).detail);
       setAccessToken(null);
+      setConfirmed(false);
+      closeTabQueries();
+      qc.clear();
       setUser(null);
     };
     window.addEventListener("account-restricted", onBlocked);
     return () => window.removeEventListener("account-restricted", onBlocked);
-  }, [setUser]);
+  }, [qc, setUser]);
+
+  useEffect(() => subscribeSessionChanges((change) => {
+    setAccessToken(null);
+    setConfirmed(false);
+    closeTabQueries();
+    setBlocked(undefined);
+    transientFailures.current = 0;
+    setRestoreFailed(undefined);
+    qc.clear();
+    // The other tab has already written the new cached profile. Clear only this tab's view.
+    currentUser.current = null;
+    setUserState(null);
+    writeSessionHint(change.state === "guest" ? "guest" : "1");
+    setLoading(change.state === "active");
+    setRestoreAttempt((attempt) => attempt + 1);
+  }), [qc]);
 
   const isCurrentAccount = useCallback((userId: string) => currentUser.current?.id === userId, []);
 
@@ -91,23 +115,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
+    const generation = sessionGeneration();
     let timer: number | undefined;
-    const retry = () => setRestoreAttempt((attempt) => attempt + 1);
-    setRestoreFailed(false);
-    void bootSession(restoreAttempt > 0).then((res) => {
-      if (!alive) return;
+    let retryAt = 0;
+    const retry = () => {
+      if (!alive || Date.now() < retryAt || navigator.onLine === false) return;
+      alive = false;
+      setLoading(true);
+      setRestoreAttempt((attempt) => attempt + 1);
+    };
+    setRestoreFailed(undefined);
+    const restore = readSessionHint() === "guest" ? Promise.resolve(null) : bootSession(restoreAttempt > 0);
+    void restore.then((res) => {
+      if (!alive || generation !== sessionGeneration()) return;
       if (res) {
         if (readCachedUser()?.id !== res.user.id) qc.clear();
         writeSessionHint("1");
+        startTabQueries(qc, res.user.id);
         setUser(res.user);
       } else {
-        qc.clear();
+        closeTabQueries();
+        if (readSessionHint() !== "guest" || currentUser.current) qc.clear();
         writeSessionHint("guest");
         setUser(null);
       }
+      setConfirmed(Boolean(res));
       setLoading(false);
+      transientFailures.current = 0;
     }).catch((error: unknown) => {
       if (!alive) return;
+      if (error instanceof SessionChanged) {
+        retry();
+        return;
+      }
       if (error instanceof ApiError && error.restriction?.kind === "account") {
         setBlocked(error.restriction);
         setAccessToken(null);
@@ -115,11 +155,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
-      setRestoreFailed(true);
-      // Honour the API's cooldown. Other transient failures get one automatic retry.
-      const delay = error instanceof SessionRestoreError ? error.retryAfterMs : undefined;
-      if (delay || restoreAttempt === 0) timer = window.setTimeout(retry, delay ?? 3000);
-      window.addEventListener("online", retry, { once: true });
+      retryAt = error instanceof SessionRestoreError ? error.retryAt ?? 0 : 0;
+      setRestoreFailed({ limited: retryAt > Date.now() });
+      const delay = retryAt
+        ? Math.max(0, retryAt - Date.now())
+        : [2000, 5000, 12_000][transientFailures.current++];
+      if (delay !== undefined && (retryAt || navigator.onLine !== false)) {
+        timer = window.setTimeout(retry, delay + 250 + Math.random() * 750);
+      }
+      window.addEventListener("online", retry);
     });
     return () => {
       alive = false;
@@ -135,51 +179,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       qc.removeQueries({ queryKey: ["friends-list"] });
       qc.removeQueries({ queryKey: ["relationships"] });
       qc.removeQueries({ queryKey: ["profile"] });
-      setAccessToken(res.accessToken);
       writeSessionHint("1");
+      announceSessionChange("active");
+      setAccessToken(res.accessToken);
+      startTabQueries(qc, res.user.id);
       setUser(res.user);
+      setConfirmed(true);
+      setLoading(false);
     },
     [setUser, qc],
   );
 
   const login = useCallback(
-    async (input: LoginInput) => {
-      apply(await api<AuthResponse>("/auth/login", { method: "POST", body: input }));
-    },
+    (input: LoginInput) => withSessionCookie(async () => {
+      apply(await api<AuthResponse>("/auth/login", { method: "POST", body: input, signal: AbortSignal.timeout(10_000) }));
+    }),
     [apply],
   );
 
   const register = useCallback(
-    async (input: RegisterInput) => {
-      apply(await api<AuthResponse>("/auth/register", { method: "POST", body: input }));
-    },
+    (input: RegisterInput) => withSessionCookie(async () => {
+      apply(await api<AuthResponse>("/auth/register", { method: "POST", body: input, signal: AbortSignal.timeout(10_000) }));
+    }),
     [apply],
   );
 
   const loginWithGoogle = useCallback(
-    async (credential: string) => {
-      apply(await api<AuthResponse>("/auth/google", { method: "POST", body: { credential } }));
-    },
+    (credential: string) => withSessionCookie(async () => {
+      apply(await api<AuthResponse>("/auth/google", { method: "POST", body: { credential }, signal: AbortSignal.timeout(10_000) }));
+    }),
     [apply],
   );
 
   const logout = useCallback(async () => {
+    const generation = sessionGeneration();
     // While the access token is still valid: stop this device receiving this person's notifications.
     await releasePushOnLogout();
-    await api("/auth/logout", { method: "POST" }).catch(() => undefined);
-    setAccessToken(null);
-    qc.clear();
-    qc.removeQueries({ queryKey: ["friends-access"] });
-    qc.removeQueries({ queryKey: ["friends-list"] });
-    qc.removeQueries({ queryKey: ["relationships"] });
-    qc.removeQueries({ queryKey: ["profile"] });
-    writeSessionHint("guest");
-    setUser(null);
+    await withSessionCookie(async () => {
+      if (generation !== sessionGeneration()) return;
+      await api("/auth/logout", { method: "POST", signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+      setAccessToken(null);
+      setConfirmed(false);
+      closeTabQueries();
+      qc.clear();
+      writeSessionHint("guest");
+      setUser(null);
+      announceSessionChange("guest");
+    });
   }, [setUser, qc]);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount }),
-    [user, loading, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount],
+    () => ({ user, loading, confirmed, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount }),
+    [user, loading, confirmed, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount],
   );
   if (blocked) return <main className="card" role="alert">
     <h1>Аккаунт заблокирован</h1>
@@ -188,8 +239,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   </main>;
   if (restoreFailed) return (
     <main role="alert" className="card">
-      <p>Не удалось проверить сеанс. Попробуйте ещё раз чуть позже.</p>
-      <button className="btn" onClick={() => setRestoreAttempt((attempt) => attempt + 1)}>Повторить</button>
+      <p>{restoreFailed.limited
+        ? "Сервер попросил сделать паузу. Попробуем восстановить сеанс автоматически."
+        : "Пока не удалось проверить сеанс. Повторите попытку, когда соединение восстановится."}</p>
+      <button className="btn" disabled={restoreFailed.limited} onClick={() => {
+        transientFailures.current = 0;
+        setLoading(true);
+        setRestoreAttempt((attempt) => attempt + 1);
+      }}>Повторить</button>
     </main>
   );
   if (loading) return <PageSkeleton />;

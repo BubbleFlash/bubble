@@ -1,10 +1,11 @@
 import { Schema, model } from "mongoose";
+import { MESSAGE_MAX_LENGTH } from "@commune/shared";
 import { repostSource } from "./repostSource.js";
 
 const messageSchema = new Schema({
   conversation: { type: Schema.Types.ObjectId, ref: "Conversation", required: true },
   sender: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  text: { type: String, default: "", maxlength: 1000 },
+  text: { type: String, default: "", maxlength: MESSAGE_MAX_LENGTH },
   musicTrackIds: {
     type: [{ type: Schema.Types.ObjectId, ref: "MusicTrack" }],
     validate: {

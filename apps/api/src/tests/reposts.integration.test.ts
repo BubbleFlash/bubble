@@ -67,6 +67,41 @@ integration("reposts on isolated MongoDB", () => {
     await mongoose.disconnect();
   });
 
+  it("protects hidden community authors in public posts, profiles, following feeds and reposts", async () => {
+    const community = await Community.create({ slug: "hidden_authors", name: "Группа", creator: ids.get("alice") });
+    const source = await Post.create({ author: ids.get("boris"), community: community._id, content: "Скрытый автор", hideAuthor: true, adult: true, imageUrls: ["/uploads/0123456789abcdef0123456789abcdef.webp"] });
+    const id = String(source._id);
+    const guest = await api.get(`/api/public/posts/${id}`);
+    expect(guest.body).toMatchObject({ hideAuthor: true, adult: true, author: { id: "", username: "" } });
+    expect((await get("vera", `/posts/${id}`)).body.author.id).toBe("");
+    expect((await get("alice", `/posts/${id}`)).body.author.id).toBe(String(ids.get("boris")));
+    expect((await get("boris", `/posts/${id}`)).body.author.id).toBe(String(ids.get("boris")));
+    await User.updateOne({ _id: ids.get("vera") }, { $set: { role: "moderator" } });
+    expect((await get("vera", `/posts/${id}`)).body.author.id).toBe(String(ids.get("boris")));
+    await User.updateOne({ _id: ids.get("vera") }, { $set: { role: "user" } });
+    expect((await get("vera", "/users/boris/posts")).body.items.some((row: { id: string }) => row.id === id)).toBe(false);
+    await Follow.create({ follower: ids.get("vera"), following: ids.get("boris") });
+    expect((await get("vera", "/posts?feed=following")).body.items.some((row: { id: string }) => row.id === id)).toBe(false);
+    const shared = await repost("vera", id);
+    expect(shared.status).toBe(201);
+    expect(shared.body.repost).toMatchObject({ adult: true, hideAuthor: true, author: { id: "" } });
+    const membership = await Membership.create({ user: ids.get("vera"), community: community._id });
+    await Community.updateOne({ _id: community._id }, { $set: { [`managers.${membership._id}`]: "editor" } });
+    expect((await get("vera", `/posts/${id}`)).body.author.id).toBe(String(ids.get("boris")));
+    expect((await get("vera", `/posts/${shared.body.id}`)).body.repost.author.id).toBe(String(ids.get("boris")));
+  });
+
+  it("saves and updates community author visibility and the adult photo flag", async () => {
+    await Community.create({ slug: "author_flags", name: "Группа", creator: ids.get("alice") });
+    const id = await newPost("alice", "Запись", { community: "author_flags", hideAuthor: true, adult: true });
+    expect((await get("vera", `/posts/${id}`)).body).toMatchObject({ hideAuthor: true, adult: true, author: { id: "" } });
+    const update = await api.patch(`/api/posts/${id}`).set(auth("alice")).send({ hideAuthor: false, adult: false });
+    expect(update.status).toBe(200);
+    expect((await get("vera", `/posts/${id}`)).body).toMatchObject({ hideAuthor: false, adult: false, author: { id: String(ids.get("alice")) } });
+    const personal = await newPost("alice", "Личная запись", { hideAuthor: true, adult: true });
+    expect((await get("vera", `/posts/${personal}`)).body).toMatchObject({ hideAuthor: false, adult: true, author: { id: String(ids.get("alice")) } });
+  });
+
   it("keeps repost likes independent while liking the original when a repost is liked", async () => {
     const original = await newPost("alice", "Корневая запись", { imageUrls: ["/uploads/0123456789abcdef0123456789abcdef.webp"] });
     const first = await repost("boris", original, { content: "Подпись Бориса" });
@@ -452,14 +487,15 @@ integration("reposts on isolated MongoDB", () => {
     const community = "limitscheck";
     await Community.create({ name: "Лимит публикаций", slug: community, creator: ids.get("alice") });
     const id = await newPost("alice", "Старая запись", { community });
-    for (const length of [999, 1000, 1001]) {
+    for (const length of [1999, 2000, 2001]) {
       const content = "a".repeat(length);
       const create = await api.post("/api/posts").set(auth("alice")).send({ content, community });
       const edit = await api.patch(`/api/posts/${id}`).set(auth("alice")).send({ content });
-      expect(create.status).toBe(length > 1000 ? 400 : 201);
-      expect(edit.status).toBe(length > 1000 ? 400 : 200);
+      expect(create.status).toBe(length > 2000 ? 400 : 201);
+      expect(edit.status).toBe(length > 2000 ? 400 : 200);
     }
     await newPost("alice", "a".repeat(500));
-    expect((await api.post("/api/posts").set(auth("alice")).send({ content: "a".repeat(501) })).status).toBe(403);
+    expect((await api.post("/api/posts").set(auth("alice")).send({ content: "a".repeat(2000) })).status).toBe(201);
+    expect((await api.post("/api/posts").set(auth("alice")).send({ content: "a".repeat(2001) })).status).toBe(400);
   });
 });

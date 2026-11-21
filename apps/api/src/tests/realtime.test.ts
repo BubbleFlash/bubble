@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { env } from "../config/env.js";
 import { Conversation } from "../models/Conversation.js";
+import { Notification } from "../models/Notification.js";
 import { disconnectUser, emitToUsers, resetRealtimeBreaker } from "../services/realtime.js";
 import { signAccessToken } from "../utils/tokens.js";
 
@@ -105,7 +106,7 @@ describe("POST /api/messages/:id/read", () => {
     expect((await request(app).post(`/api/messages/${convoId}/read`)).status).toBe(401);
   });
 
-  it("clears the unread count and tells the sender it was seen", async () => {
+  it("clears the unread count and tells the sender and the reader's other tabs", async () => {
     enableRealtime();
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -130,7 +131,7 @@ describe("POST /api/messages/:id/read", () => {
       (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
     );
     expect(body).toMatchObject({
-      to: [OTHER.toString()],
+      to: [OTHER.toString(), ME],
       event: "message:read",
       payload: { conversationId: convoId.toString(), readerId: ME },
     });
@@ -156,5 +157,25 @@ describe("POST /api/messages/:id/read", () => {
     vi.spyOn(Conversation, "findById").mockImplementation((() =>
       leanOf({ _id: convoId, participants: [OTHER, oid()], lastMessageAt: new Date() })) as never);
     expect((await request(app).post(`/api/messages/${convoId}/read`).set(auth)).status).toBe(404);
+  });
+});
+
+it("tells only the recipient's tabs when a notification becomes read", async () => {
+  enableRealtime();
+  const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.spyOn(Notification, "updateMany")
+    .mockResolvedValueOnce({ modifiedCount: 1 } as never)
+    .mockResolvedValue({ modifiedCount: 0 } as never);
+
+  const markRead = () => request(app).post("/api/notifications/read").set(auth).send({});
+  expect((await markRead()).status).toBe(204);
+  expect((await markRead()).status).toBe(204);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(JSON.parse(init.body as string)).toEqual({
+    to: [ME],
+    event: "notification:new",
+    payload: { readStateChanged: true },
   });
 });

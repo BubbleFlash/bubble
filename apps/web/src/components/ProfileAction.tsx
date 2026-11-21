@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import NavigationIcon from "./NavigationIcon";
+import { fitTooltip } from "../lib/tooltip";
 
 // Google Material Symbols Outlined. See docs/licenses/material-symbols.txt.
 const paths = {
@@ -49,7 +50,7 @@ export default function ProfileAction({
   );
   const classes = `profile-action ${className}`;
   return (
-    <span className="profile-action-wrap">
+    <span className="profile-action-wrap" onPointerDown={(event) => fitTooltip(event.currentTarget)} onMouseEnter={(event) => fitTooltip(event.currentTarget)} onFocus={(event) => fitTooltip(event.currentTarget)}>
       {"to" in action ? (
         <Link className={classes} to={action.to} aria-label={label}>
           {symbol}

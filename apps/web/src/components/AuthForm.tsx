@@ -5,7 +5,7 @@ import { loginSchema, registerSchema } from "@commune/shared";
 import { useAuth } from "../store/auth";
 import GoogleButton, { GOOGLE_CLIENT_ID } from "./GoogleButton";
 
-export default function AuthForm({ mode }: { mode: "login" | "register" }) {
+export default function AuthForm({ mode, compact = false }: { mode: "login" | "register"; compact?: boolean }) {
   const { user, login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const notice = (useLocation().state as { notice?: string } | null)?.notice;
@@ -24,7 +24,14 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     const parsed =
       mode === "login" ? loginSchema.safeParse(fields) : registerSchema.safeParse(fields);
     if (!parsed.success) {
-      setError("Проверьте введённые данные");
+      const field = parsed.error.issues[0]?.path[0];
+      setError(field === "username"
+        ? "ID профиля должен содержать от 3 до 24 латинских букв, цифр или знаков подчёркивания."
+        : field === "email"
+          ? "Введите корректный адрес почты."
+          : mode === "register"
+            ? "Пароль должен содержать минимум 8 символов."
+            : "Введите пароль.");
       return;
     }
     setBusy(true);
@@ -53,8 +60,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   };
 
   return (
-    <form className="card auth" onSubmit={(e) => void submit(e)}>
-      <h1>{mode === "login" ? "С возвращением" : "Присоединяйтесь к Bubble"}</h1>
+    <form className={`card auth${compact ? " auth--compact" : ""}`} onSubmit={(e) => void submit(e)}>
+      {!compact && <h1>{mode === "login" ? "С возвращением" : "Присоединяйтесь к Bubble"}</h1>}
       {GOOGLE_CLIENT_ID && (
         <>
           <GoogleButton
@@ -98,7 +105,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       <button className="btn block" disabled={busy}>
         {busy ? "Подождите…" : mode === "login" ? "Войти" : "Создать аккаунт"}
       </button>
-      <p className="muted center">
+      {mode === "register" && <p className="muted">Нажимая «Создать аккаунт», вы принимаете <Link to="/rules" target="_blank" rel="noopener noreferrer">Правила сообщества</Link>.</p>}
+      {!compact && <p className="muted center">
         {mode === "login" ? (
           <>
 
@@ -110,7 +118,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             Уже есть аккаунт? <Link to="/login">Войти</Link>
           </>
         )}
-      </p>
+      </p>}
     </form>
   );
 }

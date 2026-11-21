@@ -41,7 +41,6 @@ export async function sendMail(mail: Mail): Promise<void> {
     }),
   });
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Email provider returned ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`Email provider returned ${res.status}`);
   }
 }

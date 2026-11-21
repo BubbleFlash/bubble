@@ -23,11 +23,12 @@ export async function uploadObject(
   );
 }
 
-export async function getObject(key: string) {
+export async function getObject(key: string, ifNoneMatch?: string) {
   return s3Client.send(
     new GetObjectCommand({
       Bucket: env.S3_BUCKET,
       Key: key,
+      ...(ifNoneMatch ? { IfNoneMatch: ifNoneMatch } : {}),
     }),
   );
 }
@@ -79,12 +80,14 @@ export async function createDownloadUrl(
   key: string,
   expiresIn = 600,
   filename?: string,
+  cacheControl?: string,
 ): Promise<string> {
   return getSignedUrl(
     s3PresignClient,
     new GetObjectCommand({
       Bucket: env.S3_BUCKET,
       Key: key,
+      ...(cacheControl ? { ResponseCacheControl: cacheControl } : {}),
       ...(filename ? { ResponseContentDisposition: `attachment; filename="track"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}` } : {}),
     }),
     { expiresIn },

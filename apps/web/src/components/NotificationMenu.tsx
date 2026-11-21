@@ -57,7 +57,7 @@ export default function NotificationMenu({ count, onNavigateToItem }: {
         aria-controls={open ? id : undefined}
         onClick={() => open ? close() : setOpenedAt(location)}
       >
-        <NavigationIcon name="bell" size={22} />
+        <NavigationIcon name="bell" size={26} />
         {count > 0 && <span aria-hidden="true" className="badge">{count > 99 ? "99+" : count}</span>}
       </button>
       {open && (
@@ -65,8 +65,10 @@ export default function NotificationMenu({ count, onNavigateToItem }: {
           <NotificationList compact onItems={remember} onSelect={(item, event) => {
             if (!event.defaultPrevented && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
               onNavigateToItem();
+              close(item.read ? [] : [item]);
+            } else {
+              close([]);
             }
-            close(item.read ? [] : [item]);
           }} />
           <Link className="notification-popup-link" to="/notifications" onClick={() => close()}>
             Открыть страницу уведомлений

@@ -227,6 +227,13 @@ h3,
   gap: 10px;
 }
 
+@font-face {
+  font-family: "Coiny";
+  src: url('/fonts/Coiny-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+
 .brand-word {
   font-family: var(--font-display);
   font-weight: 800;
@@ -234,6 +241,8 @@ h3,
   letter-spacing: -0.035em;
   color: var(--text);
 }
+
+.header .brand-word { font-family: "Coiny", var(--font-display); font-weight: 400; letter-spacing: 0; }
 
 .nav-link {
   display: inline-flex;
@@ -462,9 +471,12 @@ h3,
   overflow: hidden;
   padding: 28px 24px 30px;
   border-radius: var(--radius);
-  background: var(--aero-color-hero, #1b2559);
-  color: #fff;
+  background: radial-gradient(circle at 85% 15%, #ffffffd9, transparent 45%), var(--aero-gradient-panel);
+  border: 1px solid var(--aero-color-border);
+  color: var(--aero-color-text);
 }
+
+.explore-hero__logo { display: block; width: min(100%, 390px); height: auto; margin: -8px 0 8px; }
 
 .explore-hero h1 {
   position: relative;
@@ -480,7 +492,7 @@ h3,
   position: relative;
   max-width: 34ch;
   margin: 0 0 18px;
-  color: var(--aero-color-hero-muted, #d3d9ff);
+  color: var(--aero-color-text);
 }
 
 .explore-hero .row {
@@ -1182,7 +1194,11 @@ h3,
 }
 
 .sound-volume input[type="range"] {
+  box-sizing: border-box;
+  min-width: 0;
   width: 100%;
+  margin: 0;
+  padding: 0;
   accent-color: var(--accent, currentColor);
 }
 

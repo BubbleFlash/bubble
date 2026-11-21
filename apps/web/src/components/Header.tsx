@@ -1,6 +1,7 @@
 import { displayNameOf } from "@commune/shared";
 import NavigationIcon from "./NavigationIcon";
 import ServerFundraiser from "./ServerFundraiser";
+import OnlineCount from "./OnlineCount";
 import TelegramWidget from "./TelegramWidget";
 import { useEffect } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
@@ -9,7 +10,6 @@ import { useAuth } from "../store/auth";
 import { useUnreadCount } from "../hooks/useSocial";
 import { useUnreadMessages } from "../hooks/useMessages";
 import Avatar from "./Avatar";
-import Brand from "./BrandMark";
 import Icon, { type IconName } from "./Icon";
 import PlusBadge from "./PlusBadge";
 import SearchBox from "./SearchBox";
@@ -18,20 +18,21 @@ import ReportMenu from "./ReportMenu";
 import { navigationFor } from "../lib/navigation";
 
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
-export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/confirm-email-change"];
 
-export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigateToNotification }: {
+export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigateToNotification, minimal = false }: {
   menuOpen: boolean;
   setMenuOpen: Dispatch<SetStateAction<boolean>>;
   onNavigateToNotification: () => void;
+  minimal?: boolean;
 }) {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const confirmLogout = () => {
     if (window.confirm("Вы уверены, что хотите выйти из аккаунта?")) void logout();
   };
-  const unread = useUnreadCount(Boolean(user));
-  const msgs = useUnreadMessages(Boolean(user));
+  const unread = useUnreadCount(Boolean(user && !minimal));
+  const msgs = useUnreadMessages(Boolean(user && !minimal));
   const count = unread.data?.count ?? 0;
   const msgCount = msgs.data?.count ?? 0;
   const countLabel = count > 99 ? "99+" : String(count);
@@ -60,7 +61,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
     return () => mq.removeEventListener("change", onChange);
   }, [setOpen]);
 
-  if (AUTH_PATHS.includes(pathname)) return null;
+  if (!minimal && AUTH_PATHS.includes(pathname)) return null;
 
   const navClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? " active" : ""}`;
   const item = (to: string, icon: IconName, label: string, extra?: ReactNode, end = false) => (
@@ -73,10 +74,15 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
 
   return (
     <>
-      <header className={`header${user ? " header-user" : ""}`}>
+      <header className={`header${user && !minimal ? " header-user" : ""}`}>
         <Link to="/" className="brand" aria-label="На главную Bubble">
-          <Brand size={30} />
+          <picture className="header-logo">
+            <source media="(max-width: 1100px)" srcSet="/bubble-header-mobile.png" />
+            <img src="/bubble-header-desktop.png" width="576" height="211" alt="" />
+          </picture>
         </Link>
+
+        {!minimal && <>
 
         {user && (
           <div className="header-search">
@@ -119,6 +125,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             </button>}
           </div>
         </div>
+        </>}
       </header>
 
       {/* Slide-in menu (right side) */}
@@ -142,8 +149,10 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
                 {navigationFor("member", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" && msgCount > 0 ? <span className="pill">{msgCount}</span> : entry.id === "notifications" && count > 0 ? <span className="pill">{countLabel}</span> : undefined, entry.end)}</span>)}
                 {user.role === "admin" && item("/admin", "shield", "Админка")}
                 {user.role === "moderator" && item("/moderation", "shield", "Модерация")}
+                {item("/about", "info", "О проекте")}
+                {item("/rules", "info", "Правила сообщества")}
               </nav>
-              {open && <ServerFundraiser />}
+              {open && <><OnlineCount /><ServerFundraiser /></>}
               {open && <TelegramWidget />}
               <button className="btn btn-outline block drawer-logout" onClick={confirmLogout}>
                 <Icon name="logout" size={18} />  Выйти
@@ -153,6 +162,8 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             <>
               <nav className="drawer-links" aria-label="Меню">
                 {navigationFor("guest", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(""), entry.icon, entry.guestLabel ?? entry.label, undefined, entry.end)}</span>)}
+                {item("/about", "info", "О проекте")}
+                {item("/rules", "info", "Правила сообщества")}
               </nav>
             </>
           )}

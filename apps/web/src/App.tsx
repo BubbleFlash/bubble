@@ -1,31 +1,30 @@
-import { Link, Navigate, Route, Routes, matchPath, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, matchPath, useLocation } from "react-router-dom";
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { NotificationDTO } from "@commune/shared";
 import { useAuth } from "./store/auth";
+import { useMusicPlayer } from "./store/music";
 import AeroTitlebar from "./components/AeroTitlebar";
 import Header, { AUTH_PATHS } from "./components/Header";
 import FeedPage from "./pages/FeedPage";
 import VerifyBanner from "./components/VerifyBanner";
 import PwaBanner from "./components/PwaBanner";
-import ExplorePage from "./pages/ExplorePage";
 import LeftNav from "./components/LeftNav";
 import RightRail from "./components/RightRail";
 import BottomNav from "./components/BottomNav";
-import Brand from "./components/BrandMark";
-import Icon from "./components/Icon";
 import { PageSkeleton } from "./components/Skeleton";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { useNotificationReadSession, useProfile } from "./hooks/useSocial";
 import { useStoredFont } from "./lib/siteFont";
 import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
 import MusicPlayer from "./components/MusicPlayer";
 import BackToTop from "./components/BackToTop";
+import { useStickyTabs } from "./hooks/useStickyTabs";
 
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const PostPage = lazy(() => import("./pages/PostPage"));
-const LoginPage = lazy(() => import("./pages/LoginPage"));
-const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const SiteInfoPage = lazy(() => import("./pages/SiteInfoPage"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const FriendsPage = lazy(() => import("./pages/FriendsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
@@ -34,8 +33,6 @@ import ModerationNotices from "./components/ModerationNotices";
 
 const ModerationPage = lazy(() => import("./pages/ModerationPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
-const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
-const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
 const CommunitiesPage = lazy(() => import("./pages/CommunitiesPage"));
 const CommunityPage = lazy(() => import("./pages/CommunityPage"));
@@ -44,13 +41,14 @@ const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const NewsPage = lazy(() => import("./pages/NewsPage"));
 const ContactPage = lazy(() => import("./pages/ContactPage"));
-const ResetPasswordPage = lazy(() => import("./pages/ResetPassword"));
 const MusicPage = lazy(() => import("./pages/MusicPage"));
 const UserMusicPage = lazy(() => import("./pages/UserMusicPage"));
 
 const TITLES: Record<string, string> = {
   "/": "Bubble — открытая платформа групп",
   "/explore": "Обзор",
+  "/about": "О проекте",
+  "/rules": "Правила сообщества",
   "/news": "Последние новости",
   "/contact": "Связаться",
   "/plus": "Bubble Plus",
@@ -65,9 +63,10 @@ const TITLES: Record<string, string> = {
   "/register": "Регистрация",
   "/forgot-password": "Восстановление пароля",
   "/reset-password": "Сброс пароля",
+  "/confirm-email-change": "Смена почты",
   "/admin": "Администрирование",
   "/moderation": "Модерация",
-  "/admin/errors": "Ошибки",
+  "/admin/errors": "Мониторинг",
   "/music": "Музыка",
 };
 
@@ -114,30 +113,34 @@ function Protected({ children }: { children: ReactNode }) {
 function Home() {
   const { user, loading } = useAuth();
   if (loading) return <PageSkeleton />;
-  return user ? <FeedPage /> : <ExplorePage />;
+  return user ? <FeedPage /> : <SiteInfoPage />;
 }
 
-function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
+function AppRoutes({ onNotificationItems, onNavigateToNotification, onWallpaperPreview, onOpacityPreview }: {
   onNotificationItems: (items: NotificationDTO[]) => void;
+  onNavigateToNotification: () => void;
   onWallpaperPreview?: (path?: string | null) => void;
+  onOpacityPreview?: (value?: number) => void;
 }) {
+  const { pathname } = useLocation();
+  const { track } = useMusicPlayer();
   return (
-    <Suspense fallback={<PageSkeleton />}>
+    <ErrorBoundary routeKey={pathname} preservePlayback={Boolean(track)}>
+      <Suspense fallback={<PageSkeleton />}>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/explore" element={<ExplorePage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/login" element={<SiteInfoPage />} />
+        <Route path="/register" element={<SiteInfoPage />} />
+        <Route path="/explore" element={<SiteInfoPage />} />
+        <Route path="/about" element={<SiteInfoPage />} />
+        <Route path="/rules" element={<SiteInfoPage />} />
+        <Route path="/forgot-password" element={<SiteInfoPage />} />
+        <Route path="/reset-password" element={<SiteInfoPage />} />
+        <Route path="/verify-email" element={<SiteInfoPage />} />
+        <Route path="/confirm-email-change" element={<SiteInfoPage />} />
         <Route path="/" element={<Home />} />
         <Route
           path="/posts/:id"
-          element={
-            <Protected>
-              <PostPage />
-            </Protected>
-          }
+          element={<PostPage />}
         />
         <Route
           path="/u/:username/music"
@@ -151,14 +154,14 @@ function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
             </Protected>
           }
         />
-        <Route path="/settings" element={<Protected><SettingsPage onWallpaperPreview={onWallpaperPreview} /></Protected>} />
+        <Route path="/settings" element={<Protected><SettingsPage onWallpaperPreview={onWallpaperPreview} onOpacityPreview={onOpacityPreview} /></Protected>} />
         <Route path="/friends" element={<Protected><FriendsPage /></Protected>} />
         <Route path="/friends/:username" element={<Protected><FriendsPage /></Protected>} />
         <Route
           path="/notifications"
           element={
             <Protected>
-              <NotificationsPage onItems={onNotificationItems} />
+              <NotificationsPage onItems={onNotificationItems} onNavigateToItem={onNavigateToNotification} />
             </Protected>
           }
         />
@@ -241,37 +244,13 @@ function AppRoutes({ onNotificationItems, onWallpaperPreview }: {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Suspense>
-  );
-}
-
-/** Left panel of the sign-in screens (hidden on phones). */
-function AuthArt() {
-  return (
-    <aside className="auth-art" aria-hidden="true">
-      <Brand size={40} />
-      <div className="auth-art-body">
-        <p className="art-title">Ваши люди и новости — в одном месте.</p>
-        <ul>
-          <li>
-            <Icon name="users" size={20} /> Вступайте в группы и подписывайтесь на людей
-          </li>
-          <li>
-            <Icon name="mail" size={20} /> Общайтесь с друзьями в личных сообщениях
-          </li>
-          <li>
-            <Icon name="news" size={20} /> Читайте новости рядом с лентой
-          </li>
-        </ul>
-      </div>
-      <span className="blob b1" />
-      <span className="blob b2" />
-      <span className="blob b3" />
-    </aside>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
 export default function App() {
+  useStickyTabs();
   const { pathname } = useLocation();
   const { user } = useAuth();
   const onNotificationsPage = Boolean(matchPath("/notifications", pathname));
@@ -290,9 +269,10 @@ export default function App() {
     window.addEventListener("pagehide", leave);
     return () => window.removeEventListener("pagehide", leave);
   }, [onNotificationsPage, userId, finish]);
-  const authPage = AUTH_PATHS.includes(pathname);
+  const projectLanding = ["/about", "/rules", "/explore", "/verify-email", ...AUTH_PATHS].includes(pathname) || (!user && pathname === "/");
   const signedIn = Boolean(user);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
+  const [opacityPreview, setOpacityPreview] = useState<number>();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const homeRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
@@ -306,6 +286,20 @@ export default function App() {
   const preview = pathname === "/settings" ? wallpaperPreview : undefined;
   const localWallpaper = preview?.startsWith("blob:") ? preview : undefined;
   const backgroundUrl = preview === undefined ? appearance?.backgroundUrl : preview;
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const update = () => root.toggleAttribute("data-aero-no-scroll", root.scrollHeight <= root.clientHeight);
+    const observer = new ResizeObserver(update);
+    observer.observe(document.body);
+    if (homeRef.current) observer.observe(homeRef.current);
+    window.addEventListener("resize", update);
+    update();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      root.removeAttribute("data-aero-no-scroll");
+    };
+  }, [projectLanding]);
   // Once signed in, quietly download the most-used pages so tapping them is instant.
   useEffect(() => {
     if (signedIn) prefetchLikelyRoutes();
@@ -313,13 +307,13 @@ export default function App() {
 
   const primaryColor = appearance?.primaryColor;
   useLayoutEffect(() => {
-    if (authPage || !primaryColor) return;
+    if (!primaryColor) return;
     const root = document.documentElement;
     root.style.setProperty("--aero-chosen-primary", primaryColor);
     return () => {
       root.style.removeProperty("--aero-chosen-primary");
     };
-  }, [authPage, primaryColor]);
+  }, [projectLanding, primaryColor]);
 
   useLayoutEffect(() => {
     const home = homeRef.current;
@@ -332,7 +326,33 @@ export default function App() {
     const observer = new ResizeObserver(update);
     observer.observe(chrome);
     return () => observer.disconnect();
-  }, [authPage]);
+  }, [projectLanding]);
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    const chrome = chromeRef.current;
+    const content = home?.querySelector<HTMLElement>(".aero-window > .shell");
+    if (!chrome || !content) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const overlap = chrome.getBoundingClientRect().bottom - content.getBoundingClientRect().top;
+      content.style.clipPath = overlap > 0 ? `inset(${Math.ceil(overlap)}px -100vmax -100vmax -100vmax)` : "";
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const observer = new ResizeObserver(schedule);
+    observer.observe(chrome);
+    observer.observe(content);
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    update();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame) cancelAnimationFrame(frame);
+      content.style.clipPath = "";
+    };
+  }, [projectLanding, pathname]);
   useLayoutEffect(() => {
     const home = homeRef.current;
     const nav = navRef.current;
@@ -342,34 +362,16 @@ export default function App() {
     const observer = new ResizeObserver(update);
     observer.observe(nav);
     return () => observer.disconnect();
-  }, [authPage, signedIn]);
+  }, [projectLanding, signedIn]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
+  const guestLanding = projectLanding;
 
   const skip = (
     <a href="#main" className="skip-link">
       Skip to content
     </a>
   );
-
-  if (authPage) {
-    return (
-      <div className="aero-app aero-auth" data-theme="aero-blue">
-        {skip}
-        <RouteMeta />
-        <PwaBanner />
-        <div className="auth-split">
-          <AuthArt />
-          <main id="main" tabIndex={-1} className="auth-main">
-            <Link to="/" className="auth-brand" aria-label="На главную Bubble">
-              <Brand size={36} />
-            </Link>
-            <AppRoutes onNotificationItems={remember} />
-          </main>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -379,8 +381,8 @@ export default function App() {
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
       data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
-      data-custom-opacity={user?.appearance?.windowOpacity !== undefined || undefined}
-      style={appearanceStyle({ ...appearance, backgroundUrl, windowOpacity: user?.appearance?.windowOpacity }, fontFamily, localWallpaper)}
+      data-custom-opacity={(pathname === "/settings" && opacityPreview !== undefined) || user?.appearance?.windowOpacity !== undefined || undefined}
+      style={appearanceStyle({ ...appearance, backgroundUrl, windowOpacity: pathname === "/settings" ? opacityPreview ?? user?.appearance?.windowOpacity : user?.appearance?.windowOpacity }, fontFamily, localWallpaper)}
     >
       <div className="aero-fixed-frame" aria-hidden="true" />
       <div className="aero-window">
@@ -392,21 +394,22 @@ export default function App() {
             menuOpen={mobileMenuOpen}
             setMenuOpen={setMobileMenuOpen}
             onNavigateToNotification={() => finish([])}
+            minimal={projectLanding}
           />
-          <VerifyBanner />
+          {!projectLanding && <VerifyBanner />}
         </div>
         <PwaBanner />
-        <div className={`shell${user ? " has-left" : ""}${wide ? " wide" : ""}`}>
-          {user && <LeftNav />}
+        <div className={`shell${user && !projectLanding ? " has-left" : ""}${wide ? " wide" : ""}${guestLanding ? " guest-landing-shell" : ""}`}>
+          {user && !projectLanding && <LeftNav />}
           <main id="main" tabIndex={-1} className="container">
-            {user && <ModerationNotices key={user.id} />}
-            <AppRoutes onWallpaperPreview={setWallpaperPreview} onNotificationItems={remember} />
+            {user && !projectLanding && <ModerationNotices key={user.id} />}
+            <AppRoutes onWallpaperPreview={setWallpaperPreview} onOpacityPreview={setOpacityPreview} onNotificationItems={remember} onNavigateToNotification={() => finish([])} />
           </main>
-          {!wide && <RightRail />}
+          {!wide && !guestLanding && <RightRail />}
         </div>
-        <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        {!projectLanding && <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />}
         {!wide && <BackToTop route={pathname} />}
-        <MusicPlayer />
+        {!projectLanding && <MusicPlayer />}
       </div>
     </div>
   );

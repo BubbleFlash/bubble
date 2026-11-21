@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { displayNameOf, avatarFrameSchema, type AvatarFrame } from "@commune/shared";
 import { useAuth } from "../store/auth";
-import { assetUrl } from "../lib/api";
+import AssetImage from "./AssetImage";
 import { hueFor } from "../lib/hue";
 import { Link } from "react-router-dom";
 
@@ -41,7 +41,7 @@ export default function Avatar({
   } as CSSProperties;
   const effectName = effect?.effect;
   if (url) {
-    return <img className="avatar" data-frame={effectName} src={assetUrl(url)} alt="" style={style} loading="lazy" />;
+    return <AssetImage className="avatar" data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />;
   }
   const hue = hueFor(username);
   return (

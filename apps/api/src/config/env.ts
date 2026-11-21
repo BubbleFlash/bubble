@@ -22,12 +22,15 @@ const schema = z.object({
     .url()
     .transform((v) => v.trim().replace(/\/+$/, "")),
   JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
+  TEST_GATE_SECRET: z.preprocess((v) => v === "" ? undefined : v, z.string().min(32).optional()),
   ACCESS_TOKEN_TTL: z.string().default("15m"),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
   // Where uploaded images are stored. Relative paths resolve from the API's working directory.
   UPLOAD_DIR: z.string().default("uploads"),
   S3_ENDPOINT: z.string().url().optional(),
-  S3_PUBLIC_ENDPOINT: z.string().url().optional(),
+  S3_PUBLIC_ENDPOINT: z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional()),
+  // Opt in only after checking this public storage endpoint from client networks.
+  S3_DIRECT_IMAGES: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   S3_REGION: z.string().default("us-east-1"),
   S3_BUCKET: z.string().min(1).default("bubble"),
   S3_ACCESS_KEY: z.string().optional(),
@@ -50,7 +53,7 @@ const schema = z.object({
   EMAIL_FROM: z
     .string()
     .default("")
-    .transform((v) => v?.trim() || "Commune <onboarding@resend.dev>"),
+    .transform((v) => v.trim().replace(/^Commune\s*</i, "Bubble <") || "Bubble <onboarding@resend.dev>"),
   // "Sign in with Google": the OAuth Web client ID (looks like 123-abc.apps.googleusercontent.com).
   GOOGLE_CLIENT_ID: z.string().optional(),
   // Lemon Squeezy provider configuration for Plus and legacy order webhooks.

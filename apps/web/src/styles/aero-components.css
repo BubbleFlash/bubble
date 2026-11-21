@@ -12,6 +12,7 @@
 .aero-home .friends-tabs .tab { display: flex; align-items: center; justify-content: center; align-self: stretch; height: auto; min-height: 44px; white-space: normal; overflow-wrap: anywhere; padding: 8px; line-height: 1.25; }
 .friends-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .friends-search input { min-width: 0; max-width: 100%; }
+@media (max-width: 600px) { .friends-search input { flex: 1 1 100%; width: 100%; box-sizing: border-box; } }
 .comments-disclosure { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 180ms ease-out, visibility 0s linear 180ms; }
 .comments-disclosure.is-open { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 180ms ease-out, visibility 0s; }
 .comments-disclosure-inner { min-height: 0; overflow: hidden; }
@@ -220,6 +221,7 @@
   line-height: 1.3;
   pointer-events: none;
   visibility: hidden;
+  transform: translateX(var(--tooltip-shift, 0px));
 }
 .profile-action-wrap:hover .profile-action-tooltip,
 .profile-action:focus-visible + .profile-action-tooltip {
@@ -227,6 +229,10 @@
 }
 
 .profile > .row .profile-action-tooltip { left: 0; right: auto; }
+@media (max-width: 600px) {
+  /* The profile's own edit button moves to the left edge on a phone. */
+  .profile-top > .profile-action-wrap .profile-action-tooltip { left: 0; right: auto; }
+}
 
 
 /* Global music player */
@@ -511,6 +517,22 @@
 .image-gallery__item { display: block; min-width: 0; padding: 0; border: 0; border-radius: 8px; overflow: hidden; background: transparent; cursor: pointer; }
 .image-gallery__item img { display: block; width: 100%; height: 180px; object-fit: contain; }
 .image-draft { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow-y: auto; }
+.post-text__body { position: relative; min-width: 0; }
+.post-images { position: relative; overflow: hidden; border-radius: 6px; }
+.post-images--concealed .post-images__gallery { filter: blur(24px); pointer-events: none; }
+.post-images__cover { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgb(85 93 101 / 79%); color: white; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; cursor: pointer; font: inherit; font-weight: 700; }
+.post-images__show { padding: 5px 12px; border: 1px solid #fff9; border-radius: 5px; background: #ffffff33; }
+.community-post-author:has([aria-label]) a { color: var(--aero-color-text-muted); }
+.site-information { display: grid; gap: 18px; padding: 20px; overflow-wrap: anywhere; }
+.site-information h1, .site-information h2, .site-information p { margin: 0 0 8px; }
+.site-information__text { white-space: pre-wrap; line-height: 1.55; }
+.site-information__links { display: flex; flex-wrap: wrap; gap: 12px; }
+.site-content-editor { display: grid; gap: 12px; }
+.site-content-editor label { display: grid; gap: 5px; }
+.site-content-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.site-content-editor > button { justify-self: start; }
+.post-text__body .post-read-more { font-size: inherit; line-height: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.composer > .image-draft { margin-top: 8px; }
 .image-draft .image-preview { flex: 0 0 90px; width: 90px; margin: 0; }
 .image-draft .image-preview img { width: 90px; height: 72px; object-fit: cover; }
 .image-draft .image-preview p { font-size: 11px; overflow-wrap: anywhere; }
@@ -606,7 +628,8 @@
 .image-viewer__content--full .image-viewer__scroll { display: block; overflow: auto; overscroll-behavior: contain; }
 .image-viewer__content--full img { width: auto; height: auto; max-width: none; margin-inline: auto; }
 .image-viewer__fit { min-height: 34px; }
-.image-viewer__zone { position: absolute; top: calc(50% - 22px); width: 52px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.image-viewer__zone { position: absolute; top: 0; bottom: 0; width: 26%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.image-viewer__content--full .image-viewer__zone { top: calc(50% - 22px); bottom: auto; width: 52px; height: 44px; }
 .image-viewer__zone--previous { left: 0; }
 .image-viewer__zone--next { right: 0; }
 .image-viewer__arrow { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: white; font-size: 28px; line-height: 1; background: rgb(0 0 0 / 55%); transition: opacity 160ms ease; }

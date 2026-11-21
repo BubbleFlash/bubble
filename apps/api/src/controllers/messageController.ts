@@ -20,7 +20,7 @@ import { isPlusActive } from "../utils/plan.js";
 import { findByUsername } from "./userController.js";
 
 const PREVIEW_LENGTH = 120;
-const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned accountRestriction";
+const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned accountRestriction deletionExpiresAt anonymizedAt";
 
 interface LeanUser {
   _id: unknown;
@@ -208,7 +208,7 @@ async function markConversationRead(convo: LeanConversation, me: string, otherId
     { $set: { [counter]: 0 } },
   );
   if (result.modifiedCount) {
-    await emitToUsers([otherId], "message:read", { conversationId, readerId: me });
+    await emitToUsers([otherId, me], "message:read", { conversationId, readerId: me });
   }
 }
 
@@ -315,8 +315,8 @@ export async function deleteMessage(req: Request, res: Response) {
 export async function send(req: Request, res: Response) {
   const me = req.userId!;
   const { convo, otherId } = await loadConversation(req.params.id, me);
-  const other = (await User.findById(otherId).select("banned accountRestriction").lean());
-  if (!other || accountRestriction(other)) throw forbidden("You can't message this account");
+  const other = await User.findById(otherId).select("banned accountRestriction deletionExpiresAt anonymizedAt").lean();
+  if (!other || other.deletionExpiresAt || other.anonymizedAt || accountRestriction(other)) throw forbidden("You can't message this account");
   const input = req.body as SendMessageInput;
   const source = await validateMessageAttachments(me, input);
   res.status(201).json(await saveMessage(str(convo._id), me, otherId, input, source));

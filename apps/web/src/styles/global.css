@@ -566,6 +566,10 @@ a {
   color: var(--text);
   font: inherit;
 }
+@media (max-width: 600px) {
+  .container > .search-box { width: 100%; max-width: none; margin-inline: 0; }
+  .container > .search-box input { box-sizing: border-box; }
+}
 
 .search-title {
   font-size: 18px;
@@ -1644,7 +1648,7 @@ video {
 
 @media (max-width: 767px) {
   .chat {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     height: calc(100dvh - 100px);
   }
 

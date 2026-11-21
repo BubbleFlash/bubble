@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { ErrorEvent } from "../models/ErrorEvent.js";
 import { sendMail } from "./mailService.js";
+import { errorAlertMail } from "./emailTemplates.js";
 
 export interface ErrorReport {
   source: "api" | "web";
@@ -10,6 +11,9 @@ export interface ErrorReport {
   stack?: string;
   route?: string;
   status?: number | null;
+  category?: "storage" | "mail" | "database" | "network" | "chunk" | "render" | "unknown";
+  upstreamStatus?: number | null;
+  requestId?: string;
 }
 
 /** Stored errors never contain tokens, emails or query strings, even if the message did. */
@@ -76,12 +80,15 @@ export async function recordError(report: ErrorReport): Promise<void> {
       stack: scrub(report.stack ?? "").slice(0, 2000),
       route: scrub(report.route ?? "").slice(0, 200),
       status: report.status ?? null,
+      category: report.category ?? "unknown",
+      upstreamStatus: report.upstreamStatus ?? null,
+      requestId: /^[a-f0-9-]{36}$/i.test(report.requestId ?? "") ? report.requestId : "",
     };
     const fingerprint = fingerprintOf(clean);
     const now = new Date();
     const known = await ErrorEvent.findOneAndUpdate(
       { fingerprint },
-      { $inc: { count: 1 }, $set: { lastSeen: now, resolved: false } },
+      { $inc: { count: 1 }, $set: { lastSeen: now, resolved: false, category: clean.category, upstreamStatus: clean.upstreamStatus, requestId: clean.requestId } },
     ).lean();
     if (known) return;
     if ((await eventCount()) >= MAX_EVENTS) return;
@@ -91,18 +98,10 @@ export async function recordError(report: ErrorReport): Promise<void> {
 
     const to = env.ALERT_EMAIL ?? env.CONTACT_EMAIL;
     if (to && canAlert()) {
-      await sendMail({
-        to,
-        subject: `Commune error: ${clean.message}`.slice(0, 120),
-        text: `A new error appeared.\n\nWhere: ${clean.source} ${clean.route}\nMessage: ${clean.message}\n\nSee the Errors tab on the Admin page.`,
-        html: `<p>A new error appeared.</p><p><strong>${esc(clean.source)}</strong> ${esc(clean.route)}<br>${esc(clean.message)}</p><p>See the Errors tab on the Admin page.</p>`,
-      });
+      await sendMail(errorAlertMail(to, clean.source, clean.route, clean.message, `${env.CLIENT_ORIGIN}/admin/errors`));
     }
   } catch (err) {
     // Monitoring must never break the request that triggered it. Duplicate-key races end here.
     logger.warn({ err: String(err) }, "Could not record error");
   }
 }
-
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

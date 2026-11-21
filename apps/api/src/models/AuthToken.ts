@@ -5,6 +5,8 @@ const authTokenSchema = new Schema({
   user: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
   purpose: { type: String, enum: ["verify_email", "reset_password"], required: true },
   tokenHash: { type: String, required: true, unique: true },
+  email: String,
+  sessionVersion: Number,
   // MongoDB removes the document automatically once expiresAt has passed.
   expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
 });

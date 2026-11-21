@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import { env } from "../config/env.js";
 import { User } from "../models/User.js";
 import { accountRestriction, publishingRestriction, restrictionError } from "../services/restrictions.js";
@@ -6,27 +6,53 @@ import { forbidden, unauthorized } from "../utils/errors.js";
 import { isPlusActive } from "../utils/plan.js";
 import { verifyAccessToken } from "../utils/tokens.js";
 
-export async function checkSession(token: string) {
-  let principal;
-  try {
-    principal = verifyAccessToken(token);
-  } catch {
-    throw unauthorized("Invalid or expired access token");
+type AccessPrincipal = ReturnType<typeof verifyAccessToken>;
+const principals = new WeakMap<Request, AccessPrincipal | null>();
+
+/** Only a signed, unexpired access token can select an account's request budget. */
+export function requestPrincipal(req: Request): AccessPrincipal | null {
+  const cached = principals.get(req);
+  if (cached !== undefined) return cached;
+  const header = req.get("authorization");
+  let principal: AccessPrincipal | null = null;
+  if (header?.startsWith("Bearer ")) {
+    try {
+      principal = verifyAccessToken(header.slice(7));
+    } catch {
+      // Invalid credentials can only use the IP budget.
+    }
   }
+  principals.set(req, principal);
+  return principal;
+}
+
+async function loadSession(principal: AccessPrincipal) {
   const user = await User.findById(principal.userId)
-    .select("role banned emailVerified sessionVersion accountRestriction publishingRestriction").lean();
-  if (!user) throw unauthorized("Account not found");
+    .select("role banned emailVerified sessionVersion accountRestriction publishingRestriction deletionExpiresAt anonymizedAt").lean();
+  if (!user || user.deletionExpiresAt || user.anonymizedAt) throw unauthorized("Account not found");
   const restriction = accountRestriction(user);
   if (restriction) throw restrictionError("account", restriction);
   if ((user.sessionVersion ?? 0) !== principal.version) throw unauthorized("Session expired");
   return { principal, user };
 }
 
+export async function checkSession(token: string) {
+  let principal: AccessPrincipal;
+  try {
+    principal = verifyAccessToken(token);
+  } catch {
+    throw unauthorized("Invalid or expired access token");
+  }
+  return loadSession(principal);
+}
+
 export const requireAuth: RequestHandler = async (req, _res, next) => {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) return next(unauthorized("Missing access token"));
+  const principal = requestPrincipal(req);
+  if (!principal) return next(unauthorized("Invalid or expired access token"));
   try {
-    const { principal, user } = await checkSession(header.slice(7));
+    const { user } = await loadSession(principal);
     req.userId = principal.userId;
     req.emailVerified = user.emailVerified;
     const publishing = publishingRestriction(user);

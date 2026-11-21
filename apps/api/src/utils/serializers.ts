@@ -32,6 +32,7 @@ interface UserLike {
   banned?: boolean | null;
   accountRestriction?: { reason?: string | null; until?: Date | null } | null;
   emailVerified?: boolean | null;
+  email?: string;
   plusUntil?: Date | null;
   createdAt: Date;
 }
@@ -43,12 +44,16 @@ export interface PopulatedAuthor {
   avatarUrl?: string | null;
   avatarFrame?: AvatarFrame | null;
   plusUntil?: Date | null;
+  deletionExpiresAt?: Date | null;
+  anonymizedAt?: Date | null;
 }
 
 export interface PopulatedPost {
   moderationState?: string | null;
   _id: Types.ObjectId;
   content: string;
+  hideAuthor?: boolean;
+  adult?: boolean;
   imageUrl?: string | null;
   imageUrls?: string[];
   musicTrackIds?: Types.ObjectId[];
@@ -99,7 +104,14 @@ export interface PopulatedReport {
   resolvedAt?: Date | null;
 }
 
-export const toAuthor = (a: PopulatedAuthor) => ({
+export const toAuthor = (a: PopulatedAuthor) => a.deletionExpiresAt || a.anonymizedAt ? ({
+  id: a._id.toString(),
+  username: `deleted-${a._id}`,
+  displayName: "Пользователь недоступен",
+  avatarUrl: null,
+  avatarFrame: undefined,
+  plus: false,
+}) : ({
   id: a._id.toString(),
   username: a.username,
   displayName: a.displayName ?? undefined,
@@ -137,6 +149,7 @@ export function toAccountUser(u: UserWithAppearance): AccountUser {
   const { backgroundUrl, primaryColor, accentColor, font, windowOpacity } = u.appearance ?? {};
   return {
     ...toPublicUser(u),
+    email: u.email,
     profileAppearanceVisibility: profileAppearanceVisibility(u),
     appearance: backgroundUrl !== undefined || primaryColor !== undefined || accentColor !== undefined || font !== undefined || windowOpacity != null
       ? { backgroundUrl, primaryColor, accentColor, font, windowOpacity: windowOpacity ?? undefined }
@@ -168,6 +181,8 @@ export function toPostDTO(p: PopulatedPost, likedByMe: boolean, musicAttachments
   return {
     id: p._id.toString(),
     content: p.content,
+    hideAuthor: Boolean(p.hideAuthor && p.community),
+    adult: Boolean(p.adult),
     imageUrl: p.imageUrl ?? null,
     imageUrls: p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [],
     musicAttachments,

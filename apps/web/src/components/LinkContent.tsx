@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
+import { useNearViewport } from "../hooks/useNearViewport";
 
 type LinkPart = { value: string; href?: string };
 
@@ -48,6 +49,7 @@ export function LinkedText({ text }: { text: string }) {
 interface Preview { title: string; description: string; site: string; image: string | null }
 
 export function LinkPreview({ text }: { text: string }) {
+  const { ref, near } = useNearViewport<HTMLAnchorElement>();
   const { user } = useAuth();
   const first = useMemo(() => splitLinks(text).find((part) => part.href)?.href ?? "", [text]);
   const [delayed, setDelayed] = useState(first);
@@ -56,14 +58,14 @@ export function LinkPreview({ text }: { text: string }) {
   const query = useQuery({
     queryKey: ["link-preview", user?.id, delayed],
     queryFn: () => api<{ preview: Preview | null }>("/link-preview", { method: "POST", body: { url: delayed } }),
-    enabled: Boolean(user && first && !id && delayed === first),
+    enabled: Boolean(near && user && first && !id && delayed === first),
     staleTime: 5 * 60_000,
     retry: false,
   });
   if (!first) return null;
   if (id) return <div className="link-preview link-preview--video"><iframe title="Видео YouTube" src={`https://www.youtube-nocookie.com/embed/${id}`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>;
   const preview = (delayed === first ? query.data?.preview : null) ?? { title: "", description: "", site: new URL(first).hostname, image: null };
-  return <a className="link-preview link-preview--site" href={first} target="_blank" rel="noopener noreferrer ugc nofollow">
+  return <a ref={ref} className="link-preview link-preview--site" href={first} target="_blank" rel="noopener noreferrer ugc nofollow">
     {preview.image && <img src={preview.image} alt="" loading="lazy" />}
     <span className="link-preview__text"><small>{preview.site}</small><strong>{preview.title || preview.site}</strong>{preview.description && <span>{preview.description}</span>}</span>
   </a>;

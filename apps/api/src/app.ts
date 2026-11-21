@@ -9,13 +9,17 @@ import { logger } from "./config/logger.js";
 import { asyncHandler } from "./utils/errors.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import { noStore, originGuard } from "./middleware/security.js";
-import { globalLimiter } from "./middleware/rateLimit.js";
+import { clientNetworkLimiter, globalLimiter, LIMITER_HEADER } from "./middleware/rateLimit.js";
 import { lemonSqueezyWebhook, rawBody } from "./controllers/paymentController.js";
 import { router } from "./routes/index.js";
 import { hasRealtimeSecret, verifySession } from "./controllers/internalController.js";
 import { uploadIsModerated } from "./services/uploadService.js";
-import { getObject } from "./services/storageService.js";
+import { createDownloadUrl, getObject } from "./services/storageService.js";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import * as testGate from "./controllers/testGateController.js";
+import { randomUUID } from "node:crypto";
+import { observeApi } from "./services/telemetry.js";
 
 export function createApp() {
   const app = express();
@@ -30,6 +34,7 @@ export function createApp() {
   app.use(
     pinoHttp({
       logger,
+      genReqId: () => randomUUID(),
       serializers: {
         req: (req: { id?: unknown; method?: string; url?: string }) => ({
           id: req.id,
@@ -38,6 +43,10 @@ export function createApp() {
         }),
         res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
       },
+      customSuccessObject(_req, res, log) {
+        const limiter = res.getHeader(LIMITER_HEADER);
+        return limiter ? { ...log, limiter } : log;
+      },
       autoLogging: { ignore: (req) => req.url === "/api/health" },
     }),
   );
@@ -45,27 +54,32 @@ export function createApp() {
     res.set("X-Request-Id", String(req.id));
     next();
   });
+  app.use(observeApi);
   app.use(
     helmet({
       // The web app runs on another origin and must be allowed to display uploaded images.
       crossOriginResourcePolicy: { policy: "cross-origin" },
     }),
   );
-  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After"] }));
+  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true, exposedHeaders: ["Retry-After", LIMITER_HEADER, "X-Request-Id", "CF-Ray"] }));
+  app.get("/api/internal/test-gate/status", asyncHandler(testGate.status));
+  app.post("/api/internal/test-gate/verify", express.json({ limit: "4kb" }), asyncHandler(testGate.verify));
   app.get("/api/internal/session", asyncHandler(async (req, res, next) => {
     if (!hasRealtimeSecret(req)) return next();
     res.set("Cache-Control", "no-store");
     await verifySession(req, res);
   }));
+  app.post("/api/client-network", clientNetworkLimiter);
   app.use(globalLimiter);
 
-  // Uploaded images and fonts. File names are random, so they can be cached for a long time.
+  // Uploaded images and fonts. Revalidate before reuse so moderation still takes effect.
   // Helmet already sets X-Content-Type-Options: nosniff on these responses.
 
   app.get(
     "/uploads/:file",
     asyncHandler(async (req, res) => {
       const file = req.params.file ?? "";
+      res.set("Cache-Control", "no-store");
 
       if (!uploadUrlSchema.safeParse(`/uploads/${file}`).success &&
           !fontUploadUrlSchema.safeParse(`/uploads/${file}`).success) {
@@ -78,11 +92,30 @@ export function createApp() {
         return;
       }
 
+      if (env.S3_DIRECT_IMAGES && env.S3_PUBLIC_ENDPOINT && req.query.direct === "1" &&
+          uploadUrlSchema.safeParse(`/uploads/${file}`).success) {
+        try {
+          const url = await createDownloadUrl(`uploads/${file}`, 60, undefined, "no-store");
+          res.redirect(302, url);
+          return;
+        } catch (err) {
+          // Signing failures use the same proxy path as clients without direct storage access.
+          logger.warn({ err }, "Direct image signing failed; using proxy");
+        }
+      }
+
       let object;
+      const validator = req.get("If-None-Match");
 
       try {
-        object = await getObject(`uploads/${file}`);
+        object = validator
+          ? await getObject(`uploads/${file}`, validator)
+          : await getObject(`uploads/${file}`);
       } catch (err) {
+        if (validator && err instanceof Error && (err.name === "NotModified" || (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304)) {
+          res.status(304).set("Cache-Control", "private, no-cache").end();
+          return;
+        }
         const isNotFound =
           err instanceof Error &&
           (err.name === "NoSuchKey" ||
@@ -112,11 +145,12 @@ export function createApp() {
         res.setHeader("Content-Length", String(object.ContentLength));
       }
 
-      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Cache-Control", "private, no-cache");
+      if (object.ETag) res.setHeader("ETag", object.ETag);
 
-      Readable.fromWeb(
+      await pipeline(Readable.fromWeb(
         object.Body.transformToWebStream() as unknown as import("node:stream/web").ReadableStream,
-      ).pipe(res);
+      ), res);
     }),
   );
 
@@ -125,6 +159,8 @@ export function createApp() {
   // registered before the JSON parser.
   app.post("/api/webhooks/lemonsqueezy", rawBody, asyncHandler(lemonSqueezyWebhook));
 
+  // The site editor saves four long texts together; all other routes keep the smaller limit.
+  app.use("/api/admin/site-content", express.json({ limit: "512kb" }));
   app.use(express.json({ limit: "10kb" }));
   app.use(cookieParser());
 

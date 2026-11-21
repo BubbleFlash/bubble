@@ -6,6 +6,9 @@ declare global {
       publishingRestriction?: { reason: string; until?: Date | null };
       userRole?: import("@commune/shared").Role;
     }
+    interface Locals {
+      refreshSession?: import("../services/authService.js").RefreshSession | null;
+    }
   }
 }
 

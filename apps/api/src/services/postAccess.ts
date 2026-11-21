@@ -5,7 +5,7 @@ import { Follow } from "../models/Follow.js";
 import { notFound } from "../utils/errors.js";
 import type { PopulatedPost } from "../utils/serializers.js";
 
-export const AUTHOR_FIELDS = "username displayName avatarUrl avatarFrame plusUntil";
+export const AUTHOR_FIELDS = "username displayName avatarUrl avatarFrame plusUntil deletionExpiresAt anonymizedAt";
 export const COMMUNITY_FIELDS = "slug name avatarUrl creator managers permissions departingMemberships";
 
 export const publicPostFilter = { ...visibleContent, priceCents: null, visibility: { $nin: ["private", "friends"] } };

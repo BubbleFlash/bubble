@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "make-admin": "tsx src/scripts/makeAdmin.ts"
+    "make-admin": "tsx src/scripts/makeAdmin.ts",
+    "preview:mail": "tsup src/scripts/previewMail.ts --no-config --format esm --target node20 --out-dir dist/mail-tool && node dist/mail-tool/previewMail.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1165.0",

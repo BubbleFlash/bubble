@@ -13,6 +13,8 @@ const postSchema = new Schema(
     musicTrackIds: { type: [{ type: Schema.Types.ObjectId, ref: "MusicTrack" }], default: [] },
     // Set when the post was made inside a community.
     community: { type: Schema.Types.ObjectId, ref: "Community", default: null, index: true },
+    hideAuthor: { type: Boolean, default: false },
+    adult: { type: Boolean, default: false },
     visibility: { type: String, enum: postVisibilitySchema.options, default: "public" },
     repost: { type: repostSource },
     // Oldest first. These ids survive deletion of an ancestor so descendants remain countable.

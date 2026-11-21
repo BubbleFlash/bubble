@@ -6,7 +6,8 @@ import App from "./App";
 import { AuthProvider } from "./store/auth";
 import { RealtimeProvider } from "./store/realtime";
 import { MusicPlayerProvider } from "./store/music";
-import ErrorBoundary from "./components/ErrorBoundary";
+import ErrorBoundary, { RouteErrorBoundary } from "./components/ErrorBoundary";
+import { ApiError, SessionRestoreError } from "./lib/api";
 import { installErrorReporting } from "./lib/report";
 import { registerServiceWorker } from "./lib/pwa";
 import { armSoundUnlock } from "./lib/sound";
@@ -25,13 +26,19 @@ armSoundUnlock();
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, gcTime: 15 * 60_000, retry: 1, refetchOnWindowFocus: false },
+    queries: {
+      staleTime: 30_000, gcTime: 15 * 60_000, refetchOnWindowFocus: false,
+      retry: (count, error) => count < 1
+        && !(error instanceof ApiError && error.status >= 400 && error.status < 500)
+        && !(error instanceof SessionRestoreError && error.retryAt),
+    },
   },
 });
 
 const router = createBrowserRouter([
   {
     path: "*",
+    errorElement: <RouteErrorBoundary />,
     element: (
       <AuthProvider>
         <MusicPlayerProvider>

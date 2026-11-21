@@ -52,9 +52,9 @@ export async function pushToUser(
     let silent = false;
     if (kind !== "test") {
       const user = await User.findById(userId)
-        .select("pushMessages pushSocial banned accountRestriction notificationPreferences")
+        .select("pushMessages pushSocial banned accountRestriction notificationPreferences deletionExpiresAt anonymizedAt")
         .lean();
-      if (!user || accountRestriction(user)) return;
+      if (!user || user.deletionExpiresAt || user.anonymizedAt || accountRestriction(user)) return;
       if (kind === "message" && user.pushMessages === false) return;
       if (kind === "social" && user.pushSocial === false) return;
       if (kind === "social" && socialType) {
