@@ -1,7 +1,6 @@
 import { displayNameOf } from "@commune/shared";
 import { Link } from "react-router-dom";
 import Avatar from "./Avatar";
-import OnlineStatus from "./OnlineStatus";
 import { useFriends, useFriendsAccess } from "../hooks/useSocial";
 import { ApiError } from "../lib/api";
 
@@ -49,8 +48,8 @@ export default function ProfileFriends({ username, isMe }: { username: string; i
               key={person.id}
               to={`/u/${encodeURIComponent(person.username)}`}
             >
-              <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={48} />
-              <span>{displayNameOf(person)} <OnlineStatus online={person.online} /></span>
+              <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={48} trackOnline online={person.online} />
+              <span>{displayNameOf(person)}</span>
             </Link>
           ))}
         </div>

@@ -71,7 +71,7 @@ export default function ReportMenu() {
         {reports.isSuccess && count === 0 && <p className="muted">Открытых жалоб нет.</p>}
         {reports.data?.items.map((report) => <Link className="notification report-popup-item" key={report.kind + report._id}
           to={`/moderation?report=${report._id}&kind=${report.kind}`} onClick={() => setOpenedAt(null)}>
-          {report.reporter && <Avatar username={report.reporter.username} displayName={report.reporter.displayName} url={report.reporter.avatarUrl} frame={report.reporter.avatarFrame} size={32} />}
+          {report.reporter && <Avatar username={report.reporter.username} displayName={report.reporter.displayName} url={report.reporter.avatarUrl} frame={report.reporter.avatarFrame} size={32} trackOnline />}
           <span><strong>{REASON_LABELS[report.reason]}</strong><br />
             {report.kind === "post" ? "Запись" : report.kind === "comment" ? "Комментарий" : "Фон"} · {report.reporter?.displayName || report.reporter?.username || "Аккаунт удалён"}
             {report.author && <> → {report.author.displayName || report.author.username}</>}

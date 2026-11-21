@@ -6,6 +6,7 @@ import { useSiteContent } from "../lib/siteContent";
 import { useAuth } from "../store/auth";
 import { LinkedText } from "../components/LinkContent";
 import AuthForm from "../components/AuthForm";
+import Avatar from "../components/Avatar";
 import DevelopmentWidget from "../components/DevelopmentWidget";
 import ForgotPasswordPage from "./ForgotPasswordPage";
 import ResetPasswordPage from "./ResetPassword";
@@ -91,7 +92,7 @@ export default function SiteInfoPage() {
           <section className="project-section project-team"><h2>Наша команда</h2>
             {team.isPending ? <p>Загрузка…</p> : team.isError ? <p>Не удалось загрузить список.</p> : ([
               ["Разработчики", team.data.groups.developers], ["Художники", team.data.groups.artists], ["Тестировщики", team.data.groups.testers], ["Модераторы", team.data.groups.moderators], ["Администраторы", team.data.groups.administrators],
-            ] as [string, TeamMember[]][]).map(([label, members]) => <div className="project-team__group" key={label}><h3>{label}</h3>{members.length ? <ul>{members.map((member) => <li key={member.username}><Link to={`/u/${member.username}`}>{member.displayName}</Link></li>)}</ul> : <p className="muted">Пока не указаны</p>}</div>)}
+            ] as [string, TeamMember[]][]).map(([label, members]) => <div className="project-team__group" key={label}><h3>{label}</h3>{members.length ? <ul>{members.map((member) => <li key={member.username}><Link className="row" to={`/u/${member.username}`}><Avatar username={member.username} displayName={member.displayName} size={24} trackOnline />{member.displayName}</Link></li>)}</ul> : <p className="muted">Пока не указаны</p>}</div>)}
           </section>
           {contribution && <section className="project-section"><h2>Присоединяйся к разработке</h2><div className="site-information__text"><LinkedText text={contribution} /></div></section>}
           <details className="project-accordion"><summary>Основные принципы</summary><div className="site-information__text"><LinkedText text={content.data.principles.replace(/^Bubble\s*[-—]\s*твой уголок интернета\s*\n[^\n]*\n?/i, "").trimStart()} /></div></details>

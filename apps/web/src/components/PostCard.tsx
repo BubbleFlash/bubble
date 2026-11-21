@@ -1,4 +1,3 @@
-import OnlineStatus from "./OnlineStatus";
 import { displayNameOf } from "@commune/shared";
 import { pluralRu } from "../lib/plural";
 import { memo, useEffect, useId, useRef, useState } from "react";
@@ -89,7 +88,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
 
   return (
     <article className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
-      {post.community ? <Link to={`/c/${post.community.slug}`} className="profile-avatar-link"><Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /></Link> : <ProfileAvatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} />}
+      {post.community ? <Link to={`/c/${post.community.slug}`} className="profile-avatar-link"><Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /></Link> : <ProfileAvatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} online={post.author.online} />}
       <div className="post-controls">
         {pinTarget && post.canPin && <button type="button" className="btn btn-ghost post-report" title={post.pinned ? "Открепить запись" : "Закрепить запись"} aria-label={post.pinned ? "Открепить запись" : "Закрепить запись"} disabled={pin.isPending} onClick={() => pin.mutate()}><Icon name="pin" size={18} /></button>}
         {canDelete && <button type="button" className="btn btn-ghost danger post-report" title="Удалить запись" aria-label="Удалить запись" disabled={del.isPending || moderate.isPending} onClick={() => { if (staffRemoval) { setReason(""); setCustomReason(""); moderate.reset(); setModerating(true); } else if (window.confirm("Удалить эту запись?")) del.mutate(post.id); }}><Icon name="trash" size={18} /></button>}
@@ -109,7 +108,6 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
         <div className="post-meta">
           {post.community ? <Link to={`/c/${post.community.slug}`} className="user-link">{post.community.name}</Link> : <>
             <Link to={`/u/${post.author.username}`} className="user-link">{displayNameOf(post.author)}</Link>
-            <OnlineStatus online={mine || post.author.online} />
             <PlusBadge plus={post.author.plus} />
           </>}
           {inlineComments ? (
@@ -127,7 +125,10 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
           {post.musicAttachments?.length > 0 && <MusicAttachments attachments={post.musicAttachments} source={`post:${post.id}`} />}
         </>}
         {post.repost && <RepostCard preview={post.repost} source={`post-repost:${post.id}`} />}
-        {post.community && post.author.id && <p className="muted community-post-author"><Link to={`/u/${post.author.username}`}>{displayNameOf(post.author)}</Link>{post.hideAuthor && <span title="Автор скрыт для остальных пользователей" aria-label="Автор скрыт для остальных пользователей"> <Icon name="eye-off" size={15} /></span>}</p>}
+        {post.community && post.author.id && <p className="muted community-post-author">
+          <Link to={`/u/${post.author.username}`}>{displayNameOf(post.author)}</Link>
+          {post.hideAuthor && <span title="Автор скрыт для остальных пользователей" aria-label="Автор скрыт для остальных пользователей"><Icon name="eye-off" size={15} /></span>}
+        </p>}
         <div className="post-actions">
           <button
             className={`btn btn-ghost ${post.likedByMe ? "liked" : ""}`}

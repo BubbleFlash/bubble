@@ -24,6 +24,18 @@ export async function findByUsername(raw: string | undefined) {
   return user;
 }
 
+export async function onlineProfiles(req: Request, res: Response) {
+  const usernames = typeof req.query.usernames === "string" ? req.query.usernames.split(",") : [];
+  if (!usernames.length || usernames.length > 50 || usernames.some((name) => !usernameSchema.safeParse(name).success)) {
+    throw badRequest("Invalid profile IDs");
+  }
+  const people = await User.find({ username: { $in: usernames }, deletionExpiresAt: null, anonymizedAt: null })
+    .collation({ locale: "en", strength: 2 }).select("username banned accountRestriction").lean();
+  const available = people.filter((person) => !accountRestriction(person));
+  const online = await onlineUsers(available.map((person) => String(person._id)));
+  res.json({ online: available.filter((person) => online.has(String(person._id))).map((person) => person.username.toLowerCase()) });
+}
+
 async function buildProfile(user: Awaited<ReturnType<typeof findByUsername>>, viewerId: string) {
   const [followerCount, followingCount, follows, followedBy, online] = await Promise.all([
     Follow.countDocuments({ following: user._id }),

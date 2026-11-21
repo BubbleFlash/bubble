@@ -71,7 +71,7 @@ describe.skipIf(!Number.isInteger(mongoPort) || mongoPort < 1 || mongoPort > 655
     expect(limitedSearch.headers["x-ratelimit-limiter"]).toBe("search");
     expect((await toggle(true)).status).toBe(200);
     expect((await search()).status).toBe(429);
-    for (let i = 42; i < 300; i++) expect((await sharedRequest()).status).toBe(404);
+    for (let i = 0; i < 300; i++) expect((await sharedRequest()).status).toBe(404);
     const limitedIp = await sharedRequest();
     expect(limitedIp.status).toBe(429);
     expect(limitedIp.headers["x-ratelimit-limiter"]).toBe("global-ip");
@@ -194,7 +194,7 @@ function browse(ip: string, token: string) {
 
 describe("HTTP rate limits", () => {
   beforeEach(() => {
-    vi.spyOn(rateLimitSettings, "rateLimitPolicy").mockResolvedValue({ enabled: true, revision: "http-tests", rules: {} });
+    vi.spyOn(rateLimitSettings, "rateLimitPolicy").mockResolvedValue({ enabled: true, revision: "http-tests", captchaRevision: null, rules: {} });
   });
   afterEach(() => vi.restoreAllMocks());
 

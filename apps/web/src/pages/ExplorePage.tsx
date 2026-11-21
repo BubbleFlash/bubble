@@ -1,4 +1,3 @@
-import OnlineStatus from "../components/OnlineStatus";
 import { displayNameOf } from "@commune/shared";
 import { Fragment } from "react";
 import { Link } from "react-router-dom";
@@ -62,11 +61,11 @@ export default function ExplorePage() {
       {posts.map((post, i) => (
         <Fragment key={post.id}>
           <article className="card post post-head">
-            {post.community ? <Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /> : <Avatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} />}
+            {post.community ? <Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /> : <Avatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} trackOnline online={post.author.online} />}
             <div className="post-main">
               <div className="post-meta">
                 <strong className="user-link">{post.community?.name ?? displayNameOf(post.author)}</strong>
-                {!post.community && <><OnlineStatus online={user?.id === post.author.id || post.author.online} /><PlusBadge plus={post.author.plus} /></>}
+                {!post.community && <PlusBadge plus={post.author.plus} />}
                 <span className="muted">· {postTime(post.createdAt)}</span>
               </div>
               {post.content && <PostText text={post.content} />}

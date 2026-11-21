@@ -18,6 +18,8 @@ import { pushConfigured, pushToUser } from "../services/pushService.js";
 import { emitToUsers, onlineUsers } from "../services/realtime.js";
 import { isPlusActive } from "../utils/plan.js";
 import { findByUsername } from "./userController.js";
+import { env } from "../config/env.js";
+import { allowAccountAction } from "../middleware/rateLimit.js";
 
 const PREVIEW_LENGTH = 120;
 const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned accountRestriction deletionExpiresAt anonymizedAt";
@@ -341,6 +343,7 @@ export async function start(req: Request, res: Response) {
   const input = req.body as SendMessageInput;
   const source = await validateMessageAttachments(me, input);
   const key = pairKey(me, targetId);
+  if (env.NODE_ENV !== "test" && !await Conversation.exists({ key }) && !await allowAccountAction(req, res, "chat-create", targetId)) return;
   const convo = (await Conversation.findOneAndUpdate(
     { key },
     { $setOnInsert: { key, participants: [me, targetId], lastMessageAt: new Date() } },

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
 import type { AccountUser, ClientNetworkEvent, MetricsReport, NetworkReport, PostDTO } from "@commune/shared";
 
 const createdAt = "2026-11-17T00:00:00Z";
@@ -64,6 +65,7 @@ async function installFixtures(
     }
     if (path === "/posts") return route.fulfill({ json: { items: posts, nextCursor: null } });
     if (path === "/public/posts") return route.fulfill({ json: { items: [], nextCursor: null } });
+    if (path === "/profile-presence") return route.fulfill({ json: { online: ["author"] } });
     if (path === "/site-content") return route.fulfill({ json: {
       about: "Bubble — независимая социальная сеть.", benefits: "", principles: "", rules: "",
     } });
@@ -85,6 +87,117 @@ async function installFixtures(
   return () => refreshes;
 }
 
+test("refresh the registration captcha after rejection and keep the form fields", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 401, json: { error: "No session" } }));
+  let issued = 0;
+  await page.route("**/api/auth/register/captcha", (route) => {
+    const id = (++issued).toString(16).padStart(48, "0");
+    const image = "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="64"/>').toString("base64");
+    return route.fulfill({ json: { required: true, id, image } });
+  });
+  await page.route("**/api/auth/register", async (route) => {
+    expect(route.request().postDataJSON().captcha).toEqual({ id: "2".padStart(48, "0"), answer: "123456" });
+    await route.fulfill({ status: 400, json: { error: "Invalid or expired captcha" } });
+  });
+  await page.goto(`${origin}/register`);
+  const account = page.getByLabel("ID профиля");
+  const email = page.getByLabel("Электронная почта");
+  const password = page.getByLabel("Пароль", { exact: true });
+  const code = page.getByLabel("Код с картинки");
+  await expect(page.getByRole("img", { name: "Картинка с проверочным кодом" })).toBeVisible();
+  await account.fill("bubble_tester");
+  await email.fill("bubble_tester@example.invalid");
+  await password.fill("fixture-password");
+  await code.fill("555555");
+  await page.getByRole("button", { name: "Обновить картинку" }).click();
+  await expect(code).toHaveValue("");
+  await code.fill("123456");
+  await page.getByRole("button", { name: "Создать аккаунт", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Код неверный или устарел" })).toBeVisible();
+  await expect(code).toHaveValue("");
+  await expect(account).toHaveValue("bubble_tester");
+  await expect(email).toHaveValue("bubble_tester@example.invalid");
+  await expect(password).toHaveValue("fixture-password");
+  expect(issued).toBe(3);
+});
+
+test("show confirmation instructions after registration from the guest tab", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 401, json: { error: "No session" } }));
+  await page.route("**/api/auth/register/captcha", (route) => route.fulfill({ json: {
+    required: true, id: "a".repeat(48), image: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=",
+  } }));
+  await page.route("**/api/auth/register", (route) => route.fulfill({ status: 201, json: { verificationRequired: true } }));
+  await page.goto(`${origin}/login`);
+  await page.getByRole("tab", { name: "Регистрация" }).click();
+  await page.getByLabel("ID профиля").fill("bubble_tester");
+  await page.getByLabel("Электронная почта").fill("test@example.invalid");
+  await page.getByLabel("Пароль", { exact: true }).fill("fixture-password");
+  await page.getByLabel("Код с картинки").fill("123456");
+  const picture = page.getByRole("img", { name: "Картинка с проверочным кодом" });
+  const button = page.getByRole("button", { name: "Обновить картинку" });
+  const pictureBox = await picture.boundingBox();
+  const buttonBox = await button.boundingBox();
+  expect(buttonBox!.x).toBeGreaterThanOrEqual(pictureBox!.x + pictureBox!.width);
+  await page.getByRole("button", { name: "Создать аккаунт", exact: true }).click();
+  await expect(page.getByText("Проверьте почту")).toBeVisible();
+  await expect(page.getByText("test@example.invalid")).toBeVisible();
+  await expect(page.getByText(/перейдите по ссылке/)).toBeVisible();
+  await expect(page.getByText("test@example.invalid")).toHaveCSS("display", "inline");
+  await expect(page.getByRole("link", { name: "Перейти ко входу" })).toHaveCount(0);
+});
+
+test("keep the publication draft and display Retry-After on a 429", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/posts", (route) => route.request().method() === "POST"
+    ? route.fulfill({ status: 429, headers: { "Retry-After": "90042" }, json: { error: "Too many requests, slow down." } })
+    : route.fallback());
+  await page.goto(origin);
+  const draft = page.getByRole("textbox", { name: "Написать запись" });
+  await draft.fill("Черновик публикации");
+  await page.getByRole("button", { name: "Опубликовать", exact: true }).click();
+  await expect(page.getByText("Слишком много запросов. Повторите через 25 ч 42 с.")).toBeVisible();
+  await expect(draft).toHaveValue("Черновик публикации");
+});
+
+test("save an account rule in hours and switch registration captcha independently", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ json: { accessToken: "fixture", user: { ...viewer, role: "admin" } } }));
+  const settings: RateLimitSettingsDTO = {
+    enabled: false,
+    captchaEnabled: false,
+    rules: Object.fromEntries(Object.entries(rateLimitDefaults).map(([name, rule]) => [name, { ...rule, enabled: true }])) as RateLimitSettingsDTO["rules"],
+  };
+  await page.route("**/api/admin/rate-limits", (route) => route.fulfill({ json: settings }));
+  await page.route("**/api/admin/rate-limits/post-create", (route) => {
+    const rule = route.request().postDataJSON();
+    expect(rule).toEqual({ enabled: false, limit: 7, windowSeconds: 7200 });
+    settings.rules["post-create"] = rule;
+    return route.fulfill({ json: rule });
+  });
+  await page.route("**/api/admin/rate-limits/captcha", (route) => {
+    expect(route.request().postDataJSON()).toEqual({ enabled: true });
+    settings.captchaEnabled = true;
+    return route.fulfill({ json: { captchaEnabled: true } });
+  });
+  await page.goto(`${origin}/moderation`);
+  await page.getByRole("button", { name: "Лимиты", exact: true }).click();
+  await page.getByLabel("Использовать это правило").uncheck();
+  await page.getByLabel("Действий за период").fill("7");
+  await page.getByLabel("Единица периода").selectOption("hours");
+  await page.getByLabel("Период", { exact: true }).fill("2");
+  await page.getByRole("button", { name: "Сохранить правило" }).click();
+  await expect(page.getByText("Правило сохранено.")).toBeVisible();
+  await page.getByRole("button", { name: "Включить капчу" }).click();
+  await expect(page.getByText("Капча включена.")).toBeVisible();
+  await expect(page.getByText("Общие лимиты API выключены.")).toBeVisible();
+});
+
 test("scroll the feed, open comments and follow a post link", async ({ page }, info) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
@@ -96,6 +209,15 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
   await expect(cards).toHaveCount(posts.length);
   const first = cards.first();
   await expect(first).toBeVisible();
+  const avatar = first.locator(".avatar-presence");
+  const indicator = avatar.getByRole("img", { name: "Онлайн" });
+  await expect(indicator).toBeVisible();
+  await expect(indicator).toHaveCSS("position", "absolute");
+  expect(await indicator.evaluate((dot) => {
+    const parent = dot.parentElement!.getBoundingClientRect();
+    const child = dot.getBoundingClientRect();
+    return child.x > parent.x + parent.width / 2 && child.y > parent.y + parent.height / 2;
+  })).toBe(true);
   const feedReadyMs = Math.round(performance.now() - started);
 
   const scroll = await page.evaluate(async () => {
@@ -122,6 +244,17 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
     };
   });
   expect(scroll.distancePx).toBeGreaterThan(1000);
+  if (info.project.name.startsWith("firefox")) {
+    const chrome = page.locator(".aero-window-chrome");
+    await expect(chrome).toHaveCSS("position", "sticky");
+    expect(await chrome.evaluate((node) => {
+      const bottom = node.getBoundingClientRect().bottom;
+      const left = node.getBoundingClientRect().left;
+      return node.contains(document.elementFromPoint(left + 2, bottom - 2))
+        && getComputedStyle(node).backgroundColor !== "rgba(0, 0, 0, 0)";
+    })).toBe(true);
+    await expect(page.locator(".aero-window > .shell")).toHaveCSS("clip-path", "none");
+  }
   await page.evaluate(() => window.scrollTo(0, 0));
 
   const commentsStarted = performance.now();

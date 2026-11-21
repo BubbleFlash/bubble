@@ -331,7 +331,9 @@ export default function App() {
     const home = homeRef.current;
     const chrome = chromeRef.current;
     const content = home?.querySelector<HTMLElement>(".aero-window > .shell");
-    if (!chrome || !content) return;
+    // Firefox scrolls on the compositor and can show the previous frame's moving clip.
+    // The fixed wallpaper mask and opaque header cover the scrolled surface in CSS.
+    if (!chrome || !content || CSS.supports("-moz-appearance", "none")) return;
     let frame = 0;
     const update = () => {
       frame = 0;

@@ -16,6 +16,8 @@ export const rateLimitDefaults = {
   upload: { limit: 30, windowSeconds: 900 },
   report: { limit: 10, windowSeconds: 900 },
   "community-create": { limit: 10, windowSeconds: 3600 },
+  "post-create": { limit: 10, windowSeconds: 900 },
+  "comment-create": { limit: 30, windowSeconds: 600 },
   message: { limit: 60, windowSeconds: 600 },
   "chat-create": { limit: 20, windowSeconds: 3600 },
   "messages-read": { limit: 300, windowSeconds: 600 },
@@ -28,6 +30,14 @@ export const rateLimitDefaults = {
 };
 
 export type RateLimitName = keyof typeof rateLimitDefaults;
+export const accountActionRules = ["post-create", "comment-create", "message", "chat-create"] as const;
+export type AccountActionRule = (typeof accountActionRules)[number];
+export const maxChatCreateLimit = 10_000;
+export const registrationRateLimits = {
+  registration: { limit: 20, windowSeconds: 900 },
+  "registration-captcha": { limit: 30, windowSeconds: 300 },
+};
+export type RegistrationRateLimit = keyof typeof registrationRateLimits;
 export const rateLimitNames = Object.keys(rateLimitDefaults) as RateLimitName[];
 export const rateLimitNameSchema = z.enum(rateLimitNames);
 
@@ -40,4 +50,4 @@ export const rateLimitRuleSchema = z.strictObject({
 });
 
 export type RateLimitRule = z.infer<typeof rateLimitRuleSchema>;
-export type RateLimitSettingsDTO = { enabled: boolean; rules: Record<RateLimitName, RateLimitRule> };
+export type RateLimitSettingsDTO = { enabled: boolean; captchaEnabled: boolean; rules: Record<RateLimitName, RateLimitRule> };

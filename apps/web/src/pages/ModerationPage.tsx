@@ -614,6 +614,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                   displayName={report.reporter.displayName}
                   url={report.reporter.avatarUrl}
                   frame={report.reporter.avatarFrame}
+                    trackOnline
                   size={36}
                 />
               )}
@@ -642,6 +643,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                     displayName={report.author.displayName}
                     url={report.author.avatarUrl}
                     frame={report.author.avatarFrame}
+                      trackOnline
                     size={36}
                   />
                   <div>
@@ -755,6 +757,7 @@ function Content({ send }: { send: Send }) {
                   displayName={item.author.displayName}
                   url={item.author.avatarUrl}
                   frame={item.author.avatarFrame}
+                    trackOnline
                   size={36}
                 />
                 <span>{item.author.displayName || item.author.username}</span>
@@ -892,6 +895,7 @@ export default function ModerationPage() {
                     displayName={detail.data.displayName}
                     url={detail.data.avatarUrl}
                     frame={detail.data.avatarFrame}
+                      trackOnline
                     size={44}
                   />
                   <strong>
@@ -972,6 +976,7 @@ export default function ModerationPage() {
                     displayName={account.displayName}
                     url={account.avatarUrl}
                     frame={account.avatarFrame}
+                      trackOnline
                     size={40}
                   />
                   <button className="link-btn" onClick={() => setSelected(account)}>
