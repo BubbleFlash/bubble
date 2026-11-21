@@ -274,7 +274,7 @@ function Thread({ id }: { id: string }) {
   const latest = thread.data?.pages[0];
   const otherId = latest?.conversation?.other.id;
   const typing = useRealtime((s) => s.typing[id] === true);
-  const online = useRealtime((s) => (otherId ? s.presence[otherId] === true : false));
+  const online = useRealtime((s) => otherId ? s.presence[otherId] : undefined) ?? latest?.conversation?.other.online ?? false;
 
   const messages = useMemo(() => {
     const seen = new Set<string>();
@@ -339,17 +339,13 @@ function Thread({ id }: { id: string }) {
         </Link>
         {other && (
           <Link to={`/u/${other.username}`} className="person">
-            <Avatar username={other.username} displayName={other.displayName} url={other.avatarUrl} frame={other.avatarFrame} size={36} />
+            <Avatar username={other.username} displayName={other.displayName} url={other.avatarUrl} frame={other.avatarFrame} size={36} online={online} />
             <span className="person-text">
               <strong>
                 {displayNameOf(other)} <PlusBadge plus={other.plus} />
               </strong>
               {typing ? (
                 <span className="chat-status typing-label">печатает…</span>
-              ) : online ? (
-                <span className="chat-status">
-                  <span className="presence-dot" aria-hidden="true" />  В сети
-                </span>
               ) : null}
             </span>
           </Link>
@@ -480,6 +476,8 @@ function NewChat({ username }: { username: string }) {
         <Link to="/messages" className="icon-btn chat-back" aria-label="К списку переписок">
           ←
         </Link>
+        {recipient && <Avatar username={recipient.username} displayName={recipient.displayName}
+          url={recipient.avatarUrl} frame={recipient.avatarFrame} size={36} trackOnline online={recipient.online} />}
         <strong>{name ? `Новое сообщение для ${name}` : "Новое сообщение"}</strong>
       </div>
       <div className="chat-messages">
@@ -505,6 +503,7 @@ export default function MessagesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const conversations = useConversations();
+  const presence = useRealtime((state) => state.presence);
   const list = conversations.data ?? [];
 
   // "Message @someone" from a profile: reuse the existing conversation when there is one.
@@ -536,7 +535,7 @@ export default function MessagesPage() {
             to={`/messages/${c.id}`}
             className={`convo${c.id === id ? " active" : ""}${c.unread > 0 ? " unread" : ""}`}
           >
-            <Avatar username={c.other.username} displayName={c.other.displayName} url={c.other.avatarUrl} frame={c.other.avatarFrame} size={44} />
+            <Avatar username={c.other.username} displayName={c.other.displayName} url={c.other.avatarUrl} frame={c.other.avatarFrame} size={44} trackOnline online={(c.id === id ? presence[c.other.id] : undefined) ?? c.other.online} />
             <span className="convo-main">
               <span className="convo-top">
                 <strong>

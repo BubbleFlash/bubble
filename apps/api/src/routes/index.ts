@@ -88,17 +88,20 @@ import * as users from "../controllers/userController.js";
 import * as relationships from "../controllers/relationshipController.js";
 import * as moderation from "../controllers/moderationController.js";
 import * as testGate from "../controllers/testGateController.js";
+import * as rateLimitSettings from "../controllers/rateLimitController.js";
+import * as fundraiserSettings from "../controllers/fundraiserSettingsController.js";
+import * as feedMute from "../controllers/feedMuteController.js";
 import { requireActive, requireAdmin, requireAuth, requireModerator, requirePlus, requirePublishing } from "../middleware/auth.js";
 import {
   authLimiter,
+  accountActionLimiter,
+  allowRegistrationRequest,
   clientErrorLimiter,
   pushLimiter,
   readLimiter,
   testPushLimiter,
   checkoutLimiter,
   contactLimiter,
-  messageLimiter,
-  newChatLimiter,
   communityLimiter,
   emailLimiter,
   reportLimiter,
@@ -128,6 +131,17 @@ const privateMusicResponse: RequestHandler = (_req, res, next) => {
  */
 const adminOnly = [requireAuth, requireActive, requireAdmin];
 const staff = [requireAuth, requireActive, requireModerator];
+router.put("/admin/feed-pin/:id", ...adminOnly, asyncHandler(posts.pinFeedPost));
+router.delete("/admin/feed-pin/:id", ...adminOnly, asyncHandler(posts.pinFeedPost));
+router.get("/feed-mutes/:kind/:name", requireAuth, asyncHandler(feedMute.get));
+router.put("/feed-mutes/:kind/:name", requireAuth, requireActive, asyncHandler(feedMute.update));
+router.delete("/feed-mutes/:kind/:name", requireAuth, requireActive, asyncHandler(feedMute.update));
+router.get("/admin/fundraiser", ...adminOnly, asyncHandler(fundraiserSettings.getSettings));
+router.put("/admin/fundraiser", ...adminOnly, asyncHandler(fundraiserSettings.updateSettings));
+router.get("/admin/rate-limits", ...adminOnly, asyncHandler(rateLimitSettings.getSettings));
+router.put("/admin/rate-limits", ...adminOnly, asyncHandler(rateLimitSettings.updateSettings));
+router.put("/admin/rate-limits/captcha", ...adminOnly, asyncHandler(rateLimitSettings.updateCaptcha));
+router.put("/admin/rate-limits/:name", ...adminOnly, asyncHandler(rateLimitSettings.updateRule));
 router.get("/admin/test-gate", ...adminOnly, asyncHandler(testGate.getSettings));
 router.put("/admin/test-gate", ...adminOnly, asyncHandler(testGate.updateSettings));
 router.get("/admin/development-widget", ...adminOnly, asyncHandler(developmentWidget.settings));
@@ -163,7 +177,10 @@ router.post(
 router.post("/client-network", validate(clientNetworkBatchSchema), monitor.reportNetwork);
 
 // Auth
-router.post("/auth/register", authLimiter, validate(registerSchema), asyncHandler(auth.register));
+router.post("/auth/register/captcha", asyncHandler(auth.registrationCaptcha));
+router.post("/auth/register", asyncHandler(async (req, res, next) => {
+  if (await allowRegistrationRequest(req, res, "registration")) next();
+}), validate(registerSchema), asyncHandler(auth.register));
 router.post("/auth/login", authLimiter, validate(loginSchema), asyncHandler(auth.login));
 router.post("/auth/google", authLimiter, validate(googleLoginSchema), asyncHandler(auth.google));
 router.post("/auth/refresh", refreshLookupLimiter, asyncHandler(auth.prepareRefresh), refreshLimiter, asyncHandler(auth.refresh));
@@ -210,6 +227,7 @@ router.get(
   asyncHandler(publicApi.listPosts),
 );
 router.get("/public/posts/:id", publicLimiter, asyncHandler(publicApi.getPost));
+router.get("/profile-presence", requireAuth, publicLimiter, asyncHandler(users.onlineProfiles));
 
 // Uploads (auth and rate limit run before the file is parsed)
 router.post(
@@ -331,6 +349,8 @@ router.get(
 router.get("/users/:username", requireAuth, asyncHandler(users.getProfile));
 router.get("/users/me/relationships/counts", requireAuth, asyncHandler(relationships.counts));
 router.get("/users/:username/friends/access", requireAuth, asyncHandler(relationships.access));
+router.put("/users/:username/posts/:id/pin", requireAuth, requireActive, asyncHandler(users.pinPost));
+router.delete("/users/:username/posts/:id/pin", requireAuth, requireActive, asyncHandler(users.pinPost));
 router.get(
   "/users/:username/friends",
   requireAuth,
@@ -419,6 +439,8 @@ router.post(
   asyncHandler(communities.create),
 );
 router.get("/communities/:slug", requireAuth, asyncHandler(communities.get));
+router.put("/communities/:slug/posts/:id/pin", requireAuth, requireActive, asyncHandler(communities.pinPost));
+router.delete("/communities/:slug/posts/:id/pin", requireAuth, requireActive, asyncHandler(communities.pinPost));
 router.patch("/communities/:slug", requireAuth, requireActive, validate(updateCommunitySchema), asyncHandler(communities.update));
 router.put("/communities/:slug/permissions", requireAuth, requireActive, validate(communityPermissionsSchema), asyncHandler(communities.updatePermissions));
 router.get("/communities/:slug/members", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.members));
@@ -456,6 +478,7 @@ router.post(
   validate(createPostSchema),
   requireActive,
   requirePublishing,
+  accountActionLimiter("post-create"),
   asyncHandler(posts.createPost),
 );
 router.post(
@@ -464,6 +487,7 @@ router.post(
   validate(createRepostSchema),
   requireActive,
   requirePublishing,
+  accountActionLimiter("post-create"),
   asyncHandler(posts.createRepost),
 );
 router.get("/posts/:id", requireAuth, asyncHandler(posts.getPost));
@@ -480,6 +504,7 @@ router.post(
   validate(createCommentSchema),
   requireActive,
   requirePublishing,
+  accountActionLimiter("comment-create"),
   asyncHandler(posts.addComment),
 );
 router.put("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
@@ -582,9 +607,9 @@ router.get("/messages/images/:imageId", requireAuth, asyncHandler(messages.image
 router.post(
   "/messages/with/:username",
   requireAuth,
-  newChatLimiter,
   validate(sendMessageSchema),
   requireActive,
+  accountActionLimiter("message"),
   asyncHandler(messages.start),
 );
 router.get(
@@ -595,13 +620,13 @@ router.get(
 );
 // After /messages/with/:username, so a user named "read" can still be messaged.
 router.post("/messages/:id/read", requireAuth, readLimiter, asyncHandler(messages.markRead));
-router.patch("/messages/:id/items/:messageId", requireAuth, requireActive, messageLimiter, validate(editMessageSchema), asyncHandler(messages.editMessage));
-router.delete("/messages/:id/items/:messageId", requireAuth, requireActive, messageLimiter, asyncHandler(messages.deleteMessage));
+router.patch("/messages/:id/items/:messageId", requireAuth, requireActive, validate(editMessageSchema), asyncHandler(messages.editMessage));
+router.delete("/messages/:id/items/:messageId", requireAuth, requireActive, asyncHandler(messages.deleteMessage));
 router.post(
   "/messages/:id",
   requireAuth,
-  messageLimiter,
   validate(sendMessageSchema),
   requireActive,
+  accountActionLimiter("message"),
   asyncHandler(messages.send),
 );

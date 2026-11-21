@@ -15,9 +15,11 @@ import type { PopulatedPost } from "../utils/serializers.js";
 import { User } from "../models/User.js";
 import { badRequest, forbidden, notFound } from "../utils/errors.js";
 import { pushConfigured, pushToUser } from "../services/pushService.js";
-import { emitToUsers } from "../services/realtime.js";
+import { emitToUsers, onlineUsers } from "../services/realtime.js";
 import { isPlusActive } from "../utils/plan.js";
 import { findByUsername } from "./userController.js";
+import { env } from "../config/env.js";
+import { allowAccountAction } from "../middleware/rateLimit.js";
 
 const PREVIEW_LENGTH = 120;
 const USER_FIELDS = "username displayName bio avatarUrl avatarFrame plusUntil banned accountRestriction deletionExpiresAt anonymizedAt";
@@ -179,10 +181,15 @@ export async function listConversations(req: Request, res: Response) {
     .select(USER_FIELDS)
     .lean()) as unknown as (LeanUser & Parameters<typeof accountRestriction>[0])[];
   const byId = new Map(users.map((u) => [str(u._id), u]));
+  const online = await onlineUsers(otherIds);
   const out: ConversationDTO[] = [];
   convos.forEach((c, i) => {
     const other = byId.get(otherIds[i]!);
-      if (other && !accountRestriction(other)) out.push(toConversationDTO(c, me, other, c.last[0]));
+      if (other && !accountRestriction(other)) {
+        const conversation = toConversationDTO(c, me, other, c.last[0]);
+        conversation.other.online = online.has(str(other._id));
+        out.push(conversation);
+      }
   });
   out.sort((a, b) => Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt));
   res.json(out);
@@ -251,7 +258,10 @@ export async function getMessages(req: Request, res: Response) {
     items: page.map((row, index) => toMessageDTO(row, music.get(str(row._id)) ?? [], reposts[index])),
     nextCursor,
   };
-  if (!cursor && other) result.conversation = toConversationDTO(convo, me, other, page.at(-1));
+  if (!cursor && other) {
+    result.conversation = toConversationDTO(convo, me, other, page.at(-1));
+    result.conversation.other.online = (await onlineUsers([otherId])).has(otherId);
+  }
   res.json(result);
 }
 
@@ -333,6 +343,7 @@ export async function start(req: Request, res: Response) {
   const input = req.body as SendMessageInput;
   const source = await validateMessageAttachments(me, input);
   const key = pairKey(me, targetId);
+  if (env.NODE_ENV !== "test" && !await Conversation.exists({ key }) && !await allowAccountAction(req, res, "chat-create", targetId)) return;
   const convo = (await Conversation.findOneAndUpdate(
     { key },
     { $setOnInsert: { key, participants: [me, targetId], lastMessageAt: new Date() } },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { AccountUser } from "@commune/shared";
 import { verifyEmailSchema } from "@commune/shared";
 import { api } from "../lib/api";
@@ -9,7 +9,8 @@ type Status = "working" | "done" | "failed";
 
 export default function VerifyEmailPage() {
   const [params] = useSearchParams();
-  const { user, setUser } = useAuth();
+  const { user, setUser, verifyEmail } = useAuth();
+  const navigate = useNavigate();
   const [status, setStatus] = useState<Status>("working");
   const [message, setMessage] = useState("");
   // The token is single use. React StrictMode runs effects twice in development, so guard it.
@@ -24,8 +25,12 @@ export default function VerifyEmailPage() {
       setMessage("Ссылка подтверждения недействительна.");
       return;
     }
-    api("/auth/verify-email", { method: "POST", body: parsed.data })
-      .then(async () => {
+    verifyEmail(parsed.data.token)
+      .then(async (signedIn) => {
+        if (signedIn) {
+          navigate("/", { replace: true });
+          return;
+        }
         setStatus("done");
         // Refresh the cached account so the "confirm your email" banner disappears.
         if (user) setUser(await api<AccountUser>("/users/me"));
@@ -34,7 +39,7 @@ export default function VerifyEmailPage() {
         setStatus("failed");
         setMessage(err instanceof Error ? err.message : "Что-то пошло не так");
       });
-  }, [params, user, setUser]);
+  }, [params, user, setUser, verifyEmail, navigate]);
 
   return (
     <div className="card auth">
@@ -43,9 +48,9 @@ export default function VerifyEmailPage() {
         <>
           <h1>Почта подтверждена</h1>
           <p>Спасибо, ваш адрес подтверждён.</p>
-          <Link className="btn block" to="/">
+          <Link className="btn block" to={user ? "/" : "/login"}>
 
-            Перейти в Bubble
+            {user ? "Перейти в Bubble" : "Войти в Bubble"}
           </Link>
         </>
       )}
@@ -55,7 +60,7 @@ export default function VerifyEmailPage() {
           <p className="error">{message}</p>
           <p className="muted">
 
-            Войдите и нажмите кнопку повторной отправки в уведомлении, чтобы получить новую ссылку.
+            Введите почту и пароль на странице входа, чтобы получить новую ссылку.
           </p>
           <Link className="btn block" to="/login">
 

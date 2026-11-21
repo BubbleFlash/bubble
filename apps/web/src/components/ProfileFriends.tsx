@@ -48,7 +48,7 @@ export default function ProfileFriends({ username, isMe }: { username: string; i
               key={person.id}
               to={`/u/${encodeURIComponent(person.username)}`}
             >
-              <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={48} />
+              <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={48} trackOnline online={person.online} />
               <span>{displayNameOf(person)}</span>
             </Link>
           ))}

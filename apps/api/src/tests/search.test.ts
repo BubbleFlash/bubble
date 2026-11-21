@@ -78,7 +78,7 @@ describe("GET /api/search/users", () => {
       $nor: expect.any(Array),
     });
     expect(res.body.items).toEqual([
-      { id: expect.any(String), username: "sam_dev", bio: "hi", avatarUrl: null, plus: false },
+      { id: expect.any(String), username: "sam_dev", bio: "hi", avatarUrl: null, plus: false, online: false },
     ]);
     expect(res.body.nextCursor).toBeNull();
   });

@@ -8,6 +8,7 @@ import { badRequest, forbidden, notFound } from "../utils/errors.js";
 import { isPlusActive } from "../utils/plan.js";
 import { escapeRegex } from "../utils/regex.js";
 import { findByUsername } from "./userController.js";
+import { onlineUsers } from "../services/realtime.js";
 
 type Query = {
   type: "friends" | "following" | "followers" | "outgoing" | "incoming";
@@ -123,9 +124,10 @@ function relationshipPipeline(
 
 async function page(owner: Types.ObjectId, query: Query): Promise<Page<UserSummaryDTO>> {
   const { limit } = query;
-  const pipeline = relationshipPipeline(owner, query);
+  if (query.cursor) parseCursor(query.cursor);
+  const pipeline = relationshipPipeline(owner, query.type === "friends" ? { ...query, cursor: undefined } : query);
   pipeline.push(
-    { $limit: limit + 1 },
+    ...(query.type === "friends" ? [] : [{ $limit: limit + 1 }]),
     {
       $project: {
         _id: 1,
@@ -142,12 +144,22 @@ async function page(owner: Types.ObjectId, query: Query): Promise<Page<UserSumma
     },
   );
   const rows = await Follow.aggregate<Row>(pipeline);
-  const hasMore = rows.length > limit;
-  const selected = rows.slice(0, limit);
+  const online = await onlineUsers(rows.map((row) => String(row.person._id)));
+  if (query.type === "friends") rows.sort((a, b) => Number(online.has(String(b.person._id))) - Number(online.has(String(a.person._id))) || b.friendshipAt!.getTime() - a.friendshipAt!.getTime() || String(b._id).localeCompare(String(a._id)));
+  const cursorIndex = query.type === "friends" && query.cursor
+    ? rows.findIndex((row) => `${row.friendshipAt!.toISOString()}|${row._id}` === query.cursor)
+    : -1;
+  const after = query.type === "friends" && query.cursor
+    ? cursorIndex === -1 ? rows.length : cursorIndex + 1
+    : 0;
+  const remaining = rows.slice(after);
+  const hasMore = remaining.length > limit;
+  const selected = remaining.slice(0, limit);
   const last = selected[selected.length - 1];
   return {
     items: selected.map(({ person }) => ({
       id: person._id.toString(),
+      online: online.has(person._id.toString()),
       username: person.username,
       displayName: person.displayName ?? undefined,
       bio: person.bio ?? "",

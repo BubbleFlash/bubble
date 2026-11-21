@@ -77,8 +77,9 @@ export function sendVerificationEmailInBackground(user: Recipient) {
 
 export async function verifyEmail(raw: string) {
   const record = await consumeToken(raw, "verify_email");
-  const result = await User.updateOne({ ...tokenAccount(record), deletionExpiresAt: null }, { $set: { emailVerified: true } });
-  if (!result.matchedCount) throw badRequest("This link is invalid or has expired");
+  const user = await User.findOneAndUpdate({ ...tokenAccount(record), deletionExpiresAt: null }, { $set: { emailVerified: true, registrationPending: false } }, { new: false });
+  if (!user) throw badRequest("This link is invalid or has expired");
+  return user.registrationPending ? user._id : null;
 }
 
 /** Always resolves, whether or not the email belongs to an account (no account discovery). */

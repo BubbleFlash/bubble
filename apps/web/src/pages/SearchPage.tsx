@@ -54,7 +54,7 @@ export default function SearchPage() {
           )}
           {people.map((u) => (
             <Link key={u.id} to={`/u/${u.username}`} className="card person">
-              <Avatar username={u.username} displayName={u.displayName} url={u.avatarUrl} frame={u.avatarFrame} size={44} />
+              <Avatar username={u.username} displayName={u.displayName} url={u.avatarUrl} frame={u.avatarFrame} size={44} trackOnline online={u.online} />
               <div>
                 <strong>{displayNameOf(u)}</strong> <PlusBadge plus={u.plus} />
                 {u.bio && <p className="muted">{u.bio}</p>}

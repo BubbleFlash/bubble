@@ -146,10 +146,10 @@ describe("POST /api/auth/verify-email", () => {
       user: USER_ID,
       expiresAt: new Date(Date.now() + 60_000),
     } as never);
-    const update = vi.spyOn(User, "updateOne").mockResolvedValue({ matchedCount: 1 } as never);
+    const update = vi.spyOn(User, "findOneAndUpdate").mockResolvedValue({ _id: USER_ID, registrationPending: false } as never);
     const res = await request(app).post("/api/auth/verify-email").send({ token: TOKEN });
     expect(res.status).toBe(204);
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ _id: USER_ID, deletionExpiresAt: null }), { $set: { emailVerified: true } });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ _id: USER_ID, deletionExpiresAt: null }), { $set: { emailVerified: true, registrationPending: false } }, { new: false });
   });
 });
 

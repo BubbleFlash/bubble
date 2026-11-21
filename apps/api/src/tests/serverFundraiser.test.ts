@@ -2,12 +2,16 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { clearServerFundraiserCache, getServerFundraiser } from "../services/serverFundraiser.js";
+import { FundraiserSettings } from "../models/FundraiserSettings.js";
 
 const app = createApp();
 const url = "https://bubbleflash.github.io/fundraiser-worker/fundraiser.json";
 const goal = { title: "На оплату серверов", currency: "RUB", current: 3237, target: 2700, updatedAt: "2026-11-16T05:45:29Z" };
 
-beforeEach(clearServerFundraiserCache);
+beforeEach(() => {
+  clearServerFundraiserCache();
+  vi.spyOn(FundraiserSettings, "findById").mockImplementation((() => ({ lean: async () => null })) as never);
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -46,6 +50,12 @@ describe("server fundraiser", () => {
       vi.stubGlobal("fetch", vi.fn(async () => Response.json(invalid)));
       await expect(getServerFundraiser()).rejects.toThrow();
     }
+  });
+
+  it("selects a saved goal from the worker's array", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json([{ ...goal, id: 1 }, { ...goal, id: 2, title: "Другая цель" }])));
+    vi.mocked(FundraiserSettings.findById).mockImplementation((() => ({ lean: async () => ({ goalId: 2 }) })) as never);
+    expect((await getServerFundraiser()).title).toBe("Другая цель");
   });
 
   it("reports unavailable and timed-out sources and limits retry frequency", async () => {

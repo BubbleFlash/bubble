@@ -4,7 +4,6 @@ import { ProfileSkeleton } from "../components/Skeleton";
 import type { ChangeEvent, FormEvent } from "react";
 import { useParams } from "react-router-dom";
 import Composer from "../components/Composer";
-import OnlineStatus from "../components/OnlineStatus";
 import Avatar from "../components/Avatar";
 import ProfileAction from "../components/ProfileAction";
 import PlusBadge from "../components/PlusBadge";
@@ -16,6 +15,7 @@ import { useUploadImage } from "../hooks/useUpload";
 import { validateImage } from "../lib/images";
 import { useAuth } from "../store/auth";
 import ProfileFriends from "../components/ProfileFriends";
+import FeedMuteButton from "../components/FeedMuteButton";
 
 export default function ProfilePage() {
   const { username = "" } = useParams();
@@ -95,9 +95,10 @@ export default function ProfilePage() {
   return (
     <>
       <section className="card profile">
+        {!isMe && <FeedMuteButton kind="users" name={p.username} />}
         <div className="profile-top">
           <div className="profile-id">
-            <Avatar username={p.username} displayName={p.displayName} url={p.avatarUrl} frame={p.avatarFrame} size={72} />
+            <Avatar username={p.username} displayName={p.displayName} url={p.avatarUrl} frame={p.avatarFrame} size={72} trackOnline online={p.online} />
             <div>
               <div className="profile-name-row">
                 {isMe && editing ? (
@@ -105,7 +106,6 @@ export default function ProfilePage() {
                     maxLength={DISPLAY_NAME_MAX_LENGTH} required
                     onChange={(event) => setDisplayName(event.target.value)} />
                 ) : <h1 className="profile-name">{displayNameOf(p)}</h1>}
-                <OnlineStatus online={isMe || p.online} showText />
                 <PlusBadge plus={p.plus} />
               </div>
               <span className="profile-username muted">@{p.username}</span>
@@ -203,7 +203,7 @@ export default function ProfilePage() {
 
       {me && <ProfileMusic key={`${me.id}:${p.id}`} username={p.username} viewerId={me.id} isMe={isMe} />}
       {isMe && !p.banned && <Composer />}
-      <PostList inlineComments query={posts} emptyMessage="Записей пока нет." />
+      <PostList inlineComments query={posts} emptyMessage="Записей пока нет." pinTarget={`/users/${encodeURIComponent(username)}`} />
     </>
   );
 }

@@ -34,7 +34,7 @@ export default function FeedPage() {
           </button>
         ))}
       </div>
-      <PostList inlineComments query={feed} emptyMessage={active.empty} />
+      <PostList inlineComments query={feed} emptyMessage={active.empty} pinTarget={tab === "all" ? "/admin/feed-pin" : undefined} />
     </>
   );
 }

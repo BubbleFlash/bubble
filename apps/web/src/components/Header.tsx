@@ -98,7 +98,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             {user && (
               <>
                 <Link to={`/u/${user.username}`} className="nav-link nav-profile">
-                  <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={26} />
+                  <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={26} online />
                   <span className="nav-profile-name">{displayNameOf(user)}</span>
                   <PlusBadge plus={user.plus} />
                 </Link>

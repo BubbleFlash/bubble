@@ -1,12 +1,14 @@
 import type { Request, Response } from "express";
+import mongoose from "mongoose";
 import { fontUploadUrlSchema, usernameSchema, type UpdateAppearanceInput } from "@commune/shared";
 import { Follow } from "../models/Follow.js";
 import { User } from "../models/User.js";
+import { Post } from "../models/Post.js";
 import { accountRestriction } from "../services/restrictions.js";
 import { onlineUsers } from "../services/realtime.js";
 import { notify } from "../services/notificationService.js";
 import { deleteFontIfUnused, deleteUploadIfUnused } from "../services/uploadService.js";
-import { badRequest, notFound } from "../utils/errors.js";
+import { badRequest, forbidden, notFound } from "../utils/errors.js";
 import { toProfileDTO, toAccountUser } from "../utils/serializers.js";
 import { sendPostPage } from "./postController.js";
 import { listProfileMusic } from "../services/musicService.js";
@@ -20,6 +22,18 @@ export async function findByUsername(raw: string | undefined) {
     .lean();
   if (!user || user.deletionExpiresAt || user.anonymizedAt) throw notFound("User not found");
   return user;
+}
+
+export async function onlineProfiles(req: Request, res: Response) {
+  const usernames = typeof req.query.usernames === "string" ? req.query.usernames.split(",") : [];
+  if (!usernames.length || usernames.length > 50 || usernames.some((name) => !usernameSchema.safeParse(name).success)) {
+    throw badRequest("Invalid profile IDs");
+  }
+  const people = await User.find({ username: { $in: usernames }, deletionExpiresAt: null, anonymizedAt: null })
+    .collation({ locale: "en", strength: 2 }).select("username banned accountRestriction").lean();
+  const available = people.filter((person) => !accountRestriction(person));
+  const online = await onlineUsers(available.map((person) => String(person._id)));
+  res.json({ online: available.filter((person) => online.has(String(person._id))).map((person) => person.username.toLowerCase()) });
 }
 
 async function buildProfile(user: Awaited<ReturnType<typeof findByUsername>>, viewerId: string) {
@@ -141,7 +155,18 @@ export async function getProfile(req: Request, res: Response) {
 export async function userPosts(req: Request, res: Response) {
   const user = await findByUsername(req.params.username);
   const showHidden = String(user._id) === req.userId || req.userRole === "admin" || req.userRole === "moderator";
-  await sendPostPage(req, res, { author: user._id, ...(!showHidden && { hideAuthor: { $ne: true } }) });
+  await sendPostPage(req, res, { author: user._id, ...(!showHidden && { hideAuthor: { $ne: true } }) }, { id: user.pinnedPost, canPin: String(user._id) === req.userId });
+}
+
+export async function pinPost(req: Request, res: Response) {
+  const user = await findByUsername(req.params.username);
+  if (String(user._id) !== req.userId) throw forbidden("You cannot pin posts on this profile");
+  if (!mongoose.isValidObjectId(req.params.id)) throw badRequest("Invalid post ID");
+  const post = await Post.findOne({ _id: req.params.id, author: user._id, moderationState: { $nin: ["hidden", "removed", "withdrawn"] } }).select("_id").lean();
+  if (!post) throw notFound("Post not found");
+  if (req.method === "DELETE") await User.updateOne({ _id: user._id, pinnedPost: post._id }, { $unset: { pinnedPost: 1 } });
+  else await User.updateOne({ _id: user._id }, { $set: { pinnedPost: post._id } });
+  res.status(204).end();
 }
 
 /** Toggles following. Returns the updated profile so the UI can refresh counts in one step. */

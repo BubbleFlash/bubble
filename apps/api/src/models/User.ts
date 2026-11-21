@@ -10,6 +10,9 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, trim: true, maxlength: DISPLAY_NAME_MAX_LENGTH },
     bio: { type: String, default: "", maxlength: 160 },
+    pinnedPost: { type: Schema.Types.ObjectId, ref: "Post" },
+    mutedUsers: { type: [Schema.Types.ObjectId], default: undefined },
+    mutedCommunities: { type: [Schema.Types.ObjectId], default: undefined },
     avatarUrl: { type: String, default: null, index: true, sparse: true },
     avatarFrame: {
       type: new Schema({
@@ -59,6 +62,7 @@ const userSchema = new Schema(
     // against the clock, so access ends on time even if a cancellation webhook is missed.
     plusUntil: { type: Date, default: null },
     emailVerified: { type: Boolean, default: false },
+    registrationPending: { type: Boolean, default: false },
     // Which push notifications this person wants (they can still be turned off per device).
     pushMessages: { type: Boolean, default: true },
     pushSocial: { type: Boolean, default: true },

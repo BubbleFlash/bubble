@@ -48,8 +48,20 @@ integration("Bubble account lifecycle on isolated MongoDB", () => {
     const nextPassword = "replacement-password";
     const registered = await post("/auth/register", { username: "bubbletester", email, password });
     expect(registered.status, JSON.stringify(registered.body)).toBe(201);
-    const id = registered.body.user.id;
-    const firstToken = registered.body.accessToken;
+    expect(registered.body).toEqual({ verificationRequired: true });
+    expect((await login(email, password)).status).toBe(403);
+    const verification = vi.mocked(sendMail).mock.calls.map(([message]) => message).reverse().find((message) => message.to === email);
+    const verificationToken = /verify-email\?token=([a-f0-9]{96})/.exec(verification?.text ?? "")?.[1];
+    expect(verificationToken).toBeDefined();
+    const confirmed = await post("/auth/verify-email", { token: verificationToken });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.accessToken).toBeTruthy();
+    expect(confirmed.headers["set-cookie"]?.[0]).toContain("commune_rt=");
+    expect((await post("/auth/verify-email", { token: verificationToken })).status).toBe(400);
+    const session = await login(email, password);
+    expect(session.status).toBe(200);
+    const id = session.body.user.id;
+    const firstToken = session.body.accessToken;
     expect((await me(firstToken)).body.email).toBe(email);
     expect(await api.get("/api/users/bubbletester").set("Authorization", `Bearer ${firstToken}`).then((r) => r.body.email)).toBeUndefined();
 

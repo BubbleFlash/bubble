@@ -75,14 +75,7 @@ function sendVisibility() {
 }
 
 function joinNow(id: string) {
-  socket?.emit(
-    "conversation:join",
-    { conversationId: id },
-    (res: { ok: boolean; online?: boolean }) => {
-      // The answer says whether the other person is online right now; presence events do the rest.
-      void res;
-    },
-  );
+  socket?.emit("conversation:join", { conversationId: id });
 }
 
 async function renewAndReconnect() {

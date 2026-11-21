@@ -13,6 +13,8 @@ import Icon, { type IconName } from "../components/Icon";
 import AeroTitlebar from "../components/AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import TestGateSettings from "../components/TestGateSettings";
+import RateLimitSettings from "../components/RateLimitSettings";
+import FundraiserSettings from "../components/FundraiserSettings";
 import { violationReasons } from "../lib/moderationReasons";
 import DevelopmentWidgetSettings from "../components/DevelopmentWidgetSettings";
 import SiteContentSettings from "../components/SiteContentSettings";
@@ -612,6 +614,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                   displayName={report.reporter.displayName}
                   url={report.reporter.avatarUrl}
                   frame={report.reporter.avatarFrame}
+                    trackOnline
                   size={36}
                 />
               )}
@@ -640,6 +643,7 @@ function Reports({ send, openUser }: { send: Send; openUser: (account: Person) =
                     displayName={report.author.displayName}
                     url={report.author.avatarUrl}
                     frame={report.author.avatarFrame}
+                      trackOnline
                     size={36}
                   />
                   <div>
@@ -753,6 +757,7 @@ function Content({ send }: { send: Send }) {
                   displayName={item.author.displayName}
                   url={item.author.avatarUrl}
                   frame={item.author.avatarFrame}
+                    trackOnline
                   size={36}
                 />
                 <span>{item.author.displayName || item.author.username}</span>
@@ -835,7 +840,7 @@ export default function ModerationPage() {
         <ModerationHelp />
       </div>
       <nav className="tabs feed-tabs moderation-tabs" aria-label="Панель модерации">
-        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Тестовый доступ", "Дневник", "Тексты"] : [])].map((name) => (
+        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Тестовый доступ", "Дневник", "Тексты", "Лимиты", "Сбор"] : [])].map((name) => (
           <button
             key={name}
             className={"tab" + (section === name ? " active" : "")}
@@ -865,6 +870,8 @@ export default function ModerationPage() {
       )}
       {section === "Журнал" && <HistoryList />}
       {section === "Тестовый доступ" && user.role === "admin" && <TestGateSettings />}
+      {section === "Лимиты" && user.role === "admin" && <RateLimitSettings />}
+      {section === "Сбор" && user.role === "admin" && <FundraiserSettings />}
       {section === "Дневник" && user.role === "admin" && <DevelopmentWidgetSettings />}
       {section === "Тексты" && user.role === "admin" && <><SiteContentSettings /><SiteTeamSettings /></>}
       {section === "Контент" && <Content send={send} />}
@@ -888,6 +895,7 @@ export default function ModerationPage() {
                     displayName={detail.data.displayName}
                     url={detail.data.avatarUrl}
                     frame={detail.data.avatarFrame}
+                      trackOnline
                     size={44}
                   />
                   <strong>
@@ -968,6 +976,7 @@ export default function ModerationPage() {
                     displayName={account.displayName}
                     url={account.avatarUrl}
                     frame={account.avatarFrame}
+                      trackOnline
                     size={40}
                   />
                   <button className="link-btn" onClick={() => setSelected(account)}>

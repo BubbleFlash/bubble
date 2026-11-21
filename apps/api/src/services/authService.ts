@@ -9,7 +9,7 @@ import { assertAccountAllowed } from "./restrictions.js";
 import { AppError, conflict, unauthorized } from "../utils/errors.js";
 import { toAccountUser } from "../utils/serializers.js";
 import { verifyGoogleIdToken, type GoogleProfile } from "./googleAuth.js";
-import { sendVerificationEmailInBackground } from "./accountService.js";
+import { sendVerificationEmail } from "./accountService.js";
 import { generateRefreshToken, hashToken, signAccessToken } from "../utils/tokens.js";
 import { restoreAccountOnLogin } from "./accountDeletion.js";
 
@@ -52,7 +52,15 @@ async function issueSession(res: Response, user: Parameters<typeof toAccountUser
   return body;
 }
 
-export async function register(input: RegisterInput, res: Response) {
+export async function issueVerifiedRegistrationSession(res: Response, userId: unknown) {
+  const user = await User.findById(userId);
+  if (!user || user.deletionExpiresAt || user.anonymizedAt || !user.emailVerified) throw unauthorized("Account not found");
+  assertAccountAllowed(user);
+  return issueSession(res, user);
+}
+
+export async function register(input: RegisterInput) {
+  if (env.NODE_ENV === "production" && !env.RESEND_API_KEY) throw new AppError(503, "Email delivery is unavailable");
   const existing = await User.findOne({ email: input.email })
     .or([{ username: input.username }])
     .collation({ locale: "en", strength: 2 })
@@ -64,9 +72,10 @@ export async function register(input: RegisterInput, res: Response) {
     username: input.username,
     email: input.email,
     passwordHash,
+    registrationPending: true,
   });
-  sendVerificationEmailInBackground(user);
-  return issueSession(res, user);
+  await sendVerificationEmail(user);
+  return { verificationRequired: true };
 }
 
 const MAX_FAILED_LOGINS = 8;
@@ -105,6 +114,10 @@ export async function login(input: LoginInput, res: Response) {
   }
   // Checked after the password so the message can't be used to discover which emails exist.
   assertAccountAllowed(user);
+  if (user.registrationPending && !user.emailVerified) {
+    await sendVerificationEmail(user);
+    throw new AppError(403, "Email confirmation required");
+  }
   await restoreAccountOnLogin(user);
   return issueSession(res, user);
 }

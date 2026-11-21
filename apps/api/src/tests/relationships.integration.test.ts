@@ -7,6 +7,7 @@ import { Follow } from "../models/Follow.js";
 import { Notification } from "../models/Notification.js";
 import { User } from "../models/User.js";
 import { notify } from "../services/notificationService.js";
+import * as realtime from "../services/realtime.js";
 import { signAccessToken } from "../utils/tokens.js";
 
 // Explicitly opt in: never use the application's configured database for integration tests.
@@ -24,7 +25,7 @@ integration("relationships with isolated local MongoDB", () => {
     if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
       throw new Error("BUBBLE_RELATIONSHIPS_TEST_MONGO_PORT must be a valid port number");
     }
-    await mongoose.connect(`mongodb://127.0.0.1:${port}/${name}`, { serverSelectionTimeoutMS: 3000 });
+    await mongoose.connect(`mongodb://127.0.0.1:${port}/${name}`, { serverSelectionTimeoutMS: 3000, autoCreate: false, autoIndex: false });
     if ((await mongoose.connection.db!.listCollections().toArray()).length !== 0)
       throw new Error("Test database is not empty");
     ownsDatabase = true;
@@ -63,6 +64,30 @@ integration("relationships with isolated local MongoDB", () => {
     );
     expect(replies.every((r) => r.status === 200)).toBe(true);
     expect(await Follow.countDocuments({ follower: viewer, following: owner })).toBe(1);
+  });
+
+  it("shows online friends ahead of offline friends across pages", async () => {
+    await Follow.insertMany([
+      { follower: viewer, following: owner }, { follower: owner, following: viewer },
+      { follower: third, following: owner }, { follower: owner, following: third },
+    ], { ordered: false }).catch((error: { code?: number }) => { if (error.code !== 11000) throw error; });
+    vi.spyOn(realtime, "onlineUsers").mockResolvedValue(new Set([String(viewer)]));
+    const first = await request(app).get("/api/users/owner/friends?limit=1").set(auth);
+    expect(first.status).toBe(200);
+    expect(first.body.items[0]).toMatchObject({ id: String(viewer), online: true });
+    const second = await request(app).get("/api/users/owner/friends").query({ limit: 1, cursor: first.body.nextCursor }).set(auth);
+    expect(second.body.items[0]).toMatchObject({ id: String(third), online: false });
+    await Follow.deleteMany({ $or: [{ follower: owner, following: { $in: [viewer, third] } }, { follower: third, following: owner }] });
+  });
+
+  it("looks up avatar presence in one authenticated request", async () => {
+    const presence = vi.spyOn(realtime, "onlineUsers").mockResolvedValue(new Set([String(owner)]));
+    const path = "/api/profile-presence?usernames=OWNER,missing_profile";
+    expect((await request(app).get(path)).status).toBe(401);
+    const result = await request(app).get(path).set(auth);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ online: ["owner"] });
+    expect(presence.mock.calls).toEqual([[[String(owner)]]]);
   });
 
   it("stores hidden events and restores them when enabled, with category-specific read state", async () => {
