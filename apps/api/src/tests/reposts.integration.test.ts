@@ -175,6 +175,89 @@ integration("reposts on isolated MongoDB", () => {
     expect((await get("vera", `/posts/${end}`)).body.repost).toEqual({ kind: "unavailable" });
     expect((await remove("alice", original)).status).toBe(204);
     expect((await get("vera", `/posts/${branch.body.id}`)).body.repost).toEqual({ kind: "unavailable" });
+    const afterRemoval = await like("vera", branch.body.id);
+    expect(afterRemoval.status).toBe(200);
+    expect(afterRemoval.body).toMatchObject({ likeCount: 1, likedByMe: true, likePostId: branch.body.id });
+    expect((await unlike("vera", branch.body.id)).body).toMatchObject({ likeCount: 0, likedByMe: false });
+  });
+
+  it("pins one post on a profile without duplicating it across pages", async () => {
+    const older = await newPost("alice", "Закреплённая запись");
+    const newer = await newPost("alice", "Новая запись");
+    const path = `/api/users/alice/posts/${older}/pin`;
+    expect((await api.put(path).set(auth("boris"))).status).toBe(403);
+    expect((await api.put(path).set(auth("alice"))).status).toBe(204);
+    const first = await get("alice", "/users/alice/posts?limit=1");
+    expect(first.body.items[0]).toMatchObject({ id: older, pinned: true, canPin: true });
+    const second = await get("alice", `/users/alice/posts?limit=1&cursor=${first.body.nextCursor}`);
+    expect(second.body.items[0].id).toBe(newer);
+    expect((await api.delete(path).set(auth("alice"))).status).toBe(204);
+  });
+
+  it("allows an author to edit a personal post for five minutes", async () => {
+    const id = await newPost("alice", "До исправления");
+    expect((await api.patch(`/api/posts/${id}`).set(auth("boris")).send({ content: "Чужая правка" })).status).toBe(403);
+    const changed = await api.patch(`/api/posts/${id}`).set(auth("alice")).send({ content: "После исправления" });
+    expect(changed.status).toBe(200);
+    expect(changed.body.content).toBe("После исправления");
+    await Post.collection.updateOne({ _id: new mongoose.Types.ObjectId(id) }, { $set: { createdAt: new Date(Date.now() - 5 * 60_000) } });
+    expect((await api.patch(`/api/posts/${id}`).set(auth("alice")).send({ content: "Поздняя правка" })).status).toBe(403);
+  });
+
+  it("hides selected authors and communities only in the feed, keeping friends' reposts", async () => {
+    const community = await Community.create({ slug: "muted_group", name: "Группа", creator: ids.get("alice") });
+    const original = await newPost("alice", "Оригинал");
+    const groupPost = await newPost("alice", "Запись группы", { community: "muted_group" });
+    const share = await repost("boris", original);
+    expect(share.status).toBe(201);
+    const muteUser = "/api/feed-mutes/users/alice";
+    const muteGroup = "/api/feed-mutes/communities/muted_group";
+    expect((await api.put(muteUser).set(auth("vera"))).body.muted).toBe(true);
+    const userMutedFeed = await get("vera", "/posts?feed=all&limit=50");
+    expect(userMutedFeed.body.items.map((item: { id: string }) => item.id)).toContain(groupPost);
+    expect((await api.put(muteGroup).set(auth("vera"))).body.muted).toBe(true);
+    const feed = await get("vera", "/posts?feed=all&limit=50");
+    const idsInFeed = feed.body.items.map((item: { id: string }) => item.id);
+    expect(idsInFeed).not.toContain(original);
+    expect(idsInFeed).not.toContain(groupPost);
+    expect(idsInFeed).toContain(share.body.id);
+    expect((await get("vera", `/posts/${original}`)).status).toBe(200);
+    expect((await api.delete(muteUser).set(auth("vera"))).body.muted).toBe(false);
+    expect((await api.delete(muteGroup).set(auth("vera"))).body.muted).toBe(false);
+    await Community.deleteOne({ _id: community._id });
+  });
+
+  it("lets an administrator pin a public post in the main feed", async () => {
+    await User.updateOne({ _id: ids.get("alice") }, { $set: { role: "admin" } });
+    const own = await newPost("alice", "Закреплённая в ленте");
+    const other = await newPost("boris", "Чужая запись");
+    expect((await api.put(`/api/admin/feed-pin/${own}`).set(auth("boris"))).status).toBe(403);
+    expect((await api.put(`/api/admin/feed-pin/${other}`).set(auth("alice"))).status).toBe(403);
+    expect((await api.put(`/api/admin/feed-pin/${own}`).set(auth("alice"))).status).toBe(204);
+    const first = await get("vera", "/posts?feed=all&limit=1");
+    expect(first.body.items[0]).toMatchObject({ id: own, pinned: true });
+    const second = await get("vera", `/posts?feed=all&limit=1&cursor=${first.body.nextCursor}`);
+    expect(second.body.items[0].id).not.toBe(own);
+    const group = await Community.create({ slug: "feed_pin_group", name: "Группа", creator: ids.get("alice") });
+    const groupPost = await Post.create({ author: ids.get("boris"), community: group._id, content: "Публикация сообщества" });
+    expect((await api.put(`/api/admin/feed-pin/${groupPost.id}`).set(auth("alice"))).status).toBe(204);
+    expect((await get("vera", "/posts?feed=all&limit=1")).body.items[0].id).toBe(groupPost.id);
+    expect((await api.delete(`/api/admin/feed-pin/${groupPost.id}`).set(auth("alice"))).status).toBe(204);
+    expect((await api.delete(`/api/admin/feed-pin/${own}`).set(auth("alice"))).status).toBe(204);
+    await Community.deleteOne({ _id: group._id });
+    await User.updateOne({ _id: ids.get("alice") }, { $set: { role: "user" } });
+  });
+
+  it("allows a community owner to pin a community post", async () => {
+    await Community.create({ slug: "pinned_group", name: "Группа", creator: ids.get("alice") });
+    const older = await newPost("alice", "Закреплённая", { community: "pinned_group" });
+    await newPost("alice", "Новая", { community: "pinned_group" });
+    const path = `/api/communities/pinned_group/posts/${older}/pin`;
+    expect((await api.put(path).set(auth("boris"))).status).toBe(403);
+    expect((await api.put(path).set(auth("alice"))).status).toBe(204);
+    const list = await get("alice", "/communities/pinned_group/posts");
+    expect(list.body.items[0]).toMatchObject({ id: older, pinned: true, canPin: true });
+    expect((await api.delete(path).set(auth("alice"))).status).toBe(204);
   });
 
   it("checks community membership and binds a quoted comment to its original post", async () => {

@@ -7,6 +7,7 @@ import { env } from "../config/env.js";
 import { TelemetryBucket } from "../models/TelemetryBucket.js";
 import { User } from "../models/User.js";
 import { flushTelemetry } from "../services/telemetry.js";
+import { saveRateLimitSettings } from "../services/rateLimitSettings.js";
 import { signAccessToken } from "../utils/tokens.js";
 
 const port = Number(process.env.BUBBLE_MONITOR_TEST_MONGO_PORT);
@@ -42,6 +43,7 @@ integration("monitoring on isolated MongoDB", () => {
     );
     admin = `Bearer ${signAccessToken(users[0]!.id)}`;
     moderator = `Bearer ${signAccessToken(users[1]!.id)}`;
+    await saveRateLimitSettings(true);
     env.NODE_ENV = "development";
   });
   beforeEach(() => {

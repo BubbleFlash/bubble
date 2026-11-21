@@ -90,6 +90,8 @@ export function useFriends(username: string, q: string, enabled: boolean, limit 
     enabled: Boolean(user && enabled),
     gcTime: 0,
     staleTime: 0,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       api<Page<UserSummaryDTO>>(

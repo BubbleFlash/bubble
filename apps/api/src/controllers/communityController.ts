@@ -4,6 +4,7 @@ import { isObjectIdOrHexString, Types, type FilterQuery, type UpdateQuery } from
 import { communitySlugSchema } from "@commune/shared";
 import type { CommunityMemberDTO, CommunityPermissions, CommunityRole, Page } from "@commune/shared";
 import { Community } from "../models/Community.js";
+import { Post } from "../models/Post.js";
 import { User } from "../models/User.js";
 import { isPlusActive } from "../utils/plan.js";
 import { Membership } from "../models/Membership.js";
@@ -343,5 +344,16 @@ export async function transfer(req: Request, res: Response) {
 
 export async function posts(req: Request, res: Response) {
   const community = await findBySlug(req.params.slug);
-  await sendPostPage(req, res, { community: community._id });
+  const { role } = await communityMembership(community, req.userId!);
+  await sendPostPage(req, res, { community: community._id }, { id: community.pinnedPost, canPin: meetsCommunityRole(role, "editor") });
+}
+
+export async function pinPost(req: Request, res: Response) {
+  const community = await requireCommunityRole(req, "editor");
+  if (!isObjectIdOrHexString(req.params.id)) throw badRequest("Invalid post ID");
+  const post = await Post.findOne({ _id: req.params.id, community: community._id, moderationState: { $nin: ["hidden", "removed", "withdrawn"] } }).select("_id").lean();
+  if (!post) throw notFound("Post not found");
+  if (req.method === "DELETE") await Community.updateOne({ _id: community._id, pinnedPost: post._id }, { $unset: { pinnedPost: 1 } });
+  else await Community.updateOne({ _id: community._id }, { $set: { pinnedPost: post._id } });
+  res.status(204).end();
 }

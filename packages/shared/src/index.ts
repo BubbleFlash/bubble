@@ -1,4 +1,5 @@
 import { z } from "zod";
+export * from "./rateLimits.js";
 
 export const usernameSchema = z
   .string()
@@ -171,7 +172,7 @@ export const createPostSchema = z
   });
 
 export const updateCommunityPostSchema = z.object({
-  content: z.string().trim().max(COMMUNITY_POST_LENGTH).optional(),
+  content: z.string().trim().max(PLUS_POST_LENGTH).optional(),
   imageUrls: z.array(uploadUrlSchema).max(10).optional(),
   musicTrackIds: musicTrackIdsSchema.optional(),
   hideAuthor: z.boolean().optional(),
@@ -447,6 +448,8 @@ export interface AuthorDTO {
 
 export interface PostDTO {
   id: string;
+  pinned?: boolean;
+  canPin?: boolean;
   content: string;
   hideAuthor?: boolean;
   adult?: boolean;
@@ -495,6 +498,7 @@ export type MusicAttachmentDTO =
 
 export interface UserSummaryDTO {
   id: string;
+  online?: boolean;
   username: string;
   displayName?: string;
   bio: string;

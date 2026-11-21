@@ -16,6 +16,7 @@ import { useUploadImage } from "../hooks/useUpload";
 import { validateImage } from "../lib/images";
 import { useAuth } from "../store/auth";
 import ProfileFriends from "../components/ProfileFriends";
+import FeedMuteButton from "../components/FeedMuteButton";
 
 export default function ProfilePage() {
   const { username = "" } = useParams();
@@ -95,6 +96,7 @@ export default function ProfilePage() {
   return (
     <>
       <section className="card profile">
+        {!isMe && <FeedMuteButton kind="users" name={p.username} />}
         <div className="profile-top">
           <div className="profile-id">
             <Avatar username={p.username} displayName={p.displayName} url={p.avatarUrl} frame={p.avatarFrame} size={72} />
@@ -203,7 +205,7 @@ export default function ProfilePage() {
 
       {me && <ProfileMusic key={`${me.id}:${p.id}`} username={p.username} viewerId={me.id} isMe={isMe} />}
       {isMe && !p.banned && <Composer />}
-      <PostList inlineComments query={posts} emptyMessage="Записей пока нет." />
+      <PostList inlineComments query={posts} emptyMessage="Записей пока нет." pinTarget={`/users/${encodeURIComponent(username)}`} />
     </>
   );
 }

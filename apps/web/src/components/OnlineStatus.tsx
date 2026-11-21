@@ -1,11 +1,13 @@
 export default function OnlineStatus({
   online = false,
   showText = false,
+  onlineText = "Онлайн",
 }: {
   online?: boolean;
   showText?: boolean;
+  onlineText?: string;
 }) {
-  const label = online ? "Онлайн" : "Офлайн";
+  const label = online ? onlineText : "Офлайн";
   return (
     <span
       className="online-status"

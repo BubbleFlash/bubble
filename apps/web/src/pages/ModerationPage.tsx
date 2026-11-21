@@ -13,6 +13,8 @@ import Icon, { type IconName } from "../components/Icon";
 import AeroTitlebar from "../components/AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import TestGateSettings from "../components/TestGateSettings";
+import RateLimitSettings from "../components/RateLimitSettings";
+import FundraiserSettings from "../components/FundraiserSettings";
 import { violationReasons } from "../lib/moderationReasons";
 import DevelopmentWidgetSettings from "../components/DevelopmentWidgetSettings";
 import SiteContentSettings from "../components/SiteContentSettings";
@@ -835,7 +837,7 @@ export default function ModerationPage() {
         <ModerationHelp />
       </div>
       <nav className="tabs feed-tabs moderation-tabs" aria-label="Панель модерации">
-        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Тестовый доступ", "Дневник", "Тексты"] : [])].map((name) => (
+        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Тестовый доступ", "Дневник", "Тексты", "Лимиты", "Сбор"] : [])].map((name) => (
           <button
             key={name}
             className={"tab" + (section === name ? " active" : "")}
@@ -865,6 +867,8 @@ export default function ModerationPage() {
       )}
       {section === "Журнал" && <HistoryList />}
       {section === "Тестовый доступ" && user.role === "admin" && <TestGateSettings />}
+      {section === "Лимиты" && user.role === "admin" && <RateLimitSettings />}
+      {section === "Сбор" && user.role === "admin" && <FundraiserSettings />}
       {section === "Дневник" && user.role === "admin" && <DevelopmentWidgetSettings />}
       {section === "Тексты" && user.role === "admin" && <><SiteContentSettings /><SiteTeamSettings /></>}
       {section === "Контент" && <Content send={send} />}

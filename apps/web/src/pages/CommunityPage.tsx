@@ -14,6 +14,7 @@ import ProfileAction from "../components/ProfileAction";
 import CommunityManagement from "../components/CommunityManagement";
 import { COMMUNITY_ROLES } from "../lib/communityRoles";
 import type { CommunityDTO } from "@commune/shared";
+import FeedMuteButton from "../components/FeedMuteButton";
 
 export default function CommunityPage() {
   const { slug = "" } = useParams();
@@ -75,6 +76,7 @@ function CommunityView({ slug }: { slug: string }) {
         ← Все группы
       </Link>
       <section className="card profile community-head">
+        <FeedMuteButton kind="communities" name={c.slug} />
         <div className="profile-top">
           <div className="profile-id">
             <Avatar username={c.slug} displayName={c.name} url={showEdit ? avatarUrl : c.avatarUrl} size={72} preview />
@@ -145,7 +147,7 @@ function CommunityView({ slug }: { slug: string }) {
           ? "Вступите в группу, чтобы публиковать записи."
           : "Ваша роль не позволяет публиковать записи в этой группе."}</p>
       )}
-      <PostList query={posts} emptyMessage="Записей пока нет. Начните обсуждение." />
+      <PostList query={posts} emptyMessage="Записей пока нет. Начните обсуждение." pinTarget={`/communities/${encodeURIComponent(slug)}`} />
     </>
   );
 }

@@ -45,8 +45,8 @@ type PreviewProps = { onWallpaperPreview?: (path?: string | null) => void; onOpa
 
 const SETTINGS_TABS = [
   { id: "appearance", label: "Визуал" },
-  { id: "privacy", label: "Приватность" },
-  { id: "notifications", label: "Уведомления" },
+  { id: "privacy", label: "Приватность", mobileLabel: "Приватн." },
+  { id: "notifications", label: "События" },
   { id: "account", label: "Аккаунт" },
 ] as const;
 
@@ -101,20 +101,22 @@ function SettingsSections({ user, onWallpaperPreview, onOpacityPreview }: { user
     <>
       <h1 className="page-title">Настройки</h1>
       <div className="tabs feed-tabs settings-tabs" role="tablist" aria-label="Разделы настроек">
-        {SETTINGS_TABS.map(({ id, label }, index) => (
+        {SETTINGS_TABS.map((entry, index) => (
           <button
-            key={id}
+            key={entry.id}
             type="button"
             role="tab"
-            id={`settings-tab-${id}`}
-            aria-controls={`settings-panel-${id}`}
-            aria-selected={tab === id}
-            className={`tab${tab === id ? " active" : ""}`}
-            tabIndex={tab === id ? 0 : -1}
-            onClick={() => selectTab(id)}
+            id={`settings-tab-${entry.id}`}
+            aria-controls={`settings-panel-${entry.id}`}
+            aria-selected={tab === entry.id}
+            aria-label={entry.label}
+            className={`tab${tab === entry.id ? " active" : ""}`}
+            tabIndex={tab === entry.id ? 0 : -1}
+            onClick={() => selectTab(entry.id)}
             onKeyDown={(event) => navigateTabs(event, index)}
           >
-            {label}
+            <span className="settings-tab-full">{entry.label}</span>
+            {"mobileLabel" in entry && <span className="settings-tab-mobile" aria-hidden="true">{entry.mobileLabel}</span>}
           </button>
         ))}
       </div>

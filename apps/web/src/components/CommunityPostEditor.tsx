@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { COMMUNITY_POST_LENGTH, type MusicTrackDTO, type PostDTO } from "@commune/shared";
+import { COMMUNITY_POST_LENGTH, PLUS_POST_LENGTH, type MusicTrackDTO, type PostDTO } from "@commune/shared";
 import { useUpdateCommunityPost } from "../hooks/usePosts";
 import { useImageDraft } from "../hooks/useImageDraft";
 import { assetUrl } from "../lib/api";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import EmojiInputButton from "./EmojiInputButton";
+import Icon from "./Icon";
 
 export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; onClose: () => void }) {
   const [content, setContent] = useState(post.content);
@@ -19,7 +20,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
   const imageDraft = useImageDraft();
   const [attachmentError, setAttachmentError] = useState("");
   const update = useUpdateCommunityPost(post.id);
-  const maxLength = COMMUNITY_POST_LENGTH;
+  const maxLength = post.community ? COMMUNITY_POST_LENGTH : PLUS_POST_LENGTH;
   const musicCount = music.length + newMusic.length;
   const imageCount = images.length + imageDraft.images.length;
   const valid = (content.trim() === post.content || content.trim().length <= maxLength)
@@ -101,10 +102,10 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
       {(imageDraft.error || attachmentError) && <p className="error" role="alert">{imageDraft.error ?? attachmentError}</p>}
       {update.error && <p className="error" role="alert">{update.error.message}</p>}
       <label className="row"><input type="checkbox" checked={adult} onChange={(event) => setAdult(event.target.checked)} /> Фото 18+</label>
-      <label className="row"><input type="checkbox" checked={hideAuthor} onChange={(event) => setHideAuthor(event.target.checked)} /> Скрыть автора</label>
+      {post.community && <label className="row"><input type="checkbox" checked={hideAuthor} onChange={(event) => setHideAuthor(event.target.checked)} /> Скрыть автора</label>}
       <div className="community-post-editor__actions">
-        <button className="aero-button" type="button" disabled={imageCount >= 10 || update.isPending} onClick={() => fileInput.current?.click()}>Добавить фото</button>
-        <button className="aero-button" type="button" disabled={musicCount >= 10 || update.isPending} onClick={() => setMusicOpen(true)}>Добавить музыку</button>
+        <button className="btn btn-ghost composer-attachment" type="button" aria-label="Прикрепить изображение" title="Прикрепить изображение" disabled={imageCount >= 10 || update.isPending} onClick={() => fileInput.current?.click()}><Icon name="image" size={20} /></button>
+        <button className="btn btn-ghost composer-attachment" type="button" aria-label="Прикрепить музыку" title="Прикрепить музыку" disabled={musicCount >= 10 || update.isPending} onClick={() => setMusicOpen(true)}><Icon name="music" size={20} /></button>
         <button className="aero-button" type="button" disabled={update.isPending} onClick={onClose}>Отмена</button>
         <button className="aero-button" disabled={!valid || !changed || update.isPending}>{update.isPending ? "Сохранение…" : "Сохранить запись"}</button>
       </div>

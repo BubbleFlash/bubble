@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router-dom";
 import type { UserSummaryDTO } from "@commune/shared";
 import Avatar from "../components/Avatar";
 import PlusBadge from "../components/PlusBadge";
+import OnlineStatus from "../components/OnlineStatus";
 import {
   useFriendRequests,
   useFriends,
@@ -38,6 +39,7 @@ function PersonRow({ person, tab, isMe }: { person: UserSummaryDTO; tab: Tab; is
       <Link className="friend-person-link" to={`/u/${encodeURIComponent(person.username)}`}>
         <Avatar username={person.username} displayName={person.displayName} url={person.avatarUrl} frame={person.avatarFrame} size={44} />
         <strong>{displayNameOf(person)}</strong>
+        <OnlineStatus online={person.online} />
         <PlusBadge plus={person.plus} />
       </Link>
       {isMe && tab !== "people" && (
@@ -105,7 +107,8 @@ export default function FriendsPage() {
   const query = activeTab === "friends" ? friends : activeTab === "outgoing" ? outgoing : activeTab === "incoming" ? incoming : allPeople;
   const denied = friends.error instanceof ApiError && friends.error.status === 403;
   const showList = activeTab !== "friends" || (canView && !denied);
-  const people = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const people = [...new Map((query.data?.pages.flatMap((page) => page.items) ?? []).map((person) => [person.id, person])).values()];
+  if (activeTab === "friends") people.sort((a, b) => Number(Boolean(b.online)) - Number(Boolean(a.online)));
   const empty = tabs.find((item) => item.id === activeTab)?.empty;
   return (
     <>

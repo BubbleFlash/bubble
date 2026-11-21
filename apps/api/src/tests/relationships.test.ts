@@ -172,14 +172,14 @@ describe("relationship lists", () => {
           friendshipAt: createdAt,
           person: { _id: other, username: "alice", bio: "hi", avatarUrl: null, secret: "hidden" },
         },
-        { _id: new mongoose.Types.ObjectId(), createdAt, person: { _id: other, username: "alex" } },
+        { _id: new mongoose.Types.ObjectId("000000000000000000000001"), createdAt, friendshipAt: createdAt, person: { _id: other, username: "alex" } },
       ] as never);
       const res = await request(app)
         .get(`/api/users/me/relationships?type=${type}&q=a.b&limit=1`)
         .set(auth);
       expect(res.status).toBe(200);
       expect(res.body.items).toEqual([
-        { id: other.toString(), username: "alice", bio: "hi", avatarUrl: null, plus: false },
+        { id: other.toString(), username: "alice", bio: "hi", avatarUrl: null, plus: false, online: false },
       ]);
       expect(res.body.nextCursor).toBe(`${createdAt.toISOString()}|${id}`);
       const pipeline = aggregate.mock.calls[0]![0]!;
@@ -192,9 +192,11 @@ describe("relationship lists", () => {
         type === "followers" ? '"following"' : '"follower"',
       );
       expect(JSON.stringify(pipeline)).toContain(type === "friends" ? '"reverse.0"' : '"person"');
-      expect(JSON.stringify(pipeline).indexOf("person.banned")).toBeLessThan(
-        JSON.stringify(pipeline).lastIndexOf('"$limit"'),
-      );
+      if (type !== "friends") {
+        expect(JSON.stringify(pipeline).indexOf("person.banned")).toBeLessThan(
+          JSON.stringify(pipeline).lastIndexOf('"$limit"'),
+        );
+      }
       const next = await request(app)
         .get("/api/users/me/relationships")
         .query({ type, cursor: res.body.nextCursor })

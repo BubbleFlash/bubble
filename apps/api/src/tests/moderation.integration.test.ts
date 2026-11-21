@@ -87,6 +87,18 @@ integration("moderation on isolated MongoDB", () => {
     expect(saved?.moderationEvents).toEqual(expect.arrayContaining([expect.objectContaining({ action: "removed", reason: "Спам" })]));
   });
 
+  it("orders moderated content by moderation time across pages", async () => {
+    const older = await Post.create({ author: ids.user, content: "Старая запись" });
+    const newer = await Post.create({ author: ids.user, content: "Новая запись" });
+    expect((await post("moderator", `/moderation/content/post/${newer.id}`, { state: "hidden", reason: "Проверка" })).status).toBe(204);
+    expect((await post("moderator", `/moderation/content/post/${older.id}`, { state: "hidden", reason: "Проверка" })).status).toBe(204);
+    await Post.updateOne({ _id: newer._id }, { $set: { "moderationEvents.0.time": new Date("2020-01-01") } });
+    const result = await app.get("/api/moderation/content?kind=post").set(auth("moderator"));
+    expect(result.status).toBe(200);
+    const order = result.body.items.map((item: { _id: string }) => item._id);
+    expect(order.indexOf(older.id)).toBeLessThan(order.indexOf(newer.id));
+  });
+
   it("lets only admins configure the public development widget and selects the latest visible post", async () => {
     const community = await Community.create({ slug: "dev_widget", name: "Разработка", creator: ids.admin });
     expect((await app.put("/api/admin/development-widget").set(auth("moderator")).send({ communitySlug: "dev_widget" })).status).toBe(403);

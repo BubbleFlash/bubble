@@ -11,6 +11,7 @@ import type { PopulatedPost } from "../utils/serializers.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, readablePostFilter } from "../services/postAccess.js";
 import { presentPosts } from "./postController.js";
 import { badRequest } from "../utils/errors.js";
+import { onlineUsers } from "../services/realtime.js";
 
 interface SearchQuery {
   q: string;
@@ -43,9 +44,11 @@ export async function users(_req: Request, res: Response) {
     .lean();
 
   const { items, nextCursor } = paginate(rows, page);
+  const online = await onlineUsers(items.map((user) => String(user._id)));
   const body: Page<UserSummaryDTO> = {
     items: items.map((u) => ({
       id: u._id.toString(),
+      online: online.has(String(u._id)),
       username: u.username,
       displayName: u.displayName ?? undefined,
       bio: u.bio ?? "",
@@ -70,8 +73,9 @@ export async function people(_req: Request, res: Response) {
   }).sort({ _id: -1 }).limit(limit + 1)
     .select("username displayName bio avatarUrl avatarFrame plusUntil").lean();
   const items = rows.slice(0, limit);
+  const online = await onlineUsers(items.map((user) => String(user._id)));
   const body: Page<UserSummaryDTO> = {
-    items: items.map((u) => ({ id: u._id.toString(), username: u.username,
+    items: items.map((u) => ({ id: u._id.toString(), online: online.has(String(u._id)), username: u.username,
       displayName: u.displayName ?? undefined, bio: u.bio ?? "", avatarUrl: u.avatarUrl ?? null,
       avatarFrame: u.avatarFrame ?? undefined, plus: isPlusActive(u.plusUntil) })),
     nextCursor: rows.length > limit ? String(items[items.length - 1]!._id) : null,

@@ -8,6 +8,7 @@ const communitySchema = new Schema(
     name: { type: String, required: true, trim: true, maxlength: 40 },
     description: { type: String, default: "", maxlength: 280 },
     avatarUrl: { type: String, default: null },
+    pinnedPost: { type: Schema.Types.ObjectId, ref: "Post" },
     creator: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     // Keys are Membership ids, so rejoining never inherits a previous grant.
     managers: {
