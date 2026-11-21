@@ -365,6 +365,7 @@
   border-radius: 5px 5px 0 0; border-left-color: transparent; border-bottom-color: var(--aero-color-border);
   margin-bottom: -1px; box-shadow: none;
 }
+.aero-home .feed-tabs .tab:first-child { border-left-color: var(--aero-color-border); }
 .aero-home .feed-tabs .tab.active {
   min-height: 33px; z-index: 1; border: 1px solid var(--aero-color-border-strong);
   border-bottom-color: var(--aero-color-border); border-radius: 5px 5px 0 0;
@@ -601,11 +602,8 @@ html[data-aero-no-scroll]:has(.aero-home)::-webkit-scrollbar-thumb {
   .aero-app.aero-home { box-shadow: none; }
   .aero-home .aero-fixed-frame::before { backdrop-filter: none; -webkit-backdrop-filter: none; }
   .aero-home :is(.feed-tabs, .bottom-nav) { backdrop-filter: none; -webkit-backdrop-filter: none; }
-  /* Keep the header edge covered during compositor scrolling and fractional zoom. */
-  .aero-home .aero-window-chrome {
-    background-color: var(--aero-color-canvas);
-    border-radius: 8px 8px 0 0;
-  }
+  /* The fixed wallpaper mask covers the scrolling content behind the translucent title bar. */
+  .aero-app.aero-home::before { display: block; }
   .aero-home .aero-window-chrome::after {
     content: "";
     position: absolute;

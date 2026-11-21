@@ -3,6 +3,9 @@ import Composer from "../components/Composer";
 import PostList from "../components/PostList";
 import { useFeed } from "../hooks/usePosts";
 import type { FeedType } from "../hooks/usePosts";
+import { useQueryClient } from "@tanstack/react-query";
+import { scrollToTop } from "../lib/scrollToTop";
+import { refreshFeed } from "../lib/feedNavigation";
 
 const TABS: Array<{ id: FeedType; label: string; empty: string }> = [
   {
@@ -16,6 +19,7 @@ const TABS: Array<{ id: FeedType; label: string; empty: string }> = [
 export default function FeedPage() {
   const [tab, setTab] = useState<FeedType>("following");
   const feed = useFeed(tab);
+  const queryClient = useQueryClient();
   const active = TABS.find((t) => t.id === tab)!;
 
   return (
@@ -28,7 +32,11 @@ export default function FeedPage() {
             role="tab"
             aria-selected={t.id === tab}
             className={`tab ${t.id === tab ? "active" : ""}`}
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              scrollToTop();
+              void refreshFeed(queryClient, t.id);
+              setTab(t.id);
+            }}
           >
             {t.label}
           </button>

@@ -10,9 +10,8 @@ import {
 import type { ReactNode } from "react";
 import type { MusicTrackDTO } from "@commune/shared";
 import { api } from "../lib/api";
+import { readMusicSession, writeMusicSession, type RepeatMode } from "../lib/musicSession";
 import { useAuth } from "./auth";
-
-type RepeatMode = 0 | 1 | 2;
 
 interface MusicState {
   track: MusicTrackDTO | null;
@@ -47,9 +46,15 @@ export function MusicPlayerProvider({
                                     }: {
   children: ReactNode;
 }) {
-  const { user } = useAuth();
+  const { user, confirmed, isCurrentAccount } = useAuth();
+  const userId = user?.id;
+  const accountId = confirmed ? userId : undefined;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const activeAccount = useRef<string>();
+  const positionRef = useRef(0);
+  const pendingSeek = useRef<number>();
+  const resumeRef = useRef(false);
   const requestIdRef = useRef(0);
   const queueRef = useRef<MusicTrackDTO[]>([]);
   const queueIndexRef = useRef(-1);
@@ -101,6 +106,10 @@ export function MusicPlayerProvider({
 
   const clear = useCallback(() => {
     requestIdRef.current++;
+    positionRef.current = 0;
+    pendingSeek.current = undefined;
+    resumeRef.current = false;
+    writeMusicSession(null);
     queueRef.current = [];
     setQueue([]);
     queueIndexRef.current = -1;
@@ -128,13 +137,25 @@ export function MusicPlayerProvider({
     audio.preload = "metadata";
     audioRef.current = audio;
 
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onTimeUpdate = () => {
+      if (pendingSeek.current !== undefined || !audio.getAttribute("src")) return;
+      positionRef.current = audio.currentTime;
+      setCurrentTime(audio.currentTime);
+    };
+    const onLoadedMetadata = () => {
+      if (pendingSeek.current === undefined) return;
+      const requested = pendingSeek.current;
+      pendingSeek.current = undefined;
+      audio.currentTime = Number.isFinite(audio.duration) ? Math.min(requested, audio.duration) : requested;
+      onTimeUpdate();
+    };
     const onDurationChange = () => {
       setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
+      resumeRef.current = false;
       setIsPlaying(false);
       endedTrackRef.current();
     };
@@ -147,6 +168,7 @@ export function MusicPlayerProvider({
     };
 
     audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
     audio.addEventListener("durationchange", onDurationChange);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
@@ -156,11 +178,13 @@ export function MusicPlayerProvider({
     audio.addEventListener("error", onError);
 
     return () => {
+      activeAccount.current = undefined;
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
 
       audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
       audio.removeEventListener("durationchange", onDurationChange);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
@@ -171,8 +195,6 @@ export function MusicPlayerProvider({
 
       audioRef.current = null;
     };
-    // Audio element is created once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keep the actual audio volume synchronized with React state.
@@ -186,12 +208,101 @@ export function MusicPlayerProvider({
     return () => mobile.removeEventListener("change", syncVolume);
   }, [volume]);
 
-  // Stop playback when the user logs out.
-  useEffect(() => {
-    if (!user) {
-      clear();
+  const loadTrack = useCallback(async (nextTrack: MusicTrackDTO, position: number, autoplay: boolean, restoring = false) => {
+    const audio = audioRef.current;
+    const owner = activeAccount.current;
+    if (!audio || !owner || !isCurrentAccount(owner)) return;
+
+    const requestId = ++requestIdRef.current;
+    positionRef.current = position;
+    pendingSeek.current = position > 0 ? position : undefined;
+    resumeRef.current = autoplay;
+    setTrack(nextTrack);
+    setIsLoading(true);
+    setIsPlaying(false);
+    setCurrentTime(position);
+    setDuration(restoring ? nextTrack.duration ?? 0 : 0);
+    setError(null);
+
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+
+    try {
+      const { url } = await api<{ url: string }>(`/music/${nextTrack.id}/play`);
+      if (audio !== audioRef.current || requestId !== requestIdRef.current || !isCurrentAccount(owner)) return;
+      audio.src = url;
+      audio.load();
+      if (autoplay) await audio.play();
+      else setIsLoading(false);
+    } catch (err) {
+      if (audio !== audioRef.current || requestId !== requestIdRef.current || !isCurrentAccount(owner)) return;
+      resumeRef.current = false;
+      setIsLoading(false);
+      setIsPlaying(false);
+      if (restoring && err instanceof DOMException && err.name === "NotAllowedError") return;
+      setError(err instanceof Error ? err.message : "Не удалось запустить воспроизведение.");
     }
-  }, [user, clear]);
+  }, [isCurrentAccount]);
+
+  useEffect(() => {
+    if (!accountId) {
+      // A cached profile may be displayed while its session is still being checked.
+      if (activeAccount.current || !userId) {
+        clear();
+        setIsShuffled(false);
+        setRepeatMode(0);
+      }
+      activeAccount.current = undefined;
+      return;
+    }
+    if (activeAccount.current === accountId) return;
+    if (activeAccount.current) {
+      clear();
+      setIsShuffled(false);
+      setRepeatMode(0);
+    }
+    activeAccount.current = accountId;
+
+    const saved = readMusicSession(accountId);
+    const selected = saved?.queue.find((item) => item.id === saved.trackId);
+    if (!saved || !selected) {
+      writeMusicSession(null);
+      return;
+    }
+    queueRef.current = saved.queue;
+    originalQueueRef.current = saved.originalQueue;
+    queueIndexRef.current = saved.queue.indexOf(selected);
+    setQueue(saved.queue);
+    setQueueSource(saved.source);
+    setIsShuffled(saved.shuffled);
+    setRepeatMode(saved.repeat);
+    void loadTrack(selected, saved.position, saved.resume, true);
+  }, [accountId, userId, clear, loadTrack]);
+
+  useEffect(() => {
+    if (!accountId || !track) return;
+    const save = () => {
+      const audio = audioRef.current;
+      if (!isCurrentAccount(accountId) || activeAccount.current !== accountId ||
+          !queueRef.current.some((item) => item.id === track.id)) return;
+      const ready = Boolean(audio?.getAttribute("src") && audio.readyState >= 1 && pendingSeek.current === undefined);
+      writeMusicSession({
+        accountId,
+        trackId: track.id,
+        queue: queueRef.current,
+        originalQueue: originalQueueRef.current,
+        source: queueSource,
+        position: ready ? audio!.currentTime : positionRef.current,
+        resume: ready ? !audio!.paused && !audio!.ended : resumeRef.current,
+        shuffled: isShuffled,
+        repeat: repeatMode,
+      });
+    };
+    save();
+    window.addEventListener("pagehide", save);
+    return () => window.removeEventListener("pagehide", save);
+  }, [accountId, track, queue, queueSource, isShuffled, repeatMode, isPlaying, isCurrentAccount]);
 
   const playTrack = useCallback(
     async (
@@ -199,8 +310,7 @@ export function MusicPlayerProvider({
       nextQueue?: MusicTrackDTO[],
       source?: string,
     ) => {
-      const audio = audioRef.current;
-      if (!audio) return;
+      if (!accountId || !audioRef.current) return;
 
       if (nextQueue) {
         setQueueSource(source ?? null);
@@ -230,42 +340,9 @@ export function MusicPlayerProvider({
       queueIndexRef.current = index;
       setQueue(queueRef.current);
 
-      const requestId = ++requestIdRef.current;
-
-      setTrack(nextTrack);
-      setIsLoading(true);
-      setIsPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-      setError(null);
-
-      audio.pause();
-
-      try {
-        const result = await api<{ url: string }>(
-          `/music/${nextTrack.id}/play`,
-        );
-
-        // Ignore an outdated request if another track was selected.
-        if (requestId !== requestIdRef.current) return;
-
-        audio.src = result.url;
-        audio.load();
-
-        await audio.play();
-      } catch (err) {
-        if (requestId !== requestIdRef.current) return;
-
-        setIsLoading(false);
-        setIsPlaying(false);
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Не удалось запустить воспроизведение.",
-        );
-      }
+      await loadTrack(nextTrack, 0, true);
     },
-    [isShuffled],
+    [accountId, isShuffled, loadTrack],
   );
 
   const nextTrack = useCallback(() => {
@@ -409,26 +486,35 @@ export function MusicPlayerProvider({
   }, [playTrack, nextTrack, previousTrack, handleTrackEnded]);
 
   const pause = useCallback(() => {
+    resumeRef.current = false;
     audioRef.current?.pause();
   }, []);
 
   const togglePlayback = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio || !track) return;
+    if (!accountId || !audio || !track || isLoading) return;
 
     if (!audio.paused) {
-      audio.pause();
+      pause();
+      return;
+    }
+    if (!audio.getAttribute("src") || audio.error) {
+      await loadTrack(track, positionRef.current, true);
       return;
     }
 
+    const requestId = requestIdRef.current;
     try {
       setError(null);
+      resumeRef.current = true;
       await audio.play();
     } catch {
+      if (requestId !== requestIdRef.current) return;
+      resumeRef.current = false;
       setIsPlaying(false);
       setError("Не удалось продолжить воспроизведение.");
     }
-  }, [track]);
+  }, [accountId, isLoading, loadTrack, pause, track]);
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;

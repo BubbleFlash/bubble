@@ -247,9 +247,6 @@
 @supports (backdrop-filter: blur(1px)) {
   .wallpaper-workshop { backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); }
 }
-@supports (-moz-appearance: none) {
-  .wallpaper-workshop { backdrop-filter: none; }
-}
 .wallpaper-workshop::backdrop { background: rgb(0 0 0 / 12%); }
 .wallpaper-workshop-window {
   display: flex;

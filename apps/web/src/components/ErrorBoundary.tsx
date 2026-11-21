@@ -70,7 +70,7 @@ function RecoveryCard({ embedded, preservePlayback }: { embedded?: boolean; pres
       style={{ margin: embedded ? "1rem auto" : "20vh auto 0", maxWidth: 420, padding: 24 }}
     >
       <h1 className="page-title">Страница не загрузилась</h1>
-      <p className="muted">{preservePlayback ? "Обновление страницы остановит плеер." : "Обновите страницу или вернитесь на главную."}</p>
+      <p className="muted">{preservePlayback ? "После обновления страницы плеер восстановит очередь." : "Обновите страницу или вернитесь на главную."}</p>
       <button type="button" className="btn btn-primary" onClick={reload}>
         Обновить страницу
       </button>
