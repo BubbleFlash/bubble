@@ -67,8 +67,9 @@ export async function activeUsers(userIds: string[]): Promise<Set<string>> {
 export async function onlineUsers(ids: string[]): Promise<Set<string>> {
   const userIds = [...new Set(ids)];
   if (!userIds.length) return new Set();
-  const res = await post<{ online?: string[] }>("/internal/online", { userIds });
-  return new Set(Array.isArray(res?.online) ? res.online : []);
+  const batches = Array.from({ length: Math.ceil(userIds.length / 50) }, (_, index) => userIds.slice(index * 50, index * 50 + 50));
+  const responses = await Promise.all(batches.map((batch) => post<{ online?: string[] }>("/internal/online", { userIds: batch })));
+  return new Set(responses.flatMap((response) => Array.isArray(response?.online) ? response.online : []));
 }
 
 /** Number of distinct connected accounts; null means realtime is unavailable. */

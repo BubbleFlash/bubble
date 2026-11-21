@@ -88,6 +88,9 @@ import * as users from "../controllers/userController.js";
 import * as relationships from "../controllers/relationshipController.js";
 import * as moderation from "../controllers/moderationController.js";
 import * as testGate from "../controllers/testGateController.js";
+import * as rateLimitSettings from "../controllers/rateLimitController.js";
+import * as fundraiserSettings from "../controllers/fundraiserSettingsController.js";
+import * as feedMute from "../controllers/feedMuteController.js";
 import { requireActive, requireAdmin, requireAuth, requireModerator, requirePlus, requirePublishing } from "../middleware/auth.js";
 import {
   authLimiter,
@@ -128,6 +131,16 @@ const privateMusicResponse: RequestHandler = (_req, res, next) => {
  */
 const adminOnly = [requireAuth, requireActive, requireAdmin];
 const staff = [requireAuth, requireActive, requireModerator];
+router.put("/admin/feed-pin/:id", ...adminOnly, asyncHandler(posts.pinFeedPost));
+router.delete("/admin/feed-pin/:id", ...adminOnly, asyncHandler(posts.pinFeedPost));
+router.get("/feed-mutes/:kind/:name", requireAuth, asyncHandler(feedMute.get));
+router.put("/feed-mutes/:kind/:name", requireAuth, requireActive, asyncHandler(feedMute.update));
+router.delete("/feed-mutes/:kind/:name", requireAuth, requireActive, asyncHandler(feedMute.update));
+router.get("/admin/fundraiser", ...adminOnly, asyncHandler(fundraiserSettings.getSettings));
+router.put("/admin/fundraiser", ...adminOnly, asyncHandler(fundraiserSettings.updateSettings));
+router.get("/admin/rate-limits", ...adminOnly, asyncHandler(rateLimitSettings.getSettings));
+router.put("/admin/rate-limits", ...adminOnly, asyncHandler(rateLimitSettings.updateSettings));
+router.put("/admin/rate-limits/:name", ...adminOnly, asyncHandler(rateLimitSettings.updateRule));
 router.get("/admin/test-gate", ...adminOnly, asyncHandler(testGate.getSettings));
 router.put("/admin/test-gate", ...adminOnly, asyncHandler(testGate.updateSettings));
 router.get("/admin/development-widget", ...adminOnly, asyncHandler(developmentWidget.settings));
@@ -331,6 +344,8 @@ router.get(
 router.get("/users/:username", requireAuth, asyncHandler(users.getProfile));
 router.get("/users/me/relationships/counts", requireAuth, asyncHandler(relationships.counts));
 router.get("/users/:username/friends/access", requireAuth, asyncHandler(relationships.access));
+router.put("/users/:username/posts/:id/pin", requireAuth, requireActive, asyncHandler(users.pinPost));
+router.delete("/users/:username/posts/:id/pin", requireAuth, requireActive, asyncHandler(users.pinPost));
 router.get(
   "/users/:username/friends",
   requireAuth,
@@ -419,6 +434,8 @@ router.post(
   asyncHandler(communities.create),
 );
 router.get("/communities/:slug", requireAuth, asyncHandler(communities.get));
+router.put("/communities/:slug/posts/:id/pin", requireAuth, requireActive, asyncHandler(communities.pinPost));
+router.delete("/communities/:slug/posts/:id/pin", requireAuth, requireActive, asyncHandler(communities.pinPost));
 router.patch("/communities/:slug", requireAuth, requireActive, validate(updateCommunitySchema), asyncHandler(communities.update));
 router.put("/communities/:slug/permissions", requireAuth, requireActive, validate(communityPermissionsSchema), asyncHandler(communities.updatePermissions));
 router.get("/communities/:slug/members", requireAuth, validate(communityMemberListSchema, "query"), asyncHandler(communities.members));

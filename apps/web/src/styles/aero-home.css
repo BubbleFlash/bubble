@@ -167,7 +167,14 @@
 .aero-home .post-head { position: relative; }
 .aero-home .post-head:has(.post-report) .post-meta { padding-right: 44px; }
 .aero-home .post-head:has(.post-report + .post-report) .post-meta { padding-right: 88px; }
+.aero-home .post-head:has(.post-report + .post-report + .post-report) .post-meta { padding-right: 132px; }
+.aero-home .post-head:has(.post-controls > .post-report + .post-options) .post-meta { padding-right: 88px; }
+.aero-home .post-head:has(.post-controls > .post-report + .post-report + .post-options) .post-meta { padding-right: 132px; }
 .aero-home .post-controls { position: absolute; top: 8px; right: 8px; display: flex; }
+.post-options { position: relative; }
+.post-options__menu { position: absolute; z-index: 10; top: 100%; right: 0; min-width: 230px; padding: 4px; border: 1px solid var(--aero-color-border-strong); border-radius: 5px; background: var(--aero-color-surface-solid); box-shadow: 0 3px 8px #0004; }
+.post-options__menu button { display: block; width: 100%; padding: 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.post-options__menu button:hover, .post-options__menu button:focus-visible { background: var(--aero-gradient-button-hover); }
 .aero-home .post-report { min-width: 44px; min-height: 44px; padding: 8px; }
 .aero-home .feed-post:has(.post-report) .post-meta { min-height: 40px; }
 .aero-home .feed-delete { position: absolute; right: 8px; top: 8px; }

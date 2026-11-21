@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rateLimitNames } from "./rateLimits.js";
 
 export const telemetryMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OTHER"] as const;
 export const networkKinds = [
@@ -13,31 +14,7 @@ export const networkKinds = [
   "socket-limit",
   "closed",
 ] as const;
-export const telemetryLimiters = [
-  "global-account",
-  "global-ip",
-  "refresh-account",
-  "refresh-ip",
-  "refresh-lookup-ip",
-  "upload",
-  "report",
-  "auth",
-  "email",
-  "checkout",
-  "search",
-  "link-preview",
-  "post-view-account",
-  "public-account",
-  "public",
-  "community-create",
-  "message",
-  "chat-create",
-  "push",
-  "push-test",
-  "messages-read",
-  "client-error",
-  "contact",
-] as const;
+export const telemetryLimiters = rateLimitNames;
 
 // Use fixed labels for observations made before Express has matched a route or outside the API.
 // Never include a dynamic segment even when it looks like a username, ID, or valid token.
@@ -53,7 +30,7 @@ const routeGroups = [
   ["/push", "status subscribe unsubscribe preferences test"],
   ["/billing", "checkout portal"],
   ["/moderation", "notices reports content users history"],
-  ["/admin", "errors telemetry"],
+  ["/admin", "errors telemetry rate-limits"],
 ] as const;
 
 export function telemetryRoute(path: string): string {

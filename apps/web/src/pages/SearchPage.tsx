@@ -1,6 +1,7 @@
 import { displayNameOf } from "@commune/shared";
 import { Link, useSearchParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
+import OnlineStatus from "../components/OnlineStatus";
 import PlusBadge from "../components/PlusBadge";
 import SearchBox from "../components/SearchBox";
 import PostList from "../components/PostList";
@@ -56,7 +57,7 @@ export default function SearchPage() {
             <Link key={u.id} to={`/u/${u.username}`} className="card person">
               <Avatar username={u.username} displayName={u.displayName} url={u.avatarUrl} frame={u.avatarFrame} size={44} />
               <div>
-                <strong>{displayNameOf(u)}</strong> <PlusBadge plus={u.plus} />
+                <strong>{displayNameOf(u)}</strong> <OnlineStatus online={u.online} /> <PlusBadge plus={u.plus} />
                 {u.bio && <p className="muted">{u.bio}</p>}
               </div>
             </Link>

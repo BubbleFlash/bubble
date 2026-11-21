@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
-import { COMMENTS_PAGE_SIZE } from "@commune/shared";
+import { COMMENTS_PAGE_SIZE, COMMUNITY_POST_LENGTH } from "@commune/shared";
 import type { CreateCommentInput, CreateRepostInput, Page, PostDTO, UpdateCommunityPostInput } from "@commune/shared";
 import { changeContent } from "../services/moderationService.js";
 import { visibleContent } from "../models/moderationFields.js";
@@ -18,6 +18,7 @@ import { canManageCommunityPost, communityMembership, communityPermissions, comm
 import { deleteUploadIfUnused } from "../services/uploadService.js";
 import { PostView } from "../models/PostView.js";
 import { User } from "../models/User.js";
+import { FeedSettings } from "../models/FeedSettings.js";
 import { loadPostMusic, validateMusicTrackIds } from "../services/postMusic.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, loadPost, loadReadablePostAuthor, readablePostFilter } from "../services/postAccess.js";
 import { presentReposts, reactionSource, repostCounts, validateRepostSource } from "../services/repostService.js";
@@ -76,12 +77,12 @@ export async function presentPosts(userId: string | undefined, posts: PopulatedP
     const role = p.community && userId ? communityRole(p.community, userId, membershipIds.get(String(p.community._id))) : null;
     const canManage = p.community && canManageCommunityPost(p.community, role, p.author._id.equals(userId));
     const revealAuthor = !p.hideAuthor || !p.community || p.author._id.equals(userId) || viewer?.role === "admin" || viewer?.role === "moderator" || meetsCommunityRole(role, "editor");
-    const dto = toPostDTO(p, accessible && liked.has(key), music.get(key), online.has(p.author._id.toString()));
+    const dto = toPostDTO(p, liked.has(key), music.get(key), online.has(p.author._id.toString()));
     if (!revealAuthor) dto.author = { id: "", username: "", displayName: "Автор скрыт", avatarUrl: null, plus: false };
     return {
       ...dto,
-      likeCount: accessible ? p.likeCount : 0,
-      ...(p.repost ? { likePostId: accessible ? root : null } : {}),
+      likeCount: p.likeCount,
+      ...(p.repost ? { likePostId: accessible ? root : key } : {}),
       repostCount: counts.get(key) ?? 0,
       repost: previews[index],
       ...(userId && p.community ? { communityActions: { edit: Boolean(canManage), delete: Boolean(canManage) } } : {}),
@@ -97,23 +98,29 @@ export async function sendPostPage(
   req: Request,
   res: Response,
   baseFilter: Record<string, unknown>,
+  pin?: { id?: mongoose.Types.ObjectId | null; canPin: boolean; global?: boolean },
 ) {
   const { cursor, limit } = (res.locals as { query: { cursor?: string; limit: number } }).query;
   if (cursor && !mongoose.isValidObjectId(cursor)) throw badRequest("Invalid cursor");
 
-  const filter = { ...baseFilter, ...await readablePostFilter(req.userId), ...(cursor ? { _id: { $lt: cursor } } : {}) };
+  const accessFilter = await readablePostFilter(req.userId);
+  const pinned = !cursor && pin?.id ? await Post.findOne({ ...baseFilter, ...accessFilter, _id: pin.id })
+    .populate("author", AUTHOR_FIELDS).populate("community", COMMUNITY_FIELDS).lean() as unknown as PopulatedPost | null : null;
+  const filter = { ...baseFilter, ...accessFilter, ...(pin?.id ? { _id: { $ne: pin.id, ...(cursor ? { $lt: cursor } : {}) } } : cursor ? { _id: { $lt: cursor } } : {}) };
   const rows = (await Post.find(filter)
     .sort({ _id: -1 })
-    .limit(limit + 1)
+    .limit(limit + 1 - (pinned ? 1 : 0))
     .populate("author", AUTHOR_FIELDS)
     .populate("community", COMMUNITY_FIELDS)
     .lean()) as unknown as PopulatedPost[];
 
-  const hasMore = rows.length > limit;
-  const posts = hasMore ? rows.slice(0, limit) : rows;
+  const capacity = limit - (pinned ? 1 : 0);
+  const hasMore = rows.length > capacity;
+  const posts = rows.slice(0, capacity);
+  const items = await presentPosts(req.userId!, pinned ? [pinned, ...posts] : posts);
   const body: Page<PostDTO> = {
-    items: await presentPosts(req.userId!, posts),
-    nextCursor: hasMore ? (posts[posts.length - 1]?._id.toString() ?? null) : null,
+    items: items.map((item) => ({ ...item, ...(pin ? { pinned: item.id === String(pin.id), canPin: pin.canPin && (!pin.global || ((item.visibility === undefined || item.visibility === "public") && (item.author.id === req.userId || item.community?.creatorId === req.userId))) } : {}) })),
+    nextCursor: hasMore ? (posts[posts.length - 1]?._id.toString() ?? "ffffffffffffffffffffffff") : null,
   };
   res.json(body);
 }
@@ -122,13 +129,27 @@ export async function listPosts(req: Request, res: Response) {
   const { feed } = (res.locals as { query: { feed: "all" | "following" } }).query;
 
   const baseFilter: Record<string, unknown> = {};
+  const viewer = await User.findById(req.userId).select("mutedUsers mutedCommunities").lean();
+  baseFilter.$and = [{ $or: [{ community: { $ne: null } }, { author: { $nin: viewer?.mutedUsers ?? [] } }] }, { community: { $nin: viewer?.mutedCommunities ?? [] } }];
   if (feed === "following") {
     // Posts from people I follow, plus my own.
     const follows = await Follow.find({ follower: req.userId }).select("following").lean();
     baseFilter.author = { $in: [...follows.map((f) => f.following), req.userId] };
-    baseFilter.$and = [{ $or: [{ hideAuthor: { $ne: true } }, { author: req.userId }] }];
+    (baseFilter.$and as object[]).push({ $or: [{ hideAuthor: { $ne: true } }, { author: req.userId }] });
   }
-  await sendPostPage(req, res, baseFilter);
+  const globalPin = feed === "all" ? await FeedSettings.findById("main-feed").lean() : null;
+  await sendPostPage(req, res, baseFilter, feed === "all" ? { id: globalPin?.pinnedPost, canPin: req.userRole === "admin", global: true } : undefined);
+}
+
+export async function pinFeedPost(req: Request, res: Response) {
+  const id = param(req, "id");
+  const post = await Post.findOne({ _id: id, ...await readablePostFilter() }).select("author community").lean();
+  if (!post) throw notFound("Public post not found");
+  const community = post.community ? await Community.findById(post.community).select("creator").lean() : null;
+  if (String(post.author) !== req.userId && String(community?.creator) !== req.userId) throw forbidden("You can pin your own post or a post from your community");
+  if (req.method === "DELETE") await FeedSettings.updateOne({ _id: "main-feed", pinnedPost: post._id }, { $unset: { pinnedPost: 1 } });
+  else await FeedSettings.updateOne({ _id: "main-feed" }, { $set: { pinnedPost: post._id } }, { upsert: true });
+  res.status(204).end();
 }
 
 export async function getPost(req: Request, res: Response) {
@@ -228,11 +249,13 @@ export async function updatePost(req: Request, res: Response) {
   const userId = req.userId!;
   const post = await loadPost(id, userId);
   const role = post.community ? (await communityMembership(post.community, userId)).role : null;
-  if (!post.community || !canManageCommunityPost(post.community, role, post.author._id.equals(userId))) {
-    throw forbidden("You cannot edit this community post");
-  }
+  const personal = !post.community;
+  if (personal && (!post.author._id.equals(userId) || Date.now() - post.createdAt.getTime() >= 5 * 60_000)) throw forbidden("The editing period has expired or you are not the author");
+  if (!personal && !canManageCommunityPost(post.community!, role, post.author._id.equals(userId))) throw forbidden("You cannot edit this community post");
 
   const { content, imageUrls, musicTrackIds, hideAuthor, adult } = req.body as UpdateCommunityPostInput;
+  if (post.community && content && content.length > COMMUNITY_POST_LENGTH) throw badRequest("Community post is too long");
+  if (personal && hideAuthor !== undefined) throw badRequest("Invalid personal post settings");
   const images = imageUrls ?? (post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
   const music = musicTrackIds ?? post.musicTrackIds ?? [];
   if (!(content ?? post.content) && !images.length && !music.length && !post.repost) {
@@ -243,7 +266,7 @@ export async function updatePost(req: Request, res: Response) {
     await validateMusicTrackIds(musicTrackIds.filter((trackId) => !existing.has(trackId)));
   }
   const previous = await Post.findOneAndUpdate(
-    { _id: id, community: post.community._id, updatedAt: post.updatedAt ?? { $exists: false } },
+    { _id: id, community: post.community?._id ?? null, updatedAt: post.updatedAt ?? { $exists: false }, ...(personal ? { createdAt: { $gt: new Date(Date.now() - 5 * 60_000) } } : {}) },
     { $set: {
       ...(content === undefined ? {} : { content }),
       ...(hideAuthor === undefined ? {} : { hideAuthor }),
@@ -268,7 +291,9 @@ export async function setPostLike(req: Request, res: Response) {
   const user = req.userId!;
   const requested = await loadPost(param(req, "id"), user);
   const root = reactionSource(requested);
-  const originalAuthor = requested.repost ? await loadReadablePostAuthor(String(root), user) : requested.author._id;
+  const original = requested.repost
+    ? await Post.findOne({ ...await readablePostFilter(user), _id: root }).select("author").lean()
+    : null;
   const addLike = async (post: mongoose.Types.ObjectId, author: mongoose.Types.ObjectId) => {
     const direct = { post, user };
     try {
@@ -288,13 +313,13 @@ export async function setPostLike(req: Request, res: Response) {
     if (result.deletedCount) await Post.updateOne({ _id: requested._id }, { $inc: { likeCount: -1 } });
   } else if (req.method === "PUT") {
     await addLike(requested._id, requested.author._id);
-    if (requested.repost) await addLike(root, originalAuthor);
+    if (original) await addLike(root, original.author);
   } else if (await Like.exists(direct)) {
     const result = await Like.deleteOne(direct);
     if (result.deletedCount) await Post.updateOne({ _id: requested._id }, { $inc: { likeCount: -1 } });
   } else {
     await addLike(requested._id, requested.author._id);
-    if (requested.repost) await addLike(root, originalAuthor);
+    if (original) await addLike(root, original.author);
   }
 
   const post = await loadPost(String(requested._id), user);

@@ -8,10 +8,12 @@ export default function PostList({
   query,
   emptyMessage,
   inlineComments = false,
+  pinTarget,
 }: {
   query: ReturnType<typeof useFeed>;
   emptyMessage: string;
   inlineComments?: boolean;
+  pinTarget?: string;
 }) {
   const posts = query.data?.pages.flatMap((p) => p.items) ?? [];
   const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query;
@@ -27,7 +29,7 @@ export default function PostList({
       {query.isError && <p className="error center">{query.error.message}</p>}
       {query.isSuccess && posts.length === 0 && <p className="muted center">{emptyMessage}</p>}
       {posts.map((post) => (
-        <PostCard key={post.id} post={post} inlineComments={inlineComments} />
+        <PostCard key={post.id} post={post} inlineComments={inlineComments} pinTarget={pinTarget} />
       ))}
       {isFetchingNextPage && <PostListSkeleton count={1} />}
       {query.hasNextPage && <div ref={sentinel} aria-hidden="true" />}

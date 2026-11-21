@@ -864,6 +864,8 @@
 }
 .repost-card {
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   margin-block: 10px;
   padding: 10px;
   border: 1px solid var(--aero-color-border);

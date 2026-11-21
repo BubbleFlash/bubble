@@ -19,6 +19,7 @@ import { useImageDrop } from "../hooks/useImageDrop";
 import ImageDropHint from "../components/ImageDropHint";
 import Icon from "../components/Icon";
 import PlusBadge from "../components/PlusBadge";
+import OnlineStatus from "../components/OnlineStatus";
 import { timeAgo } from "../components/PostCard";
 import {
   PENDING_PREFIX,
@@ -274,7 +275,7 @@ function Thread({ id }: { id: string }) {
   const latest = thread.data?.pages[0];
   const otherId = latest?.conversation?.other.id;
   const typing = useRealtime((s) => s.typing[id] === true);
-  const online = useRealtime((s) => (otherId ? s.presence[otherId] === true : false));
+  const online = useRealtime((s) => otherId ? s.presence[otherId] : undefined) ?? latest?.conversation?.other.online ?? false;
 
   const messages = useMemo(() => {
     const seen = new Set<string>();
@@ -342,14 +343,10 @@ function Thread({ id }: { id: string }) {
             <Avatar username={other.username} displayName={other.displayName} url={other.avatarUrl} frame={other.avatarFrame} size={36} />
             <span className="person-text">
               <strong>
-                {displayNameOf(other)} <PlusBadge plus={other.plus} />
+                {displayNameOf(other)} <OnlineStatus online={online} showText onlineText="В сети" /> <PlusBadge plus={other.plus} />
               </strong>
               {typing ? (
                 <span className="chat-status typing-label">печатает…</span>
-              ) : online ? (
-                <span className="chat-status">
-                  <span className="presence-dot" aria-hidden="true" />  В сети
-                </span>
               ) : null}
             </span>
           </Link>
@@ -540,7 +537,7 @@ export default function MessagesPage() {
             <span className="convo-main">
               <span className="convo-top">
                 <strong>
-                  {displayNameOf(c.other)} <PlusBadge plus={c.other.plus} />
+                  {displayNameOf(c.other)} <OnlineStatus online={c.other.online} /> <PlusBadge plus={c.other.plus} />
                 </strong>
                 <span className="muted small">{timeAgo(c.lastMessageAt)}</span>
               </span>

@@ -6,7 +6,7 @@ import Avatar from "../components/Avatar";
 import Icon from "../components/Icon";
 import PlusBadge from "../components/PlusBadge";
 import AdSlot, { FEED_AD_SLOT } from "../components/AdSlot";
-import { timeAgo } from "../components/PostCard";
+import { postTime } from "../components/PostCard";
 import { PostListSkeleton } from "../components/Skeleton";
 import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
 import { usePublicPosts } from "../hooks/usePublic";
@@ -67,7 +67,7 @@ export default function ExplorePage() {
               <div className="post-meta">
                 <strong className="user-link">{post.community?.name ?? displayNameOf(post.author)}</strong>
                 {!post.community && <><OnlineStatus online={user?.id === post.author.id || post.author.online} /><PlusBadge plus={post.author.plus} /></>}
-                <span className="muted">· {timeAgo(post.createdAt)}</span>
+                <span className="muted">· {postTime(post.createdAt)}</span>
               </div>
               {post.content && <PostText text={post.content} />}
               {(post.imageUrls?.length || post.imageUrl) && <PostImages images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} adult={post.adult} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}

@@ -30,7 +30,7 @@ export function useConversations(enabled = true) {
     enabled,
     refetchOnWindowFocus: true,
     // The live connection delivers changes; polling is only a safety net while it is up.
-    refetchInterval: () => (isRealtimeConnected() ? 120_000 : 45_000),
+    refetchInterval: 30_000,
   });
 }
 

@@ -15,7 +15,7 @@ import type { PopulatedPost } from "../utils/serializers.js";
 import { User } from "../models/User.js";
 import { badRequest, forbidden, notFound } from "../utils/errors.js";
 import { pushConfigured, pushToUser } from "../services/pushService.js";
-import { emitToUsers } from "../services/realtime.js";
+import { emitToUsers, onlineUsers } from "../services/realtime.js";
 import { isPlusActive } from "../utils/plan.js";
 import { findByUsername } from "./userController.js";
 
@@ -179,10 +179,15 @@ export async function listConversations(req: Request, res: Response) {
     .select(USER_FIELDS)
     .lean()) as unknown as (LeanUser & Parameters<typeof accountRestriction>[0])[];
   const byId = new Map(users.map((u) => [str(u._id), u]));
+  const online = await onlineUsers(otherIds);
   const out: ConversationDTO[] = [];
   convos.forEach((c, i) => {
     const other = byId.get(otherIds[i]!);
-      if (other && !accountRestriction(other)) out.push(toConversationDTO(c, me, other, c.last[0]));
+      if (other && !accountRestriction(other)) {
+        const conversation = toConversationDTO(c, me, other, c.last[0]);
+        conversation.other.online = online.has(str(other._id));
+        out.push(conversation);
+      }
   });
   out.sort((a, b) => Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt));
   res.json(out);
@@ -251,7 +256,10 @@ export async function getMessages(req: Request, res: Response) {
     items: page.map((row, index) => toMessageDTO(row, music.get(str(row._id)) ?? [], reposts[index])),
     nextCursor,
   };
-  if (!cursor && other) result.conversation = toConversationDTO(convo, me, other, page.at(-1));
+  if (!cursor && other) {
+    result.conversation = toConversationDTO(convo, me, other, page.at(-1));
+    result.conversation.other.online = (await onlineUsers([otherId])).has(otherId);
+  }
   res.json(result);
 }
 

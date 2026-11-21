@@ -50,48 +50,52 @@ function actor(req: Request) {
 
 export async function listContent(req: Request, res: Response) {
   const query = parse(
-    z.object({ kind: z.enum(["all", "post", "comment", "wallpaper"]).default("all"), cursor, target: cursor }),
+    z.object({ kind: z.enum(["all", "post", "comment", "wallpaper"]).default("all"), cursor: z.string().regex(/^\d{1,16}_[a-f0-9]{24}_(post|comment|wallpaper)$/i).optional(), target: cursor }),
     req.query,
   );
   const filter = {
     ...(!query.target && { moderationState: { $in: ["hidden", "removed", "withdrawn"] } }),
-    ...(query.target
-      ? { _id: id(query.target) }
-      : query.cursor && { _id: { $lt: id(query.cursor) } }),
+    ...(query.target && { _id: id(query.target) }),
   };
+  const marker = query.cursor?.split("_");
+  const markerTime = marker ? new Date(Number(marker[0])) : undefined;
+  if (markerTime && Number.isNaN(markerTime.getTime())) throw badRequest("Invalid cursor");
+  async function sortedContent(model: typeof Post | typeof Comment | typeof Wallpaper, type: "post" | "comment" | "wallpaper") {
+    const rows = await model.aggregate([
+      { $match: filter },
+      { $addFields: { moderationOrder: { $ifNull: [
+        { $max: { $map: { input: { $filter: { input: { $ifNull: ["$moderationEvents", []] }, as: "event", cond: { $in: ["$$event.action", ["hidden", "removed", "withdrawn"]] } } }, as: "event", in: "$$event.time" } } },
+        { $ifNull: ["$purgedAt", "$createdAt"] },
+      ] } } },
+      ...(markerTime ? [{ $match: { $or: [
+        { moderationOrder: { $lt: markerTime } },
+        { moderationOrder: markerTime, _id: { $lt: id(marker![1]) } },
+        ...(type < marker![2]! ? [{ moderationOrder: markerTime, _id: id(marker![1]) }] : []),
+      ] } }] : []),
+      { $sort: { moderationOrder: -1, _id: -1 } },
+      { $limit: 31 },
+      { $project: { content: 1, moderationState: 1, purgedAt: 1, deletionPending: 1, author: 1, createdAt: 1, imageUrl: 1, imageUrls: 1, musicTrackIds: 1, post: 1, name: 1, moderationOrder: 1 } },
+    ]);
+    await model.populate(rows, { path: "author", select: "username displayName avatarUrl avatarFrame" });
+    return rows.map((row) => ({ ...row, ...(type === "wallpaper" && row.purgedAt ? { imageUrl: undefined } : {}), kind: type }));
+  }
   const groups = await Promise.all([
     (query.kind === "all" || query.kind === "post")
-      ? Post.find(filter)
-          .select("content moderationState purgedAt deletionPending author createdAt imageUrl imageUrls musicTrackIds")
-          .populate("author", "username displayName avatarUrl avatarFrame")
-          .sort({ _id: -1 })
-          .limit(31)
-          .lean()
-          .then((rows) => rows.map((row) => ({ ...row, kind: "post" })))
+      ? sortedContent(Post, "post")
       : [],
     (query.kind === "all" || query.kind === "comment")
-      ? Comment.find(filter)
-          .select("content moderationState purgedAt deletionPending author createdAt post")
-          .populate("author", "username displayName avatarUrl avatarFrame")
-          .sort({ _id: -1 })
-          .limit(31)
-          .lean()
-          .then((rows) => rows.map((row) => ({ ...row, kind: "comment" })))
+      ? sortedContent(Comment, "comment")
       : [],
     (query.kind === "all" || query.kind === "wallpaper")
-      ? Wallpaper.find(filter)
-          .select("name imageUrl moderationState purgedAt deletionPending author createdAt")
-          .populate("author", "username displayName avatarUrl avatarFrame")
-          .sort({ _id: -1 }).limit(31).lean()
-          .then((rows) => rows.map((row) => ({ ...row, imageUrl: row.purgedAt ? undefined : row.imageUrl, kind: "wallpaper" })))
+      ? sortedContent(Wallpaper, "wallpaper")
       : [],
   ]);
-  const rows = groups.flat().sort((a, b) => String(b._id).localeCompare(String(a._id)));
+  const rows = groups.flat().sort((a, b) => b.moderationOrder.getTime() - a.moderationOrder.getTime() || String(b._id).localeCompare(String(a._id)) || b.kind.localeCompare(a.kind));
   const items = rows.slice(0, 30);
   const music = await loadPostMusic(items.filter((row) => row.kind === "post"));
   res.json({
     items: items.map((row) => ({ ...row, musicAttachments: music.get(String(row._id)) ?? [] })),
-    nextCursor: rows.length > 30 ? String(rows[29]!._id) : null,
+    nextCursor: rows.length > 30 ? `${rows[29]!.moderationOrder.getTime()}_${rows[29]!._id}_${rows[29]!.kind}` : null,
   });
 }
 
