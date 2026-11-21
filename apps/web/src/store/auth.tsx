@@ -34,6 +34,7 @@ interface AuthState {
   confirmed: boolean;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
+  verifyEmail: (token: string) => Promise<boolean>;
   loginWithGoogle: (credential: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: AccountUser | null) => void;
@@ -199,9 +200,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     (input: RegisterInput) => withSessionCookie(async () => {
-      apply(await api<AuthResponse>("/auth/register", { method: "POST", body: input, signal: AbortSignal.timeout(10_000) }));
+      await api<{ verificationRequired: true }>("/auth/register", { method: "POST", body: input, signal: AbortSignal.timeout(10_000) });
     }),
-    [apply],
+    [],
   );
 
   const loginWithGoogle = useCallback(
@@ -210,6 +211,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [apply],
   );
+
+  const verifyEmail = useCallback((token: string) => withSessionCookie(async () => {
+    const result = await api<AuthResponse | undefined>("/auth/verify-email", { method: "POST", body: { token } });
+    if (!result) return false;
+    apply(result);
+    return true;
+  }), [apply]);
 
   const logout = useCallback(async () => {
     const generation = sessionGeneration();
@@ -229,8 +237,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setUser, qc]);
 
   const value = useMemo(
-    () => ({ user, loading, confirmed, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount }),
-    [user, loading, confirmed, login, register, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount],
+    () => ({ user, loading, confirmed, login, register, verifyEmail, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount }),
+    [user, loading, confirmed, login, register, verifyEmail, loginWithGoogle, logout, setUser, applyAppearance, isCurrentAccount],
   );
   if (blocked) return <main className="card" role="alert">
     <h1>Аккаунт заблокирован</h1>

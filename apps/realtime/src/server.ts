@@ -18,10 +18,11 @@ const MAX_TARGETS_PER_EMIT = 10;
 
 const userRoom = (userId: string) => `user:${userId}`;
 const convRoom = (conversationId: string) => `conv:${conversationId}`;
+const presenceRoom = (userId: string) => `presence:${userId}`;
 
 interface SocketData {
   userId: string;
-  conversations: Set<string>;
+  conversations: Map<string, string>;
 }
 
 type Ack = (result: { ok: boolean; online?: boolean; error?: string }) => void;
@@ -206,12 +207,14 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
   io.on("connection", (socket: Socket) => {
     const data = socket.data as SocketData & { expiresAt: number };
     const userId = data.userId;
-    data.conversations = new Set();
+    data.conversations = new Map();
 
     socket.join(userRoom(userId));
     const sockets = online.get(userId) ?? new Set<string>();
+    const firstConnection = sockets.size === 0;
     sockets.add(socket.id);
     online.set(userId, sockets);
+    if (firstConnection) io.to(presenceRoom(userId)).emit("presence", { userId, online: true });
 
     // The connection is only as valid as the token. When it expires the client is dropped and
     // reconnects with a fresh one, so a stolen or revoked session cannot stay connected.
@@ -235,6 +238,7 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
       });
     });
     const bucket = new TokenBucket(20, 5);
+    const joining = new Map<string, symbol>();
 
     socket.on("conversation:join", async (payload: unknown, ack?: Ack) => {
       const reply = typeof ack === "function" ? ack : () => undefined;
@@ -245,21 +249,34 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
       if (data.conversations.size >= MAX_ROOMS_PER_SOCKET && !data.conversations.has(id)) {
         return reply({ ok: false, error: "too_many" });
       }
+      const attempt = Symbol();
+      joining.set(id, attempt);
       const participants = await members.participants(id);
-      if (!participants?.includes(userId)) return reply({ ok: false, error: "forbidden" });
+      if (joining.get(id) !== attempt) return reply({ ok: false, error: "cancelled" });
+      joining.delete(id);
+      const other = participants?.find((p) => p !== userId);
+      if (!socket.connected || !other || !participants?.includes(userId)) return reply({ ok: false, error: "forbidden" });
+      if (data.conversations.size >= MAX_ROOMS_PER_SOCKET && !data.conversations.has(id)) {
+        return reply({ ok: false, error: "too_many" });
+      }
 
-      await socket.join(convRoom(id));
-      data.conversations.add(id);
-      socket.to(convRoom(id)).emit("presence", { conversationId: id, userId, online: true });
-      const other = participants.find((p) => p !== userId);
-      reply({ ok: true, online: other ? (online.get(other)?.size ?? 0) > 0 : false });
+      data.conversations.set(id, other);
+      await socket.join([convRoom(id), presenceRoom(other)]);
+      if (data.conversations.get(id) !== other) return;
+      const otherOnline = Boolean(online.get(other)?.size);
+      socket.emit("presence", { userId: other, online: otherOnline });
+      reply({ ok: true, online: otherOnline });
     });
 
     socket.on("conversation:leave", (payload: unknown) => {
       const id = (payload as { conversationId?: unknown } | null)?.conversationId;
-      if (typeof id !== "string" || !data.conversations.has(id)) return;
+      if (typeof id !== "string") return;
+      joining.delete(id);
+      const other = data.conversations.get(id);
+      if (!other) return;
       data.conversations.delete(id);
       void socket.leave(convRoom(id));
+      if (![...data.conversations.values()].includes(other)) void socket.leave(presenceRoom(other));
     });
 
     socket.on("typing", (payload: unknown) => {
@@ -290,10 +307,7 @@ export function createRealtimeServer(config: Config, membership?: Membership) {
       set?.delete(socket.id);
       if (set && set.size === 0) {
         online.delete(userId);
-        // Last tab or device closed: tell the people they were chatting with.
-        for (const id of data.conversations) {
-          io.to(convRoom(id)).emit("presence", { conversationId: id, userId, online: false });
-        }
+        io.to(presenceRoom(userId)).emit("presence", { userId, online: false });
       }
     });
   });

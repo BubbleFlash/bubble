@@ -1,10 +1,12 @@
 import type { Request, Response } from "express";
-import { rateLimitDefaults, type RateLimitName } from "@commune/shared";
+import { createHmac } from "node:crypto";
+import { maxChatCreateLimit, rateLimitDefaults, registrationRateLimits, type AccountActionRule, type RateLimitName, type RegistrationRateLimit } from "@commune/shared";
 import rateLimit, { MemoryStore, type Options, type RateLimitRequestHandler } from "express-rate-limit";
 import { env } from "../config/env.js";
 import { rateLimitPolicy } from "../services/rateLimitSettings.js";
 import { asyncHandler } from "../utils/errors.js";
 import { requestPrincipal } from "./auth.js";
+import { takeQuota } from "../services/quotaCounter.js";
 
 export const LIMITER_HEADER = "X-RateLimit-Limiter";
 
@@ -46,7 +48,7 @@ function limiter(
       limit,
       standardHeaders: "draft-7",
       legacyHeaders: false,
-      keyGenerator: options.keyGenerator ?? ipKey,
+      keyGenerator: options.keyGenerator ?? accountOrIpKey,
       handler(_req, res, _next, { statusCode }) {
         res.locals.limiterPolicy = { name: label, limit, windowSeconds };
         res.setHeader("Cache-Control", "no-store");
@@ -60,32 +62,12 @@ function limiter(
   });
 }
 
-// Routine reads, likes and the background view ping use the signed account budget.
-// Requests without a valid access token and other mutations use the client IP budget.
-const accountReads = [
-  /^\/api\/posts(?:\/[^/]+(?:\/comments)?)?\/?$/i,
-  /^\/api\/users\/[^/]+(?:\/(?:posts|music|follow|friends(?:\/access)?))?\/?$/i,
-  /^\/api\/users\/me\/relationships\/counts\/?$/i,
-  /^\/api\/communities(?:\/[^/]+(?:\/posts)?)?\/?$/i,
-  /^\/api\/notifications(?:\/(?:unread-count|preferences))?\/?$/i,
-  /^\/api\/(?:messages\/unread-count|moderation\/notices)\/?$/i,
-  /^\/api\/moderation\/reports\/?$/i,
-  /^\/api\/(?:news|server-fundraiser|public\/posts)\/?$/i,
-];
-const postView = /^\/api\/posts\/[^/]+\/view\/?$/i;
-const postLike = /^\/api\/posts\/[^/]+(?:\/comments\/[^/]+)?\/like\/?$/i;
-
-function browsingPrincipal(req: Request) {
-  if (req.method === "GET" || req.method === "HEAD") {
-    const path = req.path;
-    return accountReads.some((route) => route.test(path)) ? requestPrincipal(req) : null;
-  }
-  if (["POST", "PUT", "DELETE"].includes(req.method) && postLike.test(req.path)) return requestPrincipal(req);
-  return req.method === "POST" && postView.test(req.path) ? requestPrincipal(req) : null;
-}
-
 function ipKey(req: Request) {
   return "ip:" + (req.ip ?? req.socket.remoteAddress ?? "unknown");
+}
+
+function accountOrIpKey(req: Request) {
+  return req.userId ? `account:${req.userId}` : ipKey(req);
 }
 
 function accessKey(principal: NonNullable<ReturnType<typeof requestPrincipal>>) {
@@ -94,16 +76,16 @@ function accessKey(principal: NonNullable<ReturnType<typeof requestPrincipal>>) 
 }
 
 export const globalLimiter = limiter(
-  (req) => (browsingPrincipal(req) ? "global-account" : "global-ip"),
+  (req) => (requestPrincipal(req) ? "global-account" : "global-ip"),
   "Too many requests, slow down.",
   {
     skip: (req) => (
       // Keep the admin switch accessible even after the shared IP budget is exhausted.
       /^\/api\/admin\/rate-limits(?:\/[^/]+)?\/?$/i.test(req.path) ||
-      (req.method === "POST" && /^\/api\/(?:client-network|client-errors|auth\/refresh)\/?$/i.test(req.path))
+      (req.method === "POST" && /^\/api\/(?:client-network|client-errors|auth\/(?:refresh|register(?:\/captcha)?))\/?$/i.test(req.path))
     ),
     keyGenerator(req) {
-      const principal = browsingPrincipal(req);
+      const principal = requestPrincipal(req);
       return principal ? accessKey(principal) : ipKey(req);
     },
   },
@@ -182,15 +164,40 @@ export const communityLimiter = limiter(
   "You're creating communities too fast, try again later.",
 );
 
-export const messageLimiter = limiter(
-  "message",
-  "You're sending messages too fast, slow down.",
-);
+function rejectQuota(res: Response, name: string, limit: number, windowSeconds: number, retryAfter: number) {
+  res.locals.limiterPolicy = { name, limit, windowSeconds };
+  res.set({ [LIMITER_HEADER]: name, "Retry-After": String(retryAfter), "Cache-Control": "no-store" });
+  res.status(429).json({ error: "Too many requests, slow down." });
+}
 
-export const newChatLimiter = limiter(
-  "chat-create",
-  "You're starting too many chats, try again later.",
-);
+export async function allowAccountAction(req: Request, res: Response, name: AccountActionRule, target?: string) {
+  if (env.NODE_ENV === "test") return true;
+  const policy = await rateLimitPolicy();
+  const rule = policy.rules[name];
+  if (rule?.enabled === false) return true;
+  const { limit, windowSeconds } = rule ?? rateLimitDefaults[name];
+  const threshold = name === "chat-create" ? Math.min(limit, maxChatCreateLimit) : limit;
+  const retryAfter = await takeQuota(`action:${name}:${rule?.revision ?? ""}:${req.userId}`, threshold, windowSeconds, target);
+  if (!retryAfter) return true;
+  rejectQuota(res, name, threshold, windowSeconds, retryAfter);
+  return false;
+}
+
+export function accountActionLimiter(name: AccountActionRule) {
+  return asyncHandler(async (req, res, next) => {
+    if (await allowAccountAction(req, res, name)) next();
+  });
+}
+
+export async function allowRegistrationRequest(req: Request, res: Response, name: RegistrationRateLimit) {
+  if (env.NODE_ENV === "test") return true;
+  const { limit, windowSeconds } = registrationRateLimits[name];
+  const key = createHmac("sha256", env.JWT_ACCESS_SECRET).update(`${name}:${ipKey(req)}`).digest("hex");
+  const retryAfter = await takeQuota(key, limit, windowSeconds);
+  if (!retryAfter) return true;
+  rejectQuota(res, name, limit, windowSeconds, retryAfter);
+  return false;
+}
 
 export const pushLimiter = limiter(
   "push",

@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import * as accountService from "../services/accountService.js";
 import { User } from "../models/User.js";
 import { notFound } from "../utils/errors.js";
-import { clearRefreshCookie } from "../services/authService.js";
+import { clearRefreshCookie, issueVerifiedRegistrationSession } from "../services/authService.js";
 import { requestAccountDeletion } from "../services/accountDeletion.js";
 
 export async function forgotPassword(req: Request, res: Response) {
@@ -19,7 +19,11 @@ export async function resetPassword(req: Request, res: Response) {
 }
 
 export async function verifyEmail(req: Request, res: Response) {
-  await accountService.verifyEmail((req.body as { token: string }).token);
+  const userId = await accountService.verifyEmail((req.body as { token: string }).token);
+  if (userId) {
+    res.json(await issueVerifiedRegistrationSession(res, userId));
+    return;
+  }
   res.status(204).end();
 }
 

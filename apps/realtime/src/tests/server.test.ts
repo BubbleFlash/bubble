@@ -222,19 +222,22 @@ describe("conversations, typing and presence", () => {
     expect(seen).toBe(false);
   });
 
-  it("reports presence when someone joins and when their last connection closes", async () => {
+  it("reports the other user's connections even when they never open the conversation", async () => {
     const alice = client({ token: token(ALICE) });
     await connected(alice);
     expect(await join(alice, CONVO)).toMatchObject({ ok: true, online: false });
 
+    const cameOnline = next<{ userId: string; online: boolean }>(alice, "presence");
     const bob = client({ token: token(BOB) });
     await connected(bob);
-    const cameOnline = next<{ userId: string; online: boolean }>(alice, "presence");
-    expect(await join(bob, CONVO)).toMatchObject({ ok: true, online: true });
     expect(await cameOnline).toMatchObject({ userId: BOB, online: true });
 
-    const wentOffline = next<{ userId: string; online: boolean }>(alice, "presence");
+    const secondTab = client({ token: token(BOB) });
+    await connected(secondTab);
+    await join(bob, CONVO);
     bob.close();
+    const wentOffline = next<{ userId: string; online: boolean }>(alice, "presence");
+    secondTab.close();
     expect(await wentOffline).toMatchObject({ userId: BOB, online: false });
   });
 });

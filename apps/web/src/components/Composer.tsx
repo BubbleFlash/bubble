@@ -71,7 +71,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
       {...drop.handlers}
     >
       <div className="composer-row">
-        {user && <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={42} />}
+        {user && <Avatar username={user.username} displayName={user.displayName} url={user.avatarUrl} frame={user.avatarFrame} size={42} online />}
         <div className="image-drop-field">
         <textarea
           ref={textRef}
@@ -130,7 +130,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           {create.isPending ? "Публикация…" : "Опубликовать"}
         </button>
       </div>
-      {create.isError && <p className="error">{create.error.message}</p>}
+      {create.isError && <p className="error" role="alert">{create.error.message}</p>}
     </form>
   );
 }

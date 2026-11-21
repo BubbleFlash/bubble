@@ -1,4 +1,4 @@
-import type { AuthResponse } from "@commune/shared";
+import { maxRateLimitWindowSeconds, type AuthResponse } from "@commune/shared";
 import { assertSessionGeneration, SessionChanged, sessionGeneration, withSessionCookie } from "./browserSession";
 import { observeFetch, retrySeconds } from "./networkTelemetry";
 
@@ -169,6 +169,13 @@ export class ApiError extends Error {
   }
 }
 
+function waitText(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds / 60) % 60;
+  const remainder = seconds % 60;
+  return [hours && `${hours} ч`, minutes && `${minutes} мин`, remainder && `${remainder} с.`].filter(Boolean).join(" ");
+}
+
 export async function api<T>(
   path: string,
   options: { method?: string; body?: unknown; signal?: AbortSignal; keepalive?: boolean } = {},
@@ -233,6 +240,9 @@ export async function api<T>(
       "Invalid input": "Проверьте введённые данные.",
       "Set test access credentials first": "Сначала задайте логин и пароль тестового доступа.",
       "Invalid email or password": "Неверный адрес почты или пароль.",
+      "Email confirmation required": "Подтвердите почту. Мы отправили новую ссылку на ваш адрес.",
+      "Captcha required": "Введите код с картинки, чтобы зарегистрироваться.",
+      "Invalid or expired captcha": "Код неверный или устарел. Введите код с новой картинки.",
       "Current password is incorrect": "Текущий пароль указан неверно.",
       "Email delivery is unavailable": "Отправка писем сейчас недоступна. Попробуйте позже.",
       "This link is invalid or has expired": "Ссылка недействительна или срок её действия истёк.",
@@ -286,9 +296,9 @@ export async function api<T>(
     if (data.restriction?.kind === "account" && !path.startsWith("/auth/")) {
       window.dispatchEvent(new CustomEvent("account-restricted", { detail: data.restriction }));
     }
-    const wait = res.status === 429 ? retrySeconds(res) : undefined;
+    const wait = res.status === 429 ? retrySeconds(res, maxRateLimitWindowSeconds) : undefined;
     throw new ApiError(res.status, data.restriction ? restrictionText(data.restriction) : wait
-      ? `Слишком много запросов. Повторите через ${wait} с.` : safe, data.error ?? fallback, data.restriction);
+      ? `Слишком много запросов. Повторите через ${waitText(wait)}` : safe, data.error ?? fallback, data.restriction);
   }
   const body = await res.text();
   assertSessionGeneration(generation);

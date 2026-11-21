@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { rateLimitNames } from "./rateLimits.js";
+import { rateLimitNames, registrationRateLimits, type RegistrationRateLimit } from "./rateLimits.js";
 
 export const telemetryMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OTHER"] as const;
 export const networkKinds = [
@@ -14,7 +14,7 @@ export const networkKinds = [
   "socket-limit",
   "closed",
 ] as const;
-export const telemetryLimiters = rateLimitNames;
+export const telemetryLimiters = [...rateLimitNames, ...Object.keys(registrationRateLimits) as RegistrationRateLimit[]];
 
 // Use fixed labels for observations made before Express has matched a route or outside the API.
 // Never include a dynamic segment even when it looks like a username, ID, or valid token.
@@ -40,11 +40,12 @@ export function telemetryRoute(path: string): string {
     .replace(/\/+$/, "")
     .toLowerCase();
   if (
-    /^\/(?:news|contact|link-preview|server-fundraiser|insights|socket\.io|client-errors|client-network)$/.test(
+    /^\/(?:news|contact|link-preview|server-fundraiser|insights|profile-presence|socket\.io|client-errors|client-network)$/.test(
       clean,
     )
   )
     return clean;
+  if (clean === "/auth/register/captcha") return clean;
   for (const [root, suffixes] of routeGroups) {
     if (clean === root) return root;
     if (clean.startsWith(`${root}/`)) {
