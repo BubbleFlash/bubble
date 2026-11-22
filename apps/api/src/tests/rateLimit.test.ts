@@ -194,7 +194,7 @@ function browse(ip: string, token: string) {
 
 describe("HTTP rate limits", () => {
   beforeEach(() => {
-    vi.spyOn(rateLimitSettings, "rateLimitPolicy").mockResolvedValue({ enabled: true, revision: "http-tests", captchaRevision: null, rules: {} });
+    vi.spyOn(rateLimitSettings, "rateLimitPolicy").mockResolvedValue({ enabled: true, revision: "http-tests", captchaRevision: null, registrationClosed: false, rules: {} });
   });
   afterEach(() => vi.restoreAllMocks());
 

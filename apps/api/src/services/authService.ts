@@ -4,7 +4,7 @@ import type { Response } from "express";
 import type { AuthResponse, LoginInput, RegisterInput } from "@commune/shared";
 import { env } from "../config/env.js";
 import { RefreshToken } from "../models/RefreshToken.js";
-import { User } from "../models/User.js";
+import { ensureRegistrationUsernameIndex, User, usernameCollation } from "../models/User.js";
 import { assertAccountAllowed } from "./restrictions.js";
 import { AppError, conflict, unauthorized } from "../utils/errors.js";
 import { toAccountUser } from "../utils/serializers.js";
@@ -12,6 +12,7 @@ import { verifyGoogleIdToken, type GoogleProfile } from "./googleAuth.js";
 import { sendVerificationEmail } from "./accountService.js";
 import { generateRefreshToken, hashToken, signAccessToken } from "../utils/tokens.js";
 import { restoreAccountOnLogin } from "./accountDeletion.js";
+import { assertRegistrationOpen, readRateLimitSettings } from "./rateLimitSettings.js";
 
 export const REFRESH_COOKIE = "commune_rt";
 const COOKIE_PATH = "/api/auth";
@@ -59,20 +60,34 @@ export async function issueVerifiedRegistrationSession(res: Response, userId: un
   return issueSession(res, user);
 }
 
+function usernameTaken(username: string) {
+  return User.exists({ username }).collation(usernameCollation);
+}
+
+function isDuplicateKey(error: unknown, field: "username" | "email") {
+  if (typeof error !== "object" || error === null) return false;
+  const duplicate = error as { code?: number; keyPattern?: Record<string, unknown> };
+  return duplicate.code === 11000 && duplicate.keyPattern?.[field] === 1;
+}
+
 export async function register(input: RegisterInput) {
   if (env.NODE_ENV === "production" && !env.RESEND_API_KEY) throw new AppError(503, "Email delivery is unavailable");
-  const existing = await User.findOne({ email: input.email })
-    .or([{ username: input.username }])
-    .collation({ locale: "en", strength: 2 })
-    .lean();
-  if (existing) throw conflict("Email or username is already taken");
+  const [takenUsername, takenEmail] = await Promise.all([usernameTaken(input.username), User.exists({ email: input.email })]);
+  if (takenUsername) throw conflict("Username is already taken");
+  if (takenEmail) throw conflict("Email is already taken");
 
+  await ensureRegistrationUsernameIndex();
   const passwordHash = await bcrypt.hash(input.password, 12);
   const user = await User.create({
     username: input.username,
+    registrationUsernameProtected: true,
     email: input.email,
     passwordHash,
     registrationPending: true,
+  }).catch((error: unknown) => {
+    if (isDuplicateKey(error, "username")) throw conflict("Username is already taken");
+    if (isDuplicateKey(error, "email")) throw conflict("Email is already taken");
+    throw error;
   });
   await sendVerificationEmail(user);
   return { verificationRequired: true };
@@ -160,23 +175,34 @@ export async function logout(presented: string | undefined, res: Response) {
 /** Accounts created with Google get a random password nobody knows, so password login is off. */
 const randomPasswordHash = () => bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12);
 
-async function uniqueUsername(profile: GoogleProfile): Promise<string> {
+async function createGoogleAccount(profile: GoogleProfile) {
+  const { registrationClosed } = await readRateLimitSettings();
+  assertRegistrationOpen(registrationClosed);
+  await ensureRegistrationUsernameIndex();
+  const passwordHash = await randomPasswordHash();
   const raw = profile.name ?? profile.email.split("@")[0] ?? "";
   let base = raw
     .normalize("NFKD")
     .replace(/[^a-zA-Z0-9_]/g, "")
     .slice(0, 16);
   if (base.length < 3) base = "user";
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const candidate =
-      attempt === 0 ? base : `${base}${crypto.randomInt(0, 10000).toString().padStart(4, "0")}`;
-    const taken = await User.exists({ username: candidate }).collation({
-      locale: "en",
-      strength: 2,
-    });
-    if (!taken) return candidate;
+  for (let attempt = 0; attempt < 7; attempt++) {
+    const username = attempt === 0 ? base : `${base}${crypto.randomBytes(4).toString("hex")}`;
+    if (await usernameTaken(username)) continue;
+    try {
+      return await User.create({
+        username,
+        registrationUsernameProtected: true,
+        email: profile.email,
+        passwordHash,
+        googleId: profile.sub,
+        emailVerified: true,
+      });
+    } catch (error) {
+      if (!isDuplicateKey(error, "username")) throw error;
+    }
   }
-  return `user${crypto.randomBytes(5).toString("hex")}`;
+  throw conflict("Username is already taken");
 }
 
 /** Sign in, or sign up, with a Google ID token. */
@@ -204,13 +230,7 @@ export async function loginWithGoogle(credential: string, res: Response) {
       await existing.save();
       user = existing;
     } else {
-      user = await User.create({
-        username: await uniqueUsername(google),
-        email: google.email,
-        passwordHash: await randomPasswordHash(),
-        googleId: google.sub,
-        emailVerified: true,
-      });
+      user = await createGoogleAccount(google);
     }
   }
   assertAccountAllowed(user);

@@ -11,6 +11,7 @@ vi.hoisted(() => {
 import { createApp } from "../app.js";
 import { RefreshToken } from "../models/RefreshToken.js";
 import { User } from "../models/User.js";
+import { RateLimitSettings } from "../models/RateLimitSettings.js";
 
 const app = createApp();
 const CLIENT_ID = "test-client.apps.googleusercontent.com";
@@ -119,8 +120,20 @@ describe("POST /api/auth/google: accounts", () => {
     expect(res.headers["set-cookie"]?.[0]).toMatch(/commune_rt=/);
   });
 
+  it("does not create a new Google account when registration is paused", async () => {
+    vi.spyOn(User, "findOne").mockResolvedValue(null as never);
+    vi.spyOn(RateLimitSettings, "findById").mockReturnValue({ setOptions: () => ({ lean: async () => ({ registrationClosed: true }) }) } as never);
+    const create = vi.spyOn(User, "create");
+    const res = await post(idToken());
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("Registration is temporarily unavailable");
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("creates a verified account with a safe unique username for a new user", async () => {
     vi.spyOn(User, "findOne").mockResolvedValue(null as never);
+    vi.spyOn(RateLimitSettings, "findById").mockReturnValue({ setOptions: () => ({ lean: async () => null }) } as never);
+    vi.spyOn(User.collection, "createIndex").mockResolvedValue("unique_registered_username");
     vi.spyOn(User, "exists").mockReturnValue({ collation: () => Promise.resolve(null) } as never);
     let doc: Record<string, unknown> = {};
     vi.spyOn(User, "create").mockImplementation((async (input: Record<string, unknown>) => {
@@ -131,6 +144,7 @@ describe("POST /api/auth/google: accounts", () => {
     const res = await post(idToken({ name: "Sam Rivers!" }));
     expect(res.status).toBe(200);
     expect(doc.username).toBe("SamRivers");
+    expect(doc.registrationUsernameProtected).toBe(true);
     expect(doc.email).toBe("sam@example.com");
     expect(doc.googleId).toBe("google-sub-1");
     expect(doc.emailVerified).toBe(true);
