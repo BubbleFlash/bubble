@@ -8,10 +8,23 @@ import {
   type RateLimitSettingsDTO,
 } from "@commune/shared";
 import { z } from "zod";
-import { readRateLimitSettings, saveCaptchaSettings, saveRateLimitRule, saveRateLimitSettings } from "../services/rateLimitSettings.js";
+import { readRateLimitSettings, saveCaptchaSettings, saveRateLimitRule, saveRateLimitSettings, saveRegistrationSettings } from "../services/rateLimitSettings.js";
 import { badRequest } from "../utils/errors.js";
 
 const schema = z.strictObject({ enabled: z.boolean() });
+const registrationSchema = z.strictObject({ registrationClosed: z.boolean() });
+
+export async function getRegistrationSettings(_req: Request, res: Response) {
+  const { registrationClosed } = await readRateLimitSettings();
+  res.json({ registrationClosed });
+}
+
+export async function updateRegistrationSettings(req: Request, res: Response) {
+  const input = registrationSchema.safeParse(req.body);
+  if (!input.success) throw badRequest("Invalid registration settings");
+  await saveRegistrationSettings(input.data.registrationClosed);
+  res.json(input.data);
+}
 
 export async function getSettings(_req: Request, res: Response) {
   const settings = await readRateLimitSettings();

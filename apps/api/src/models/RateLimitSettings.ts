@@ -8,6 +8,7 @@ interface Settings {
   enabled: boolean;
   revision: string;
   captchaRevision?: string | null;
+  registrationClosed?: boolean;
   rules?: StoredRateLimitRules;
 }
 
@@ -16,6 +17,7 @@ const schema = new Schema<Settings>({
   enabled: { type: Boolean, required: true },
   revision: { type: String, required: true },
   captchaRevision: { type: String },
+  registrationClosed: { type: Boolean },
   rules: { type: Schema.Types.Mixed },
 });
 

@@ -142,6 +142,8 @@ router.get("/admin/rate-limits", ...adminOnly, asyncHandler(rateLimitSettings.ge
 router.put("/admin/rate-limits", ...adminOnly, asyncHandler(rateLimitSettings.updateSettings));
 router.put("/admin/rate-limits/captcha", ...adminOnly, asyncHandler(rateLimitSettings.updateCaptcha));
 router.put("/admin/rate-limits/:name", ...adminOnly, asyncHandler(rateLimitSettings.updateRule));
+router.get("/admin/registration", ...adminOnly, asyncHandler(rateLimitSettings.getRegistrationSettings));
+router.put("/admin/registration", ...adminOnly, asyncHandler(rateLimitSettings.updateRegistrationSettings));
 router.get("/admin/test-gate", ...adminOnly, asyncHandler(testGate.getSettings));
 router.put("/admin/test-gate", ...adminOnly, asyncHandler(testGate.updateSettings));
 router.get("/admin/development-widget", ...adminOnly, asyncHandler(developmentWidget.settings));

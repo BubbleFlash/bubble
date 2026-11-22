@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import { User } from "../models/User.js";
 import { Post } from "../models/Post.js";
 import { anonymizeExpiredAccounts } from "../services/accountDeletion.js";
 import { sendMail } from "../services/mailService.js";
+import { signAccessToken } from "../utils/tokens.js";
 
 vi.mock("../services/mailService.js", () => ({ sendMail: vi.fn() }));
 const port = process.env.BUBBLE_ACCOUNT_TEST_MONGO_PORT;
@@ -31,6 +33,13 @@ integration("Bubble account lifecycle on isolated MongoDB", () => {
     }
     ownsDatabase = true;
     await User.init();
+    // Match a database where old duplicates prevented the original unique index from being built.
+    await User.collection.dropIndex("username_1");
+    await User.collection.dropIndex("unique_registered_username");
+    await User.create([
+      { username: "LegacyNick", email: "legacy1@example.invalid", passwordHash: "fixture" },
+      { username: "legacynick", email: "legacy2@example.invalid", passwordHash: "fixture" },
+    ]);
   });
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -40,6 +49,43 @@ integration("Bubble account lifecycle on isolated MongoDB", () => {
     if (ownsDatabase && mongoose.connection.name === dbName) await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
   });
+
+  it("rejects occupied usernames and emails, including case variants and concurrent registrations", async () => {
+    const password = "fixture-password";
+    const duplicate = await post("/auth/register", { username: "LEGACYNICK", email: "legacy3@example.invalid", password });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error).toBe("Username is already taken");
+    expect((await post("/auth/register", { username: "UniqueNick", email: "unique@example.invalid", password })).status).toBe(201);
+    for (const username of ["UniqueNick", "uniquenick", "UNIQUENICK"]) {
+      expect((await post("/auth/register", { username, email: `${username}@other.invalid`, password })).status).toBe(409);
+    }
+    expect((await post("/auth/register", { username: "DifferentNick", email: "unique@example.invalid", password })).status).toBe(409);
+    const attempts = await Promise.all([
+      post("/auth/register", { username: "RaceNick", email: "race1@example.invalid", password }),
+      post("/auth/register", { username: "racenick", email: "race2@example.invalid", password }),
+    ]);
+    expect(attempts.map((result) => result.status).sort()).toEqual([201, 409]);
+    expect(await User.countDocuments({ username: "racenick" }).collation({ locale: "en", strength: 2 })).toBe(1);
+  }, 20_000);
+
+  it("lets only an admin pause and resume signup without blocking sign-in", async () => {
+    const password = "fixture-password";
+    const admin = await User.create({ username: "reg_admin", email: "reg-admin@example.invalid", passwordHash: await bcrypt.hash(password, 4), role: "admin" });
+    const user = await User.findOne({ email: "legacy1@example.invalid" }).orFail();
+    const path = "/api/admin/registration";
+    const token = `Bearer ${signAccessToken(admin.id)}`;
+    const signup = { username: "PauseCheck", email: "pause-check@example.invalid", password };
+
+    expect((await api.get(path).set("Authorization", token)).body).toEqual({ registrationClosed: false });
+    expect((await api.put(path).set("Authorization", `Bearer ${signAccessToken(user.id)}`).send({ registrationClosed: true })).status).toBe(403);
+    expect((await api.put(path).set("Authorization", token).send({ registrationClosed: true })).body).toEqual({ registrationClosed: true });
+    expect((await post("/auth/register/captcha", {})).body.error).toBe("Registration is temporarily unavailable");
+    expect((await post("/auth/register", signup)).status).toBe(503);
+    expect(await User.exists({ username: signup.username })).toBeNull();
+    expect((await login(admin.email, password)).status).toBe(200);
+    expect((await api.put(path).set("Authorization", token).send({ registrationClosed: false })).body).toEqual({ registrationClosed: false });
+    expect((await post("/auth/register", signup)).status).toBe(201);
+  }, 20_000);
 
   it("changes credentials, hides a profile, restores on login and preserves posts after expiry", async () => {
     const email = "before@example.invalid";
