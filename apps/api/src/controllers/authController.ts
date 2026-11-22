@@ -4,13 +4,14 @@ import { env } from "../config/env.js";
 import { allowRegistrationRequest } from "../middleware/rateLimit.js";
 import * as authService from "../services/authService.js";
 import { REFRESH_COOKIE } from "../services/authService.js";
-import { readRateLimitSettings } from "../services/rateLimitSettings.js";
+import { assertRegistrationOpen, readRateLimitSettings } from "../services/rateLimitSettings.js";
 import { browserToken, CAPTCHA_COOKIE, captchaLifetimeMs, consumeCaptcha, issueCaptcha } from "../services/registrationCaptcha.js";
 import { badRequest } from "../utils/errors.js";
 
 export async function register(req: Request, res: Response) {
   const input = req.body as RegisterInput;
-  const { captchaRevision } = await readRateLimitSettings();
+  const { captchaRevision, registrationClosed } = await readRateLimitSettings();
+  assertRegistrationOpen(registrationClosed);
   if (captchaRevision) {
     if (!input.captcha) throw badRequest("Captcha required");
     if (!await consumeCaptcha(input.captcha.id, input.captcha.answer, req.cookies[CAPTCHA_COOKIE], captchaRevision)) {
@@ -21,7 +22,8 @@ export async function register(req: Request, res: Response) {
 }
 
 export async function registrationCaptcha(req: Request, res: Response<RegistrationCaptcha>) {
-  const { captchaRevision } = await readRateLimitSettings();
+  const { captchaRevision, registrationClosed } = await readRateLimitSettings();
+  assertRegistrationOpen(registrationClosed);
   if (!captchaRevision) {
     res.json({ required: false });
     return;

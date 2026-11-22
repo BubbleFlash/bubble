@@ -34,6 +34,12 @@ export default function AuthForm({ mode, compact = false }: { mode: "login" | "r
   const registrationReady = captcha.isSuccess && !captcha.isFetching && (!challenge || /^\d{6}$/.test(answer.trim()));
 
   if (user) return <Navigate to="/" replace />;
+  if (mode === "register" && captcha.error instanceof ApiError && captcha.error.serverMessage === "Registration is temporarily unavailable") {
+    return <div className={`card auth${compact ? " auth--compact" : ""}`}>
+      <p role="status">{captcha.error.message}</p>
+      {!compact && <Link to="/login">Войти в аккаунт</Link>}
+    </div>;
+  }
   if (registrationSent) return (
     <div className={`card auth${compact ? " auth--compact" : ""}`} role="status">
       <h2>Проверьте почту</h2>

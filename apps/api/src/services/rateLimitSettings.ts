@@ -3,10 +3,11 @@ import mongoose from "mongoose";
 import { rateLimitDefaults, type RateLimitName, type RateLimitRule } from "@commune/shared";
 import { logger } from "../config/logger.js";
 import { RateLimitSettings, type StoredRateLimitRules } from "../models/RateLimitSettings.js";
+import { AppError } from "../utils/errors.js";
 
 const settingsId = "rate-limits";
 const cacheMs = 5_000;
-const defaultPolicy = { enabled: false, revision: "", captchaRevision: null as string | null, rules: {} as StoredRateLimitRules };
+const defaultPolicy = { enabled: false, revision: "", captchaRevision: null as string | null, registrationClosed: false, rules: {} as StoredRateLimitRules };
 let lastKnown = defaultPolicy;
 let cached: { expiresAt: number; value: Promise<typeof defaultPolicy> } | undefined;
 
@@ -18,6 +19,7 @@ export async function readRateLimitSettings() {
     enabled: row.enabled,
     revision: row.revision,
     captchaRevision: row.captchaRevision ?? null,
+    registrationClosed: row.registrationClosed ?? false,
     rules: row.rules ?? {},
   } : defaultPolicy;
 }
@@ -58,6 +60,18 @@ export function saveCaptchaSettings(enabled: boolean) {
     revision: { $ifNull: ["$revision", ""] },
     captchaRevision: enabled ? { $ifNull: ["$captchaRevision", randomUUID()] } : null,
   });
+}
+
+export function saveRegistrationSettings(registrationClosed: boolean) {
+  return updateSettings({
+    enabled: { $ifNull: ["$enabled", false] },
+    revision: { $ifNull: ["$revision", ""] },
+    registrationClosed,
+  });
+}
+
+export function assertRegistrationOpen(registrationClosed: boolean) {
+  if (registrationClosed) throw new AppError(503, "Registration is temporarily unavailable");
 }
 
 export function saveRateLimitRule(name: RateLimitName, rule: RateLimitRule) {

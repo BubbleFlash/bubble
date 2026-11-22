@@ -14,6 +14,7 @@ import AeroTitlebar from "../components/AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import TestGateSettings from "../components/TestGateSettings";
 import RateLimitSettings from "../components/RateLimitSettings";
+import RegistrationSettings from "../components/RegistrationSettings";
 import FundraiserSettings from "../components/FundraiserSettings";
 import { violationReasons } from "../lib/moderationReasons";
 import DevelopmentWidgetSettings from "../components/DevelopmentWidgetSettings";
@@ -840,7 +841,7 @@ export default function ModerationPage() {
         <ModerationHelp />
       </div>
       <nav className="tabs feed-tabs moderation-tabs" aria-label="Панель модерации">
-        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Тестовый доступ", "Дневник", "Тексты", "Лимиты", "Сбор"] : [])].map((name) => (
+        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Регистрация", "Тестовый доступ", "Дневник", "Тексты", "Лимиты", "Сбор"] : [])].map((name) => (
           <button
             key={name}
             className={"tab" + (section === name ? " active" : "")}
@@ -869,6 +870,7 @@ export default function ModerationPage() {
         />
       )}
       {section === "Журнал" && <HistoryList />}
+      {section === "Регистрация" && user.role === "admin" && <RegistrationSettings />}
       {section === "Тестовый доступ" && user.role === "admin" && <TestGateSettings />}
       {section === "Лимиты" && user.role === "admin" && <RateLimitSettings />}
       {section === "Сбор" && user.role === "admin" && <FundraiserSettings />}

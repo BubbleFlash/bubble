@@ -6,6 +6,7 @@ import type { InferSchemaType } from "mongoose";
 const userSchema = new Schema(
   {
     username: { type: String, required: true, trim: true, minlength: 3, maxlength: 24 },
+    registrationUsernameProtected: { type: Boolean, select: false },
     email: { type: String, required: true, lowercase: true, trim: true, unique: true },
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, trim: true, maxlength: DISPLAY_NAME_MAX_LENGTH },
@@ -80,9 +81,29 @@ const userSchema = new Schema(
   { timestamps: true },
 );
 
-// Case-insensitive unique usernames ("Sam" and "sam" are the same person).
-userSchema.index({ username: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
+export const usernameCollation = { locale: "en", strength: 2 };
+const registrationUsernameIndex = { username: 1, registrationUsernameProtected: 1 } as const;
+const registrationUsernameIndexOptions = {
+  name: "unique_registered_username",
+  unique: true,
+  collation: usernameCollation,
+  partialFilterExpression: { registrationUsernameProtected: true },
+};
+
+// The partial index can be built even when older accounts already share a username.
+userSchema.index(registrationUsernameIndex, registrationUsernameIndexOptions);
+userSchema.index({ username: 1 }, { unique: true, collation: usernameCollation });
 userSchema.index({ "pendingEmail.tokenHash": 1 }, { unique: true, sparse: true });
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 export const User = model("User", userSchema);
+
+let indexReady: Promise<string> | undefined;
+
+export function ensureRegistrationUsernameIndex() {
+  indexReady ??= User.collection.createIndex(registrationUsernameIndex, registrationUsernameIndexOptions).catch((error: unknown) => {
+    indexReady = undefined;
+    throw error;
+  });
+  return indexReady;
+}
