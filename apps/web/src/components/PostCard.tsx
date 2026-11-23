@@ -122,7 +122,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
       </div>
       <div className="post-main">
         <div className="post-meta">
-          {post.community ? <Link to={`/c/${post.community.slug}`} className="user-link">{post.community.name}</Link> : <>
+          {post.community ? <Link to={`/c/${post.community.slug}`} className="user-link community-name">{post.community.name}</Link> : <>
             <Link to={`/u/${post.author.username}`} className="user-link">{displayNameOf(post.author)}</Link>
             <PlusBadge plus={post.author.plus} />
           </>}

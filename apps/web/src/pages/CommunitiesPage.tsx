@@ -110,9 +110,9 @@ export default function CommunitiesPage() {
         </p>
       )}
       {list.data?.map((c) => (
-        <Link key={c.id} to={`/c/${c.slug}`} className="card person">
+        <Link key={c.id} to={`/c/${c.slug}`} className="card person community-result">
           <Avatar username={c.slug} displayName={c.name} url={c.avatarUrl} size={40} preview />
-          <div>
+          <div className="community-name">
             <strong>{c.name}</strong>
             <p className="muted">
               {c.memberCount} {pluralRu(c.memberCount, "участник", "участника", "участников")}

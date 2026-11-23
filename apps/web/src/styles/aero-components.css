@@ -909,6 +909,7 @@
   gap: 8px;
 }
 .repost-card__header .avatar { flex-shrink: 0; }
+.repost-card__header > div { min-width: 0; }
 .repost-card__date { display: block; font-size: .8rem; }
 .repost-card .post-body { margin: 8px 0; white-space: pre-wrap; }
 .repost-card--notice > svg { flex: none; }
@@ -1028,7 +1029,10 @@
 .community-post-editor__actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .community-head .profile-top { flex-wrap: nowrap; gap: 12px; }
 .community-head__actions { flex: 0 0 auto; flex-wrap: nowrap; }
+.community-name { min-width: 0; overflow-wrap: anywhere; }
+.community-result .avatar { flex: none; }
 .community-head .profile-id { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; }
+.community-head .profile-id input { max-width: 100%; }
 .community-head__name { max-width: 100%; overflow-wrap: anywhere; }
 .community-head__name--long { font-size: clamp(16px, 2vw, 20px); line-height: 1.2; }
 .community-management {
@@ -1153,10 +1157,12 @@
 .repost-select { position: relative; min-width: 0; }
 .repost-select__control { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 3px 8px; border: 1px solid var(--aero-color-border-strong); border-radius: var(--aero-radius-control); background: var(--aero-gradient-button); }
 .repost-select__control .avatar { flex: none; }
-.repost-select__trigger { flex: 1; min-width: 0; min-height: 32px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.repost-select__trigger { flex: 1; min-width: 0; min-height: 32px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
 .repost-select__control input { flex: 1; min-width: 0; margin: 0; border: 0; background: transparent; }
 .repost-select__list { position: absolute; z-index: 5; top: 100%; left: 0; right: 0; max-height: 180px; overflow-y: auto; border: 1px solid var(--aero-color-border-strong); border-radius: var(--aero-radius-control); background: var(--aero-color-surface-solid); box-shadow: 0 4px 12px var(--aero-color-shadow); }
 .repost-select__list button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.repost-select__list button > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.repost-select__list .avatar { flex: none; }
 .repost-select__list button:is(:hover, :focus-visible), .repost-select__list button[aria-selected="true"] { background: var(--aero-gradient-button-hover); }
 .repost-select__list p { padding: 8px; }
 .repost-dialog__body :is(p, .error) { margin: 0; }
