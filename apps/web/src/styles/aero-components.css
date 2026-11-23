@@ -694,7 +694,7 @@
   align-items: stretch;
 }
 
-.music-page .music-page__upload-dialog {
+.music-page__upload-dialog {
   width: min(460px, calc(100% - 24px));
   max-height: calc(100dvh - 24px);
   margin: auto;
@@ -708,10 +708,10 @@
   color: var(--aero-color-text);
 }
 
-.music-page .music-page__upload-dialog[open] { display: flex; flex-direction: column; }
+.music-page__upload-dialog[open] { display: flex; flex-direction: column; }
 .aero-home .music-page__upload-dialog .aero-window-controls > .aero-window-close { border-radius: 0 0 4px 4px; }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .music-page .music-page__upload-dialog { -webkit-backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); }
+  .music-page__upload-dialog { -webkit-backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); backdrop-filter: blur(var(--aero-glass-blur)) saturate(var(--aero-glass-saturation)); }
 }
 
 .music-page__upload-dialog::backdrop {
@@ -722,6 +722,7 @@
   margin: 0;
   font-size: 17px;
 }
+.music-page__upload-dialog .music-attachment-picker__header h2 { font-size: 13px; }
 
 .music-page__upload-form,
 .music-page__upload-form fieldset {
@@ -1024,7 +1025,11 @@
 .community-post-editor { display: grid; gap: 8px; }
 .community-post-editor textarea { display: block; width: 100%; margin-top: 4px; resize: vertical; }
 .community-post-editor__actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.community-head__actions { flex-wrap: wrap; }
+.community-head .profile-top { flex-wrap: nowrap; gap: 12px; }
+.community-head__actions { flex: 0 0 auto; flex-wrap: nowrap; }
+.community-head .profile-id { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; }
+.community-head__name { max-width: 100%; overflow-wrap: anywhere; }
+.community-head__name--long { font-size: clamp(16px, 2vw, 20px); line-height: 1.2; }
 .community-management {
   width: min(690px, calc(100% - 20px));
   height: min(620px, calc(100dvh - 20px));
