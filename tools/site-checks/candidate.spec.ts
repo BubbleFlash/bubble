@@ -350,7 +350,7 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
   expect(runtimeErrors).toEqual([]);
 });
 
-test("notification actor and event have independent links and type icons", async ({ page }) => {
+test("notification actor and event have independent links and type icons", async ({ page, browserName }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
   await page.route("**/api/notifications?**", (route) => route.fulfill({ json: { items: [{ id: "event", type: "comment", actor: { id: "author", username: "author", displayName: "Автор" }, postId: "fixture-0", read: false, createdAt }], nextCursor: null } }));
@@ -364,7 +364,17 @@ test("notification actor and event have independent links and type icons", async
   if (viewport.width <= 1100) {
     await page.setViewportSize({ ...viewport, width: 320 });
     const nav = page.getByRole("navigation", { name: "Вкладки" });
-    await expect(nav.getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
+    const notificationLink = nav.getByRole("link", { name: "Уведомления", exact: true });
+    await expect(notificationLink).toHaveAttribute("href", "/notifications");
+    const notificationLabel = notificationLink.locator(".tab-label");
+    await expect(notificationLabel).toHaveCSS("font-size", browserName === "firefox" ? "9px" : "10px");
+    if (browserName === "firefox") {
+      expect(await notificationLabel.evaluate((element) => {
+        const text = document.createRange();
+        text.selectNodeContents(element);
+        return text.getClientRects().length;
+      })).toBe(1);
+    }
     await expect.poll(() => nav.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
     await nav.getByRole("button", { name: "Открыть меню" }).click();
     await expect(page.locator(".drawer").getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
@@ -651,6 +661,47 @@ test("keep the accented mini-player attached to the mobile navigation", async ({
     const box = await player.boundingBox();
     return box ? Math.round(box.y + box.height) : null;
   }).toBe(page.viewportSize()!.height);
+});
+
+test("anchor the Android Firefox navigation to the visible viewport", async ({ page, browserName }) => {
+  test.skip(browserName !== "firefox" || page.viewportSize()!.width > 1100, "Mobile Firefox only");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (Android 15; Mobile; rv:149.0) Gecko/149.0 Firefox/149.0" });
+  });
+  await page.goto(origin);
+  const nav = page.getByRole("navigation", { name: "Вкладки" });
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  const expectNavBottom = (bottom: number) => expect.poll(async () => {
+    const box = await nav.boundingBox();
+    return box ? Math.round(box.y + box.height) : null;
+  }).toBe(bottom);
+  async function changeViewport(height: number, offsetTop: number, event: string, scale = 1) {
+    await page.evaluate(({ height, offsetTop, event, scale }) => {
+      const viewport = window.visualViewport!;
+      Object.defineProperties(viewport, {
+        height: { value: height, configurable: true },
+        offsetTop: { value: offsetTop, configurable: true },
+        scale: { value: scale, configurable: true },
+      });
+      viewport.dispatchEvent(new Event(event));
+    }, { height, offsetTop, event, scale });
+  }
+  const viewportHeight = page.viewportSize()!.height;
+  await expectNavBottom(viewportHeight);
+  await changeViewport(viewportHeight - 60, 0, "resize");
+  await expectNavBottom(viewportHeight - 60);
+
+  await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
+  await expect(player).toBeVisible();
+  await changeViewport(viewportHeight - 60, 20, "scroll");
+  await expectNavBottom(viewportHeight - 40);
+  expect(Math.round((await player.boundingBox())!.y + (await player.boundingBox())!.height)).toBe(Math.round((await nav.boundingBox())!.y));
+
+  await changeViewport(viewportHeight / 2, 0, "resize", 2);
+  await expectNavBottom(viewportHeight);
 });
 
 test("a failed route preserves the global player until an explicit reload", async ({ page }) => {

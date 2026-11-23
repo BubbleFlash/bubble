@@ -151,4 +151,7 @@
 
 .aero-app .side-link .side-label, .aero-app .drawer-links .nav-link { white-space: nowrap; }
 .aero-app .bottom-nav .tab-label { white-space: normal; text-align: center; font-size: 10px; line-height: 1.15; }
+@supports (-moz-appearance: none) {
+  .aero-app .bottom-nav .tab-link[href="/notifications"] .tab-label { font-size: 9px; }
+}
 .aero-app .pill { white-space: nowrap; }
