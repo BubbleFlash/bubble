@@ -214,6 +214,23 @@ describe("POST /api/uploads", () => {
     expect(response.status).toBe(304);
   });
 
+  it("retries without the cache validator when storage rejects the conditional request", async () => {
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Invalid request"), { $metadata: { httpStatusCode: 400 } }));
+    storage.getObject.mockResolvedValueOnce({
+      Body: { transformToWebStream: () => Readable.toWeb(Readable.from([png])) },
+      ContentType: "image/png",
+      ETag: '"image-v2"',
+    });
+    const key = `uploads/${"a".repeat(32)}.png`;
+    const response = await request(app).get(`/${key}`).set("If-None-Match", '"image-v1"');
+    expect(response.status).toBe(200);
+    expect(response.headers.etag).toBe('"image-v2"');
+    expect(response.body).toEqual(png);
+    expect(storage.getObject.mock.calls).toEqual([[key, '"image-v1"'], [key]]);
+  });
+
   it("does not fetch an image referenced only by moderated content", async () => {
     env.S3_DIRECT_IMAGES = true;
     env.S3_PUBLIC_ENDPOINT = "https://storage.example.test";

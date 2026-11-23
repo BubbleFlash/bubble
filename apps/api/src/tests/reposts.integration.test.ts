@@ -10,6 +10,7 @@ import { Community } from "../models/Community.js";
 import { Like } from "../models/Like.js";
 import { Follow } from "../models/Follow.js";
 import { Membership } from "../models/Membership.js";
+import { MusicTrack } from "../models/MusicTrack.js";
 import { Message } from "../models/Message.js";
 import { Post } from "../models/Post.js";
 import { User } from "../models/User.js";
@@ -67,6 +68,57 @@ integration("reposts on isolated MongoDB", () => {
     await mongoose.disconnect();
   });
 
+  it("exports visible posts for the selected group and keeps export periods separate", async () => {
+    const basePath = "/api/admin/feedback-export";
+    const period = { from: "2026-11-20", to: "2026-11-20" };
+    const group = await Community.create({ slug: "feedback", name: "Жалобы и предложения Bubble", creator: ids.get("vera") });
+    const other = await Community.create({ slug: "other_feedback", name: group.name, creator: ids.get("vera") });
+    const path = `${basePath}/${group.id}`;
+    const otherPath = `${basePath}/${other.id}`;
+    expect((await api.post(path).set(auth("boris")).send(period)).status).toBe(403);
+    expect((await api.get(path).set(auth("boris"))).status).toBe(403);
+    expect((await api.get(`${basePath}/groups`).set(auth("boris"))).status).toBe(403);
+
+    await User.updateOne({ _id: ids.get("vera") }, { $set: { role: "admin" } });
+    try {
+      expect((await api.get(`${basePath}/groups`).set(auth("vera"))).body).toEqual([
+        { id: group.id, name: group.name, slug: group.slug },
+        { id: other.id, name: other.name, slug: other.slug },
+      ]);
+      const within = new Date("2026-11-20T23:59:59.999Z");
+      const base = { author: ids.get("alice"), community: group._id, createdAt: within };
+      const post = await Post.create({ ...base, content: "Отзыв", hideAuthor: true });
+      await Post.create([
+        { ...base, content: "За границей периода", createdAt: new Date("2026-11-21T00:00:00Z") },
+        { ...base, content: "Скрытый отзыв", moderationState: "hidden" },
+        { ...base, content: "Личная запись", community: null },
+        { ...base, content: "Запись другой группы", community: other._id },
+      ]);
+      const comment = await Comment.create({ author: ids.get("boris"), post: post._id, content: "Ответ", createdAt: new Date("2026-11-21T00:01:00Z") });
+      await Comment.create({ author: ids.get("boris"), post: post._id, content: "Скрытый ответ", moderationState: "removed" });
+      expect((await api.get(path).set(auth("vera"))).body).toBeNull();
+      expect((await api.post(path).set(auth("vera")).send({ ...period, from: "2026-02-30" })).status).toBe(400);
+      const result = await api.post(path).set(auth("vera")).send(period);
+      expect(result.status).toBe(200);
+      expect(result.body.community.slug).toBe(group.slug);
+      expect(result.body.posts).toEqual([expect.objectContaining({
+        id: post.id, author: null, content: "Отзыв",
+        comments: [expect.objectContaining({ id: comment.id, content: "Ответ" })],
+      })]);
+      expect((await api.get(path).set(auth("vera"))).body).toEqual({ ...period, exportedAt: result.body.exportedAt });
+      expect((await api.get(otherPath).set(auth("vera"))).body).toBeNull();
+      const otherPeriod = { ...period, to: "2026-11-21" };
+      const second = await api.post(otherPath).set(auth("vera")).send(otherPeriod);
+      expect(second.status).toBe(200);
+      expect(second.body.posts).toEqual([expect.objectContaining({ content: "Запись другой группы" })]);
+      expect((await api.get(path).set(auth("vera"))).body.to).toBe(period.to);
+      expect((await api.get(otherPath).set(auth("vera"))).body.to).toBe(otherPeriod.to);
+    } finally {
+      await User.updateOne({ _id: ids.get("vera") }, { $set: { role: "user" } });
+      await Community.deleteMany({ _id: { $in: [group._id, other._id] } });
+    }
+  });
+
   it("protects hidden community authors in public posts, profiles, following feeds and reposts", async () => {
     const community = await Community.create({ slug: "hidden_authors", name: "Группа", creator: ids.get("alice") });
     const source = await Post.create({ author: ids.get("boris"), community: community._id, content: "Скрытый автор", hideAuthor: true, adult: true, imageUrls: ["/uploads/0123456789abcdef0123456789abcdef.webp"] });
@@ -100,6 +152,32 @@ integration("reposts on isolated MongoDB", () => {
     expect((await get("vera", `/posts/${id}`)).body).toMatchObject({ hideAuthor: false, adult: false, author: { id: String(ids.get("alice")) } });
     const personal = await newPost("alice", "Личная запись", { hideAuthor: true, adult: true });
     expect((await get("vera", `/posts/${personal}`)).body).toMatchObject({ hideAuthor: false, adult: true, author: { id: String(ids.get("alice")) } });
+  });
+
+  it("uses community subscriptions independently of author follows and excludes reposts from all posts", async () => {
+    const group = await Community.create({ slug: "feed_subscriptions", name: "Группа", creator: ids.get("boris") });
+    const personal = await newPost("boris", "Личная запись для ленты");
+    const groupPost = await Post.create({ author: ids.get("boris"), community: group._id, content: "Запись группы" });
+    const follow = await Follow.create({ follower: ids.get("alice"), following: ids.get("boris") });
+    const shared = await repost("alice", personal);
+    expect(shared.status).toBe(201);
+    const feedIds = async (person: Person, feed: "following" | "all") => {
+      const result = await get(person, `/posts?feed=${feed}&limit=50`);
+      expect(result.status).toBe(200);
+      return result.body.items.map((item: { id: string }) => item.id);
+    };
+    expect(await feedIds("alice", "all")).toContain(groupPost.id);
+    expect(await feedIds("alice", "all")).not.toContain(shared.body.id);
+    expect(await feedIds("alice", "following")).toEqual(expect.arrayContaining([personal, shared.body.id]));
+    expect(await feedIds("alice", "following")).not.toContain(groupPost.id);
+    expect(await feedIds("boris", "following")).toContain(groupPost.id);
+
+    const membership = await Membership.create({ user: ids.get("alice"), community: group._id });
+    await Follow.deleteOne({ _id: follow._id });
+    expect(await feedIds("alice", "following")).toContain(groupPost.id);
+    expect(await feedIds("alice", "following")).not.toContain(personal);
+    await Community.updateOne({ _id: group._id }, { $addToSet: { departingMemberships: membership._id } });
+    expect(await feedIds("alice", "following")).not.toContain(groupPost.id);
   });
 
   it("keeps repost likes independent while liking the original when a repost is liked", async () => {
@@ -181,6 +259,50 @@ integration("reposts on isolated MongoDB", () => {
     expect((await unlike("vera", branch.body.id)).body).toMatchObject({ likeCount: 0, likedByMe: false });
   });
 
+  it("deletes only the author's comment and preserves its replies and count", async () => {
+    const post = await newPost("alice", "Комментарии для удаления");
+    const parent = await api.post(`/api/posts/${post}/comments`).set(auth("boris")).send({ content: "Исходный комментарий" });
+    expect(parent.status).toBe(201);
+    const reply = await api.post(`/api/posts/${post}/comments`).set(auth("vera")).send({ content: "Ответ", parentId: parent.body.id });
+    expect(reply.status).toBe(201);
+    const path = `/api/posts/${post}/comments/${parent.body.id}`;
+    expect((await api.delete(path).set(auth("alice"))).status).toBe(404);
+    expect((await api.delete(path).set(auth("boris"))).status).toBe(204);
+    expect((await api.delete(path).set(auth("boris"))).status).toBe(404);
+    expect((await get("alice", `/posts/${post}`)).body.commentCount).toBe(1);
+    const remaining = (await get("alice", `/posts/${post}/comments`)).body;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({ id: reply.body.id, content: "Ответ" });
+  });
+
+  it("excludes group posts from personal profiles, including old pinned posts", async () => {
+    const group = await Community.create({ slug: "profile_filter", name: "Группа", creator: ids.get("alice") });
+    const personal = await newPost("alice", "Личная запись");
+    const groupPost = await Post.create({ author: ids.get("alice"), community: group._id, content: "Запись группы" });
+    await User.updateOne({ _id: ids.get("alice") }, { $set: { pinnedPost: groupPost._id } });
+    for (const person of ["alice", "vera"] as const) {
+      const profile = await get(person, "/users/alice/posts?limit=50");
+      expect(profile.body.items.map((row: { id: string }) => row.id)).toContain(personal);
+      expect(profile.body.items.map((row: { id: string }) => row.id)).not.toContain(String(groupPost._id));
+    }
+    expect((await api.put(`/api/users/alice/posts/${groupPost.id}/pin`).set(auth("alice"))).status).toBe(404);
+    expect((await api.delete(`/api/users/alice/posts/${groupPost.id}/pin`).set(auth("alice"))).status).toBe(204);
+    expect((await get("alice", `/posts/${groupPost.id}`)).status).toBe(200);
+    await Community.deleteOne({ _id: group._id });
+  });
+
+  it("allows only the uploader to rename recent tracks", async () => {
+    const track = await MusicTrack.create({ title: "Before", artist: "Artist", storageKey: "rename-test", mimeType: "audio/mpeg", size: 1, uploadedBy: ids.get("alice") });
+    const path = `/api/music/${track.id}`;
+    expect((await api.patch(path).set(auth("boris")).send({ title: "Other", artist: "Artist" })).status).toBe(403);
+    expect((await api.patch(path).set(auth("alice")).send({ title: "  After  ", artist: "  New artist " })).body).toMatchObject({ title: "After", artist: "New artist" });
+    expect((await api.patch(path).set(auth("alice")).send({ title: " ", artist: "Artist" })).status).toBe(400);
+    expect((await api.patch(path).set(auth("alice")).send({ title: "After", artist: " " })).status).toBe(400);
+    await MusicTrack.collection.updateOne({ _id: track._id }, { $set: { createdAt: new Date(Date.now() - 301_000) } });
+    expect((await api.patch(path).set(auth("alice")).send({ title: "Too late", artist: "Artist" })).status).toBe(403);
+    expect(await MusicTrack.findById(track._id).lean()).toMatchObject({ title: "After", artist: "New artist" });
+  });
+
   it("pins one post on a profile without duplicating it across pages", async () => {
     const older = await newPost("alice", "Закреплённая запись");
     const newer = await newPost("alice", "Новая запись");
@@ -206,6 +328,8 @@ integration("reposts on isolated MongoDB", () => {
 
   it("hides selected authors and communities only in the feed, keeping friends' reposts", async () => {
     const community = await Community.create({ slug: "muted_group", name: "Группа", creator: ids.get("alice") });
+    const membership = await Membership.create({ user: ids.get("vera"), community: community._id });
+    await Follow.updateOne({ follower: ids.get("vera"), following: ids.get("boris") }, {}, { upsert: true });
     const original = await newPost("alice", "Оригинал");
     const groupPost = await newPost("alice", "Запись группы", { community: "muted_group" });
     const share = await repost("boris", original);
@@ -213,17 +337,20 @@ integration("reposts on isolated MongoDB", () => {
     const muteUser = "/api/feed-mutes/users/alice";
     const muteGroup = "/api/feed-mutes/communities/muted_group";
     expect((await api.put(muteUser).set(auth("vera"))).body.muted).toBe(true);
-    const userMutedFeed = await get("vera", "/posts?feed=all&limit=50");
+    expect((await get("vera", "/feed-mutes/users")).body).toEqual(expect.arrayContaining([expect.objectContaining({ username: "alice" })]));
+    const userMutedFeed = await get("vera", "/posts?feed=following&limit=50");
     expect(userMutedFeed.body.items.map((item: { id: string }) => item.id)).toContain(groupPost);
     expect((await api.put(muteGroup).set(auth("vera"))).body.muted).toBe(true);
-    const feed = await get("vera", "/posts?feed=all&limit=50");
+    const feed = await get("vera", "/posts?feed=following&limit=50");
     const idsInFeed = feed.body.items.map((item: { id: string }) => item.id);
     expect(idsInFeed).not.toContain(original);
     expect(idsInFeed).not.toContain(groupPost);
     expect(idsInFeed).toContain(share.body.id);
     expect((await get("vera", `/posts/${original}`)).status).toBe(200);
     expect((await api.delete(muteUser).set(auth("vera"))).body.muted).toBe(false);
+    expect((await get("vera", "/feed-mutes/users")).body).not.toEqual(expect.arrayContaining([expect.objectContaining({ username: "alice" })]));
     expect((await api.delete(muteGroup).set(auth("vera"))).body.muted).toBe(false);
+    await Membership.deleteOne({ _id: membership._id });
     await Community.deleteOne({ _id: community._id });
   });
 
@@ -234,6 +361,7 @@ integration("reposts on isolated MongoDB", () => {
     expect((await api.put(`/api/admin/feed-pin/${own}`).set(auth("boris"))).status).toBe(403);
     expect((await api.put(`/api/admin/feed-pin/${other}`).set(auth("alice"))).status).toBe(403);
     expect((await api.put(`/api/admin/feed-pin/${own}`).set(auth("alice"))).status).toBe(204);
+    expect((await get("alice", "/admin/feed-pin")).body.postId).toBe(own);
     const first = await get("vera", "/posts?feed=all&limit=1");
     expect(first.body.items[0]).toMatchObject({ id: own, pinned: true });
     const second = await get("vera", `/posts?feed=all&limit=1&cursor=${first.body.nextCursor}`);
@@ -498,14 +626,22 @@ integration("reposts on isolated MongoDB", () => {
     expect(result.body).toMatchObject({ name: "Новое имя", description: "Описание" });
     const id = await newPost("boris", "Запись группы", { community: "editgroup" });
     expect((await get("vera", `/posts/${id}`)).body.community).toMatchObject({ name: "Новое имя", creatorId: String(ids.get("alice")) });
+    expect((await api.patch("/api/communities/editgroup").set(auth("alice")).send({ name: "А".repeat(48) })).status).toBe(200);
+    expect((await api.patch("/api/communities/editgroup").set(auth("alice")).send({ name: "А".repeat(49) })).status).toBe(400);
   });
 
   it("persists replies and deduplicates comment likes by viewer", async () => {
     const post = await newPost("alice", "Обсуждение");
+    await User.updateOne({ _id: ids.get("vera") }, { $set: { avatarUrl: "/uploads/test-avatar.png" } });
     const unrelated = await newPost("alice", "Другая запись");
     const add = (postId: string, person: Person, body: object) =>
       api.post(`/api/posts/${postId}/comments`).set(auth(person)).send(body);
     const parent = await add(post, "alice", { content: "Комментарий" });
+    const ordinary = await add(post, "vera", { content: "Новый комментарий" });
+    expect(ordinary.status).toBe(201);
+    const postEvents = (await get("alice", "/notifications?type=comment")).body
+      .filter((item: { postId: string }) => item.postId === post);
+    expect(postEvents).toContainEqual(expect.objectContaining({ commentId: ordinary.body.id, postComment: true, actor: expect.objectContaining({ avatarUrl: "/uploads/test-avatar.png" }) }));
     const reply = await add(post, "boris", { content: "Ответ", parentId: parent.body.id });
     expect(reply.status).toBe(201);
     expect(reply.body.parentId).toBe(parent.body.id);
@@ -518,15 +654,40 @@ integration("reposts on isolated MongoDB", () => {
     const url = `/api/posts/${post}/comments/${reply.body.id}/like`;
     const reactions = await Promise.all([api.put(url).set(auth("vera")), api.put(url).set(auth("vera"))]);
     expect(reactions.map((result) => result.status)).toEqual([204, 204]);
+    const replyEvents = (await get("alice", "/notifications?type=comment")).body
+      .filter((item: { postId: string }) => item.postId === post);
+    expect(replyEvents).toHaveLength(4);
+    expect(replyEvents).toContainEqual(expect.objectContaining({ commentId: reply.body.id, type: "comment" }));
+    const likeEvents = (await get("boris", "/notifications?type=like")).body
+      .filter((item: { postId: string }) => item.postId === post);
+    expect(likeEvents).toHaveLength(1);
+    expect(likeEvents[0]).toMatchObject({ commentId: reply.body.id, type: "like" });
     expect((await get("vera", `/posts/${post}/comments`)).body).toMatchObject([
       { id: parent.body.id, replyCount: 3 },
+      { id: ordinary.body.id },
       { id: reply.body.id, likeCount: 1, likedByMe: true },
       { id: mentioned.body.id, mention: { name: "alice", username: "alice" } },
       { id: withoutMention.body.id, parentId: parent.body.id },
     ]);
-    expect((await get("boris", `/posts/${post}/comments`)).body[1]).toMatchObject({ likeCount: 1, likedByMe: false });
+    expect((await get("boris", `/posts/${post}/comments`)).body.find((item: { id: string }) => item.id === reply.body.id)).toMatchObject({ likeCount: 1, likedByMe: false });
     expect((await api.delete(url).set(auth("vera"))).status).toBe(204);
-    expect((await get("vera", `/posts/${post}/comments`)).body[1]).toMatchObject({ likeCount: 0, likedByMe: false });
+    expect((await get("vera", `/posts/${post}/comments`)).body.find((item: { id: string }) => item.id === reply.body.id)).toMatchObject({ likeCount: 0, likedByMe: false });
+    const toBoris = await add(post, "vera", { content: "Ответ Борису", parentId: reply.body.id });
+    expect(toBoris.status).toBe(201);
+    expect((await get("boris", "/notifications?type=comment")).body).toContainEqual(
+      expect.objectContaining({ postId: post, commentId: toBoris.body.id }),
+    );
+    await User.updateOne({ _id: ids.get("vera") }, { $set: { avatarUrl: null } });
+  });
+
+  it("stores and returns comment image and music attachments", async () => {
+    const post = await newPost("alice", "Вложения в комментариях");
+    const track = await MusicTrack.create({ title: "Трек", artist: "Автор", storageKey: "comment-attachment", mimeType: "audio/mpeg", size: 1, uploadedBy: ids.get("alice") });
+    const image = "/uploads/0123456789abcdef0123456789abcdef.webp";
+    const response = await api.post(`/api/posts/${post}/comments`).set(auth("boris")).send({ content: "", imageUrls: [image], musicTrackIds: [track.id] });
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ imageUrls: [image], musicAttachments: [{ id: track.id, title: "Трек" }] });
+    expect((await get("alice", `/posts/${post}/comments`)).body).toEqual(expect.arrayContaining([expect.objectContaining({ id: response.body.id, imageUrls: [image], musicAttachments: [expect.objectContaining({ id: track.id })] })]));
   });
 
   it("accepts one report per comment and rejects self reports and unrelated posts", async () => {

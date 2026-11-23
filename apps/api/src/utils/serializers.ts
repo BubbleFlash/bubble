@@ -75,6 +75,8 @@ export interface PopulatedComment {
   parent?: Types.ObjectId;
   mention?: { name?: string | null; username?: string | null } | null;
   content: string;
+  imageUrls?: string[];
+  musicTrackIds?: Types.ObjectId[];
   author: PopulatedAuthor;
   createdAt: Date;
 }
@@ -82,8 +84,10 @@ export interface PopulatedComment {
 export interface PopulatedNotification {
   _id: Types.ObjectId;
   type: NotificationType;
-  actor: { _id: Types.ObjectId; username: string; displayName?: string | null };
+  actor: { _id: Types.ObjectId; username: string; displayName?: string | null; avatarUrl?: string | null; avatarFrame?: PopulatedAuthor["avatarFrame"] };
   post: Types.ObjectId | null;
+  comment?: Types.ObjectId | null;
+  postComment?: boolean;
   read: boolean;
   createdAt: Date;
 }
@@ -206,6 +210,7 @@ export function toCommentDTO(c: PopulatedComment, likeCount = 0, likedByMe = fal
     likedByMe,
     replyCount,
     content: c.content,
+    imageUrls: c.imageUrls ?? [],
     author: toAuthor(c.author),
     createdAt: c.createdAt.toISOString(),
   };
@@ -215,8 +220,10 @@ export function toNotificationDTO(n: PopulatedNotification): NotificationDTO {
   return {
     id: n._id.toString(),
     type: n.type,
-    actor: { id: n.actor._id.toString(), username: n.actor.username, displayName: n.actor.displayName ?? undefined },
+    actor: { id: n.actor._id.toString(), username: n.actor.username, displayName: n.actor.displayName ?? undefined, avatarUrl: n.actor.avatarUrl ?? null, avatarFrame: n.actor.avatarFrame ?? undefined },
     postId: n.post ? n.post.toString() : null,
+    ...(n.comment ? { commentId: n.comment.toString() } : {}),
+    ...(n.postComment ? { postComment: true } : {}),
     read: n.read,
     createdAt: n.createdAt.toISOString(),
   };

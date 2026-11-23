@@ -49,7 +49,7 @@ export default function CommunitiesPage() {
           <label>
 
             Имя
-            <input value={form.name} onChange={(e) => set("name")(e.target.value)} maxLength={40} />
+            <input value={form.name} onChange={(e) => set("name")(e.target.value)} maxLength={48} />
           </label>
           <label>
 

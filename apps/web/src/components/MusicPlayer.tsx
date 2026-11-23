@@ -18,7 +18,7 @@ function formatTime(seconds: number): string {
 }
 
 export default function MusicPlayer() {
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
   const [showQueue, setShowQueue] = useState(false);
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -95,32 +95,40 @@ export default function MusicPlayer() {
   }, [playerRef, Boolean(track)]);
   const titleRef = useRef<HTMLDivElement>(null);
   const titleTextRef = useRef<HTMLSpanElement>(null);
+  const mobileTitleRef = useRef<HTMLDivElement>(null);
+  const mobileTitleTextRef = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
-    const container = titleRef.current;
-    const text = titleTextRef.current;
-    if (!container || !text) return;
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let animation: Animation | undefined;
+    const titles = [
+      { container: titleRef.current, text: titleTextRef.current },
+      { container: mobileTitleRef.current, text: mobileTitleTextRef.current },
+    ].filter((item): item is { container: HTMLDivElement; text: HTMLSpanElement } => Boolean(item.container && item.text));
+    const animations = new Map<HTMLSpanElement, Animation>();
     const update = () => {
-      animation?.cancel();
-      const distance = Math.max(0, text.scrollWidth - container.clientWidth);
-      if (!distance || motion.matches) return;
-      const travel = distance / 30 * 1000;
-      const duration = 2000 + travel * 2 + 1500;
-      animation = text.animate([
-        { transform: "translateX(0)", offset: 0 },
-        { transform: "translateX(0)", offset: 2000 / duration },
-        { transform: `translateX(-${distance}px)`, offset: (2000 + travel) / duration },
-        { transform: `translateX(-${distance}px)`, offset: (3500 + travel) / duration },
-        { transform: "translateX(0)", offset: 1 },
-      ], { duration, iterations: Infinity, easing: "linear" });
+      for (const { container, text } of titles) {
+        animations.get(text)?.cancel();
+        animations.delete(text);
+        const distance = Math.max(0, text.scrollWidth - container.clientWidth);
+        if (!container.clientWidth || !distance || motion.matches) continue;
+        const travel = distance / 30 * 1000;
+        const duration = 2000 + travel * 2 + 1500;
+        animations.set(text, text.animate([
+          { transform: "translateX(0)", offset: 0 },
+          { transform: "translateX(0)", offset: 2000 / duration },
+          { transform: `translateX(-${distance}px)`, offset: (2000 + travel) / duration },
+          { transform: `translateX(-${distance}px)`, offset: (3500 + travel) / duration },
+          { transform: "translateX(0)", offset: 1 },
+        ], { duration, iterations: Infinity, easing: "linear" }));
+      }
     };
     const observer = new ResizeObserver(update);
-    observer.observe(container);
-    observer.observe(text);
+    for (const { container, text } of titles) {
+      observer.observe(container);
+      observer.observe(text);
+    }
     motion.addEventListener("change", update);
     update();
-    return () => { observer.disconnect(); motion.removeEventListener("change", update); animation?.cancel(); };
+    return () => { observer.disconnect(); motion.removeEventListener("change", update); animations.forEach((animation) => animation.cancel()); };
   }, [track?.id, track?.artist, track?.title, compact]);
 
   if (!track) return null;
@@ -134,6 +142,25 @@ export default function MusicPlayer() {
       style={style}
       aria-label="Музыкальный плеер"
     >
+      {compact && <div className="music-player__mobile-compact">
+        <div className="music-player__mobile-row">
+          <div ref={mobileTitleRef} className="music-player__mobile-title" title={`${track.artist} — ${track.title}`}><span ref={mobileTitleTextRef}>{track.artist} — {track.title}</span></div>
+          <div className="music-player__mobile-actions">
+            <button type="button" disabled={!membership.data || membership.isFetching || libraryBusy} onClick={() => membership.data && library.mutate({ id: track.id, added: membership.data.added })} aria-label={!membership.data ? "Проверка библиотеки" : membership.data.added ? "Убрать из библиотеки" : "Добавить в библиотеку"}>
+              {membership.data && <svg viewBox="0 0 24 24" aria-hidden="true"><path transform={membership.data.added ? "translate(2.4 2.4) scale(.8)" : undefined} d={membership.data.added ? "M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" : "M12 5v14M5 12h14"} /></svg>}
+            </button>
+            <button type="button" onClick={previousTrack} aria-label="Предыдущий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M19 5 7 12l12 7z" /></svg></button>
+            <button type="button" onClick={() => void togglePlayback()} disabled={isLoading} aria-label={isPlaying ? "Пауза" : "Воспроизвести"}>{isLoading ? "…" : isPlaying ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14l9-7z" /></svg>}</button>
+            <button type="button" onClick={nextTrack} aria-label="Следующий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 5l12 7-12 7z" /></svg></button>
+            <button type="button" onClick={() => { prepareModeSwitch(); setCompact(false); }} aria-label="Развернуть плеер"><i className="aero-control-maximize" aria-hidden="true" /></button>
+            <button type="button" onClick={() => { prepareModeSwitch(); setCompact(false); setShowQueue(true); }} aria-label="Показать очередь"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h2m2 0h14M3 12h2m2 0h14M3 19h2m2 0h14" /></svg></button>
+            <button type="button" onClick={clear} aria-label="Закрыть плеер"><i className="aero-control-close" aria-hidden="true" /></button>
+          </div>
+        </div>
+        <div className="music-player__mobile-progress" aria-hidden="true">
+          <div style={{ width: `${duration ? Math.min(Math.max(currentTime / duration, 0), 1) * 100 : 0}%` }} />
+        </div>
+      </div>}
       <div className="music-player__controls">
         <button type="button" className="music-player__mode music-player__library" disabled={!membership.data || membership.isFetching || libraryBusy} onClick={() => membership.data && library.mutate({ id: track.id, added: membership.data.added })} aria-label={!membership.data ? "Проверка библиотеки" : membership.data.added ? "Убрать из библиотеки" : "Добавить в библиотеку"} title={membership.isError ? "Не удалось проверить библиотеку" : !membership.data ? "Проверка библиотеки" : membership.data.added ? "Убрать из библиотеки" : "Добавить в библиотеку"}>
           {membership.data && <svg viewBox="0 0 24 24" aria-hidden="true"><path transform={membership.data.added ? "translate(2.4 2.4) scale(.8)" : undefined} d={membership.data.added ? "M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" : "M12 5v14M5 12h14"} /></svg>}

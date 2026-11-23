@@ -63,7 +63,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
           <div className="image-preview" key={image.id}>
             <img src={image.preview} alt="Предпросмотр вложения" />
             <button type="button" className="image-remove" aria-label="Удалить новое изображение" disabled={update.isPending} onClick={() => imageDraft.remove(image.id)}>×</button>
-            {image.pending && <span role="status">Загрузка…</span>}
+            {image.pending && <span role="status">{image.progress === undefined ? "Подготовка…" : `Загрузка ${image.progress}%`}</span>}
             {image.error && <p className="error" role="alert">{image.error} <button type="button" onClick={() => imageDraft.retry(image)}>Повторить</button></p>}
           </div>
         ))}

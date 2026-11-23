@@ -20,6 +20,7 @@ import {
   musicListQuerySchema,
   musicPickerQuerySchema,
   musicTrackIdSchema,
+  musicRenameSchema,
   musicLibraryStatusSchema,
   musicSettingsSchema,
   profileMusicQuerySchema,
@@ -51,6 +52,7 @@ import {
   reportQuerySchema,
   relationshipsQuerySchema,
   friendsQuerySchema,
+  profileFriendsQuerySchema,
   updateFriendsVisibilitySchema,
   resetPasswordSchema,
   resolveReportSchema,
@@ -71,6 +73,7 @@ import * as news from "../controllers/newsController.js";
 import * as serverFundraiser from "../controllers/serverFundraiserController.js";
 import * as developmentWidget from "../controllers/developmentWidgetController.js";
 import * as siteContent from "../controllers/siteContentController.js";
+import * as feedbackExport from "../controllers/feedbackExportController.js";
 import * as billing from "../controllers/billingController.js";
 import * as insights from "../controllers/insightsController.js";
 import * as admin from "../controllers/adminController.js";
@@ -132,7 +135,9 @@ const privateMusicResponse: RequestHandler = (_req, res, next) => {
 const adminOnly = [requireAuth, requireActive, requireAdmin];
 const staff = [requireAuth, requireActive, requireModerator];
 router.put("/admin/feed-pin/:id", ...adminOnly, asyncHandler(posts.pinFeedPost));
+router.get("/admin/feed-pin", ...adminOnly, asyncHandler(posts.getFeedPin));
 router.delete("/admin/feed-pin/:id", ...adminOnly, asyncHandler(posts.pinFeedPost));
+router.get("/feed-mutes/users", requireAuth, asyncHandler(feedMute.list));
 router.get("/feed-mutes/:kind/:name", requireAuth, asyncHandler(feedMute.get));
 router.put("/feed-mutes/:kind/:name", requireAuth, requireActive, asyncHandler(feedMute.update));
 router.delete("/feed-mutes/:kind/:name", requireAuth, requireActive, asyncHandler(feedMute.update));
@@ -271,6 +276,7 @@ router.post(
 
 router.get("/music/picker", requireAuth, validate(musicPickerQuerySchema, "query"), asyncHandler(music.picker));
 router.post("/music/library/status", requireAuth, validate(musicLibraryStatusSchema), asyncHandler(music.libraryStatuses));
+router.patch("/music/:id", requireAuth, validate(musicTrackIdSchema, "params"), validate(musicRenameSchema), requireActive, asyncHandler(music.rename));
 router.get(
   "/music",
   requireAuth,
@@ -356,7 +362,7 @@ router.delete("/users/:username/posts/:id/pin", requireAuth, requireActive, asyn
 router.get(
   "/users/:username/friends",
   requireAuth,
-  validate(friendsQuerySchema, "query"),
+  validate(profileFriendsQuerySchema, "query"),
   asyncHandler(relationships.friends),
 );
 router.get(
@@ -373,6 +379,7 @@ router.post(
 );
 router.put("/users/:username/follow", requireAuth, requireActive, asyncHandler(users.follow));
 router.delete("/users/:username/follow", requireAuth, requireActive, asyncHandler(users.unfollow));
+router.delete("/users/:username/friend-request", requireAuth, requireActive, asyncHandler(users.declineFriendRequest));
 
 // Notifications
 router.get(
@@ -510,6 +517,7 @@ router.post(
   asyncHandler(posts.addComment),
 );
 router.put("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
+router.delete("/posts/:id/comments/:commentId", requireAuth, requireActive, asyncHandler(posts.deleteComment));
 router.delete("/posts/:id/comments/:commentId/like", requireAuth, requireActive, asyncHandler(posts.setCommentLike));
 router.post("/posts/:id/comments/:commentId/report", requireAuth, reportLimiter, validate(createReportSchema), requireActive, asyncHandler(reports.createCommentReport));
 router.post(
@@ -543,6 +551,9 @@ router.post("/moderation/users/:id/measures", ...staff, asyncHandler(moderation.
 router.patch("/moderation/users/:id/role", ...adminOnly, asyncHandler(moderation.changeRole));
 router.get("/moderation/history", ...staff, asyncHandler(moderation.history));
 router.get("/admin/errors", ...adminOnly, asyncHandler(monitor.listErrors));
+router.get("/admin/feedback-export/groups", ...adminOnly, asyncHandler(feedbackExport.listFeedbackCommunities));
+router.get("/admin/feedback-export/:communityId", ...adminOnly, asyncHandler(feedbackExport.lastFeedbackExport));
+router.post("/admin/feedback-export/:communityId", ...adminOnly, asyncHandler(feedbackExport.exportFeedback));
 router.get("/admin/telemetry/metrics", ...adminOnly, validate(telemetryQuerySchema, "query"), asyncHandler(monitor.listMetrics));
 router.get("/admin/telemetry/network", ...adminOnly, validate(telemetryQuerySchema, "query"), asyncHandler(monitor.listNetwork));
 router.post("/admin/errors/:id/resolve", ...adminOnly, asyncHandler(monitor.resolveError));

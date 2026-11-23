@@ -15,6 +15,7 @@ import type {
 import FriendsPrivacySettings from "../components/FriendsPrivacySettings";
 import ProfileAppearancePrivacy from "../components/ProfileAppearancePrivacy";
 import MusicPrivacySettings from "../components/MusicPrivacySettings";
+import MutedUsersSettings from "../components/MutedUsersSettings";
 import UnsavedAppearanceDialog from "../components/UnsavedAppearanceDialog";
 import NotificationSettings from "../components/NotificationSettings";
 import AccountSettings from "../components/AccountSettings";
@@ -137,6 +138,7 @@ function SettingsSections({ user, onWallpaperPreview, onOpacityPreview }: { user
               <ProfileAppearancePrivacy user={user} />
               <FriendsPrivacySettings username={user.username} />
               <MusicPrivacySettings userId={user.id} />
+              <MutedUsersSettings />
             </>
           )}
           {id === "notifications" && tab === id && (

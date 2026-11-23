@@ -3,6 +3,7 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { Community } from "../models/Community.js";
+import { Comment } from "../models/Comment.js";
 import { Follow } from "../models/Follow.js";
 import { Post } from "../models/Post.js";
 import { deleteUploadIfUnused } from "../services/uploadService.js";
@@ -132,6 +133,7 @@ describe("wallpaper workshop", () => {
   });
 
   it("keeps a published image after its last user stops using it", async () => {
+    vi.spyOn(Comment, "exists").mockResolvedValue(null);
     vi.spyOn(Community, "exists").mockResolvedValue(null);
     vi.spyOn(Post, "exists").mockResolvedValue(null);
     vi.spyOn(User, "exists").mockResolvedValue(null);

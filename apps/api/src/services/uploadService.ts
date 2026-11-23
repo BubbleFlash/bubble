@@ -3,6 +3,7 @@ import path from "node:path";
 import { fontUploadUrlSchema, uploadUrlSchema, type UploadTicket } from "@commune/shared";
 import { logger } from "../config/logger.js";
 import { Post } from "../models/Post.js";
+import { Comment } from "../models/Comment.js";
 import { User } from "../models/User.js";
 import { Wallpaper } from "../models/Wallpaper.js";
 import { Community } from "../models/Community.js";
@@ -81,14 +82,15 @@ export async function deleteUploadIfUnused(
   if (!url || !uploadUrlSchema.safeParse(url).success) return;
 
   try {
-    const [usedByPost, usedByUser, usedByWorkshop, usedByCommunity] = await Promise.all([
+    const [usedByPost, usedByUser, usedByWorkshop, usedByCommunity, usedByComment] = await Promise.all([
       Post.exists({ $or: [{ imageUrl: url }, { imageUrls: url }] }),
       User.exists({ $or: [{ avatarUrl: url }, { "appearance.backgroundUrl": url }] }),
       Wallpaper.exists({ imageUrl: url }),
       Community.exists({ avatarUrl: url }),
+      Comment.exists({ imageUrls: url }),
     ]);
 
-    if (usedByPost || usedByUser || usedByWorkshop || usedByCommunity) return;
+    if (usedByPost || usedByUser || usedByWorkshop || usedByCommunity || usedByComment) return;
 
     await deleteObject(`${STORAGE_PREFIX}/${path.basename(url)}`);
   } catch (err) {

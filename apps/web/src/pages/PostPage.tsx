@@ -1,4 +1,4 @@
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { PostListSkeleton } from "../components/Skeleton";
 import PostCard from "../components/PostCard";
 import InlineComments from "../components/InlineComments";
@@ -30,12 +30,15 @@ function GuestPost({ id }: { id: string }) {
 function MemberPostPage() {
   const { id = "" } = useParams();
   const [params] = useSearchParams();
+  const location = useLocation();
+  const origin = (location.state as { communityReturn?: { path: string; scrollY: number; mainScroll: number; postId?: string; postTop?: number } } | null)?.communityReturn;
+  const communityReturn = origin && /^\/c\/[^/?#]+$/.test(origin.path) && Number.isFinite(origin.scrollY) && Number.isFinite(origin.mainScroll) ? origin : undefined;
   const post = usePost(id);
   useTrackView(id);
 
   return (
     <>
-      <Link to="/" className="muted">← Вернуться к ленте</Link>
+      <Link to={communityReturn?.path ?? "/"} state={communityReturn ? { restoreCommunityScroll: communityReturn } : undefined} className="muted">{communityReturn ? "← Вернуться в сообщество" : "← Вернуться к ленте"}</Link>
       {post.isLoading && <PostListSkeleton count={1} />}
       {post.isError && <p className="error center">Запись не найдена.</p>}
       {post.data && <>

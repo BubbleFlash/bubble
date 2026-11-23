@@ -3,6 +3,8 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { Follow } from "../models/Follow.js";
+import { Community } from "../models/Community.js";
+import { Membership } from "../models/Membership.js";
 import { Like } from "../models/Like.js";
 import { Post } from "../models/Post.js";
 import { User } from "../models/User.js";
@@ -145,16 +147,18 @@ describe("follow relationship API", () => {
             .map((p) => ({ following: new mongoose.Types.ObjectId(p.split(":")[1]) })),
         ) as never,
     );
+    vi.spyOn(Membership, "find").mockReturnValue(chain([]) as never);
+    vi.spyOn(Community, "find").mockReturnValue(chain([]) as never);
     const posts = vi.spyOn(Post, "find").mockReturnValue(chain([]) as never);
     vi.spyOn(Like, "find").mockReturnValue(chain([]) as never);
     pairs.add(`${other}:${me}`);
     await request(app).put("/api/users/alice/follow").set(auth);
     expect((await request(app).get("/api/posts?feed=following").set(auth)).status).toBe(200);
     const calls = posts.mock.calls as unknown as Array<[any]>;
-    expect(calls[0]![0].author.$in.map(String)).toEqual([other.toString(), me.toString()]);
+    expect(calls[0]![0].$and[2].$or[0].author.$in.map(String)).toEqual([other.toString(), me.toString()]);
     await request(app).delete("/api/users/alice/follow").set(auth);
     expect((await request(app).get("/api/posts?feed=following").set(auth)).status).toBe(200);
-    expect(calls[1]![0].author.$in.map(String)).toEqual([me.toString()]);
+    expect(calls[1]![0].$and[2].$or[0].author.$in.map(String)).toEqual([me.toString()]);
     expect(pairs.has(`${other}:${me}`)).toBe(true);
   });
 });

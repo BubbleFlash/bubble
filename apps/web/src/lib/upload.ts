@@ -18,9 +18,9 @@ export async function uploadImage(
   const result = await api<UploadResponse>("/uploads", {
     method: "POST",
     body: form,
+    onUploadProgress: onProgress,
   });
 
-  onProgress?.(100);
 
   return result;
 }

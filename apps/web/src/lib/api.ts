@@ -178,7 +178,7 @@ function waitText(seconds: number) {
 
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; signal?: AbortSignal; keepalive?: boolean } = {},
+  options: { method?: string; body?: unknown; signal?: AbortSignal; keepalive?: boolean; onUploadProgress?: (percent: number) => void } = {},
   retry = true,
 ): Promise<T> {
   const generation = sessionGeneration();
@@ -190,6 +190,36 @@ export async function api<T>(
   assertSessionGeneration(generation);
   const token = getAccessToken();
 
+  const upload = () => new Promise<Response>((resolve, reject) => {
+    options.onUploadProgress?.(0);
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    xhr.open(options.method ?? "GET", `${BASE}${path}`);
+    xhr.withCredentials = true;
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) options.onUploadProgress?.(Math.min(99, Math.floor(event.loaded / event.total * 100)));
+    };
+    xhr.onload = () => {
+      options.signal?.removeEventListener("abort", abort);
+      const headers = new Headers();
+      for (const line of xhr.getAllResponseHeaders().trim().split(/[\r\n]+/)) {
+        const index = line.indexOf(":");
+        if (index > 0) headers.append(line.slice(0, index).trim(), line.slice(index + 1).trim());
+      }
+      const response = new Response(xhr.responseText || null, { status: xhr.status, statusText: xhr.statusText, headers });
+      Object.defineProperties(response, {
+        url: { value: xhr.responseURL },
+        redirected: { value: Boolean(xhr.responseURL && xhr.responseURL !== new URL(`${BASE}${path}`, window.location.href).href) },
+      });
+      resolve(response);
+    };
+    xhr.onerror = () => { options.signal?.removeEventListener("abort", abort); reject(new Error("Network error")); };
+    xhr.onabort = () => { options.signal?.removeEventListener("abort", abort); reject(new DOMException("Aborted", "AbortError")); };
+    if (options.signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+    options.signal?.addEventListener("abort", abort, { once: true });
+    xhr.send(options.body as FormData);
+  });
   const send = () =>
     observeFetch(BASE, path, {
       method: options.method ?? "GET",
@@ -206,7 +236,7 @@ export async function api<T>(
           ? (options.body as FormData)
           : JSON.stringify(options.body)
         : undefined,
-    }).catch((error: unknown) => {
+    }, options.onUploadProgress && isForm ? upload() : undefined).catch((error: unknown) => {
       throw new Error("Не удалось подключиться к серверу. Проверьте соединение.", { cause: error });
     });
 
@@ -267,6 +297,11 @@ export async function api<T>(
       "Only PNG, JPEG, GIF and WebP images are allowed": "Выберите изображение PNG, JPEG, GIF или WebP.",
       "Post not found": "Запись не найдена.",
       "Comment not found": "Комментарий не найден.",
+      "Invalid feedback export period": "Укажите корректный период выгрузки.",
+      "Invalid feedback community ID": "Выберите группу для выгрузки.",
+      "Feedback community not found": "Группа для выгрузки не найдена.",
+      "Feedback export is too large": "Выгрузка слишком большая. Выберите период покороче.",
+      "The editing period has expired or you are not the uploader": "Изменить название может только загрузивший трек в течение пяти минут после загрузки.",
       "You can't message this account": "В этот аккаунт нельзя отправить сообщение.",
       "Community not found": "Группа не найдена.",
       "Insufficient community permissions": "У вас недостаточно прав в этой группе.",
@@ -305,6 +340,7 @@ export async function api<T>(
   }
   const body = await res.text();
   assertSessionGeneration(generation);
+  options.onUploadProgress?.(100);
   return body ? JSON.parse(body) as T : undefined as T;
 }
 

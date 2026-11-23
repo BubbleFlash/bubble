@@ -50,9 +50,12 @@ export function usePost(id: string) {
   });
 }
 
-export function useComments(id: string, linkedCommentId?: string) {
+export function useComments(id: string, linkedCommentId?: string, enabled = true) {
   return useInfiniteQuery({
     queryKey: linkedCommentId ? ["comments", id, linkedCommentId] : ["comments", id],
+    enabled,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }): Promise<CommentDTO[]> =>
       api<CommentDTO[]>(withQuery(`/posts/${id}/comments`, { before: pageParam, comment: pageParam ? undefined : linkedCommentId }), { signal }),
@@ -156,5 +159,15 @@ export function useSetCommentLike(postId: string) {
     mutationFn: ({ id, liked }: { id: string; liked: boolean }) =>
       api<void>(`/posts/${postId}/comments/${id}/like`, { method: liked ? "PUT" : "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["comments", postId] }),
+  });
+}
+
+export function useDeleteComment(postId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/posts/${postId}/comments/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      for (const key of [["comments", postId], ["post", postId], ["feed"], ["search", "posts"], ["public", "posts"]]) void qc.invalidateQueries({ queryKey: key });
+    },
   });
 }

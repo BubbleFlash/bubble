@@ -21,7 +21,10 @@
 .admin-monitor-control {
   display: grid;
   gap: 4px;
+  max-width: 100%;
 }
+
+.admin-monitor-control select { min-width: 0; }
 
 .admin-monitor-actions {
   flex-wrap: wrap;

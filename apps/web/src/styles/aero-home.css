@@ -177,7 +177,9 @@
 }
 .aero-home .post-main { min-width: 0; }
 .aero-nav-image { display: block; width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
-.aero-home .feed-post { display: grid; grid-template-columns: 40px minmax(0, 1fr); position: relative; content-visibility: auto; contain-intrinsic-block-size: auto 172px; }
+.aero-home .feed-post { display: grid; grid-template-columns: 40px minmax(0, 1fr); position: relative; }
+.aero-home .feed-post:has(.post-options__menu) { z-index: 20; }
+.aero-home .feed-post .comments-disclosure:not(.is-open) { display: none; }
 .aero-home .feed-post .post-main { display: contents; }
 .aero-home .feed-post .post-meta { min-width: 0; padding-right: 36px; flex-wrap: wrap; overflow-wrap: anywhere; }
 .aero-home .feed-post .post-main > :not(.post-meta) { grid-column: 1 / -1; min-width: 0; }
@@ -195,7 +197,9 @@
 .aero-home .post-controls { position: absolute; top: 8px; right: 8px; display: flex; }
 .post-options { position: relative; }
 .post-options__menu { position: absolute; z-index: 10; top: 100%; right: 0; min-width: 230px; padding: 4px; border: 1px solid var(--aero-color-border-strong); border-radius: 5px; background: var(--aero-color-surface-solid); box-shadow: 0 3px 8px #0004; }
-.post-options__menu button { display: block; width: 100%; padding: 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.post-options__menu--floating { position: fixed; z-index: 1005; box-sizing: border-box; max-width: calc(100vw - 8px); overflow-y: auto; color: var(--aero-color-text, #183b50); background: var(--aero-color-surface-solid, #e8f5fa); border-color: var(--aero-color-border-strong, #5296b5); }
+.post-options__menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.post-options__menu button svg { flex: none; }
 .post-options__menu button:hover, .post-options__menu button:focus-visible { background: var(--aero-gradient-button-hover); }
 .aero-home .post-report { min-width: 44px; min-height: 44px; padding: 8px; }
 .aero-home .feed-post:has(.post-report) .post-meta { min-height: 40px; }
@@ -204,6 +208,7 @@
 .aero-home .inline-comment { display: flex; gap: 8px; margin-bottom: 10px; }
 .aero-home .inline-comment > div { min-width: 0; flex: 1; }
 .aero-home .inline-comment { position: relative; }
+.aero-home .inline-comment__time { margin-left: auto; font-size: 12px; white-space: nowrap; }
 .aero-home .comment-actions .comment-report { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; }
 .aero-home .inline-comment p { white-space: pre-wrap; margin: 4px 0; }
 .aero-home .container .chat-form .image-drop-field { background: var(--aero-color-field); border-radius: var(--aero-radius-control); }
@@ -225,6 +230,10 @@
 .emoji-input-field { position: relative; min-width: 0; }
 .aero-comment-input .emoji-input-field { flex: 1 1 0; }
 .aero-home .aero-comment-input .emoji-input-field input { box-sizing: border-box; width: 100%; padding-right: 42px; }
+.aero-home .aero-comment-input .comment-input-field input { padding-right: 82px; }
+.aero-home .comment-input-field .emoji-input-button { right: 40px; }
+.comment-attachment-toggle { position: absolute; right: 2px; top: 2px; width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; color: var(--aero-color-text-muted); cursor: pointer; }
+.comment-attachment-menu { position: fixed; z-index: 1005; }
 .aero-home .composer .image-drop-field textarea,
 .aero-home .community-post-editor .emoji-input-field textarea { box-sizing: border-box; padding-right: 44px; }
 .aero-home .emoji-input-button { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 36px; height: 36px; min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--aero-color-text-muted); cursor: pointer; }
@@ -239,7 +248,7 @@
 .comment-actions, .comment-reply-draft { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
 .aero-home .comment-actions { font-size: 12px; }
 .aero-home .comment-actions .btn { min-width: 0; min-height: 28px; padding: 3px 0; font-size: inherit; }
-.aero-home .comment-actions .comment-like { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; }
+.aero-home .comment-actions .comment-like { display: inline-flex; align-items: center; gap: 3px; }
 .aero-home .container .inline-comments :is(.comment-actions .btn, .comment-report):is(:hover, :active):not(:disabled):not([aria-disabled="true"]) {
   background: transparent;
   border-color: transparent;
@@ -508,11 +517,22 @@
     border-top: 0;
     box-shadow: -1px 0 var(--aero-color-highlight), 1px 0 var(--aero-color-highlight), 0 1px var(--aero-color-highlight);
   }
-  .aero-home .bottom-nav { z-index: 40; }
+  .aero-home .bottom-nav {
+    z-index: 40;
+    left: 0;
+    right: auto;
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
   .aero-home .aero-window:has(.bottom-nav) {
     --aero-bottom-nav-space: var(--aero-bottom-nav-height, calc(var(--bottom-h) + env(safe-area-inset-bottom)));
     --aero-content-height: calc(100dvh - var(--aero-content-top) - var(--aero-bottom-nav-space));
     padding-bottom: var(--aero-bottom-nav-space);
+  }
+  .aero-home .aero-window:has(> .music-player--compact) {
+    --aero-content-height: calc(100dvh - var(--aero-content-top) - var(--aero-bottom-nav-space) - var(--aero-player-height, 43px));
+    padding-bottom: calc(var(--aero-bottom-nav-space) + var(--aero-player-height, 43px));
   }
   .aero-home .shell.has-left .container { padding-bottom: 12px; }
   .aero-home .back-to-top { right: max(12px, env(safe-area-inset-right)); bottom: calc(var(--aero-bottom-nav-space, 0px) + 12px); }

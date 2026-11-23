@@ -39,7 +39,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!canPost) return;
+    if (!canPost || create.isPending) return;
     create.mutate(
       {
         content,
@@ -84,6 +84,11 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           rows={2}
           aria-label="Написать запись"
           onPaste={onPaste}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
         />
         <EmojiInputButton field={textRef} value={content} onChange={setContent} maxLength={maxLength} disabled={create.isPending} />
         {drop.dragging && <ImageDropHint />}
@@ -91,7 +96,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
       </div>
 
       <LinkPreview text={content} />
-      {imageDraft.images.length > 0 && <div className="image-draft">{imageDraft.images.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt="Предпросмотр вложения" /><button type="button" className="image-remove" aria-label="Удалить изображение" onClick={() => imageDraft.remove(image.id)}>×</button>{image.pending && <span role="status">Загрузка…</span>}{image.error && <p className="error" role="alert">{image.error} <button type="button" onClick={() => imageDraft.retry(image)}>Повторить</button></p>}</div>)}</div>}
+      {imageDraft.images.length > 0 && <div className="image-draft">{imageDraft.images.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt="Предпросмотр вложения" /><button type="button" className="image-remove" aria-label="Удалить изображение" onClick={() => imageDraft.remove(image.id)}>×</button>{image.pending && <span role="status">{image.progress === undefined ? "Подготовка…" : `Загрузка ${image.progress}%`}</span>}{image.error && <p className="error" role="alert">{image.error} <button type="button" onClick={() => imageDraft.retry(image)}>Повторить</button></p>}</div>)}</div>}
       {imageDraft.error && <p className="error" role="alert">{imageDraft.error}</p>}
 
       {music.length > 0 && <div className="music-attachments">{music.map((track) => <div className="music-attachments__row" key={track.id}><div className="music-page__track-info"><strong>{track.title}</strong><span>{track.artist}</span></div><button type="button" className="btn btn-ghost" aria-label={`Удалить ${track.title}`} onClick={() => setMusic((tracks) => tracks.filter((item) => item.id !== track.id))}>×</button></div>)}</div>}

@@ -1,8 +1,9 @@
 import { displayNameOf } from "@commune/shared";
 import { pluralRu } from "../lib/plural";
 import { memo, useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { PostDTO } from "@commune/shared";
 import { useAuth } from "../store/auth";
@@ -36,15 +37,21 @@ export function postTime(iso: string): string {
   return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
 }
 
-export default memo(function PostCard({ post, inlineComments = false, expandable = true, pinTarget }: { post: PostDTO; inlineComments?: boolean; expandable?: boolean; pinTarget?: string }) {
+export default memo(function PostCard({ post, inlineComments = false, expandable = true, pinTarget, communitySource }: { post: PostDTO; inlineComments?: boolean; expandable?: boolean; pinTarget?: string; communitySource?: string }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const like = useSetPostLike();
   const del = useDeletePost();
   const moderate = useModeratePost();
   const cache = useQueryClient();
+  const globalPin = useQuery({ queryKey: ["global-feed-pin"], queryFn: () => api<{ postId: string | null }>("/admin/feed-pin"), enabled: user?.role === "admin" && post.author.id === user.id && Boolean(pinTarget?.startsWith("/users/")) });
+  const setGlobalPin = useMutation({
+    mutationFn: () => api<void>(`/admin/feed-pin/${post.id}`, { method: globalPin.data?.postId === post.id ? "DELETE" : "PUT" }),
+    onSuccess: () => { void cache.invalidateQueries({ queryKey: ["global-feed-pin"] }); void cache.invalidateQueries({ queryKey: ["feed"] }); },
+  });
   const pin = useMutation({
     mutationFn: () => api<void>(pinTarget === "/admin/feed-pin" ? `${pinTarget}/${post.id}` : `${pinTarget}/posts/${post.id}/pin`, { method: post.pinned ? "DELETE" : "PUT" }),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ["feed"] }),
+    onSuccess: () => { void cache.invalidateQueries({ queryKey: ["feed"] }); void cache.invalidateQueries({ queryKey: ["global-feed-pin"] }); },
   });
   const [moderating, setModerating] = useState(false);
   const [reason, setReason] = useState("");
@@ -58,13 +65,18 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
   const [reporting, setReporting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
+  const floatingMenu = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0, maxHeight: 0 });
   useEffect(() => {
     if (!menuOpen) return;
-    const close = (event: PointerEvent) => { if (!menu.current?.contains(event.target as Node)) setMenuOpen(false); };
+    const close = (event: PointerEvent) => { if (!menu.current?.contains(event.target as Node) && !floatingMenu.current?.contains(event.target as Node)) setMenuOpen(false); };
     const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
+    const dismiss = (event: Event) => { if (!(event.target instanceof Node) || !floatingMenu.current?.contains(event.target)) setMenuOpen(false); };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); window.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
   }, [menuOpen]);
   const mute = useMutation({
     mutationFn: ({ kind, name }: { kind: "users" | "communities"; name: string }) => api(`/feed-mutes/${kind}/${encodeURIComponent(name)}`, { method: "PUT" }),
@@ -85,23 +97,27 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
   const canDelete = isAdmin || staffRemoval || (post.community ? post.communityActions?.delete : mine);
   const canEdit = Boolean(post.communityActions?.edit) || Boolean(!post.community && mine && !editExpired);
   const showEditor = editing && (canEdit || (!post.community && mine));
+  const controls: Array<{ label: string; icon: "pin" | "trash" | "flag" | "eye-off"; disabled?: boolean; run: () => void }> = [];
+  if (globalPin.data) controls.push({ label: globalPin.data.postId === post.id ? "Открепить от общей ленты" : "Закрепить в общей ленте", icon: "pin", disabled: setGlobalPin.isPending, run: () => setGlobalPin.mutate() });
+  if (pinTarget && post.canPin) controls.push({ label: post.pinned ? "Открепить запись" : "Закрепить запись", icon: "pin", disabled: pin.isPending, run: () => pin.mutate() });
+  if (canDelete) controls.push({ label: "Удалить запись", icon: "trash", disabled: del.isPending || moderate.isPending, run: () => { if (staffRemoval) { setReason(""); setCustomReason(""); moderate.reset(); setModerating(true); } else if (window.confirm("Удалить эту запись?")) del.mutate(post.id); } });
+  if (!mine) controls.push({ label: "Пожаловаться", icon: "flag", run: () => setReporting(true) });
+  if (!post.community && !mine && post.author.username) controls.push({ label: "Скрыть публикации пользователя", icon: "eye-off", disabled: mute.isPending, run: () => mute.mutate({ kind: "users", name: post.author.username }) });
+  if (post.community) controls.push({ label: "Скрыть публикации сообщества", icon: "eye-off", disabled: mute.isPending, run: () => mute.mutate({ kind: "communities", name: post.community!.slug }) });
 
   return (
-    <article className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
+    <article data-post-id={post.id} className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
       {post.community ? <Link to={`/c/${post.community.slug}`} className="profile-avatar-link"><Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /></Link> : <ProfileAvatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} online={post.author.online} />}
       <div className="post-controls">
-        {pinTarget && post.canPin && <button type="button" className="btn btn-ghost post-report" title={post.pinned ? "Открепить запись" : "Закрепить запись"} aria-label={post.pinned ? "Открепить запись" : "Закрепить запись"} disabled={pin.isPending} onClick={() => pin.mutate()}><Icon name="pin" size={18} /></button>}
-        {canDelete && <button type="button" className="btn btn-ghost danger post-report" title="Удалить запись" aria-label="Удалить запись" disabled={del.isPending || moderate.isPending} onClick={() => { if (staffRemoval) { setReason(""); setCustomReason(""); moderate.reset(); setModerating(true); } else if (window.confirm("Удалить эту запись?")) del.mutate(post.id); }}><Icon name="trash" size={18} /></button>}
-        {(!mine || post.community) && <div className="post-options" ref={menu}>
-          <button type="button" className="btn btn-ghost post-report" title="Действия с записью" aria-label="Действия с записью" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+        {controls.length === 1 && <button type="button" className="btn btn-ghost post-report" title={controls[0]!.label} aria-label={controls[0]!.label} disabled={controls[0]!.disabled} onClick={controls[0]!.run}><Icon name={controls[0]!.icon} size={18} /></button>}
+        {controls.length > 1 && <div className="post-options" ref={menu}>
+          <button type="button" className="btn btn-ghost post-report" title="Действия с записью" aria-label="Действия с записью" aria-haspopup="menu" aria-expanded={menuOpen} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); const estimatedHeight = controls.length * 44 + 10; const above = window.innerHeight - rect.bottom < estimatedHeight && rect.top > window.innerHeight - rect.bottom; const maxHeight = Math.max(40, (above ? rect.top : window.innerHeight - rect.bottom) - 8); setMenuPosition({ top: above ? Math.max(4, rect.top - Math.min(estimatedHeight, maxHeight)) : rect.bottom, right: Math.max(4, window.innerWidth - rect.right), maxHeight }); setMenuOpen((open) => !open); }}>
             {/* Material Symbols more_horiz, see docs/licenses/material-symbols.txt. */}
             <svg width="24" height="24" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><circle cx="240" cy="-480" r="80"/><circle cx="480" cy="-480" r="80"/><circle cx="720" cy="-480" r="80"/></svg>
           </button>
-          {menuOpen && <div className="post-options__menu" role="menu">
-            {!mine && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setReporting(true); }}>Пожаловаться</button>}
-            {!post.community && !mine && post.author.username && <button type="button" role="menuitem" disabled={mute.isPending} onClick={() => mute.mutate({ kind: "users", name: post.author.username })}>Скрыть публикации пользователя</button>}
-            {post.community && <button type="button" role="menuitem" disabled={mute.isPending} onClick={() => mute.mutate({ kind: "communities", name: post.community!.slug })}>Скрыть публикации сообщества</button>}
-          </div>}
+          {menuOpen && createPortal(<div ref={floatingMenu} className="post-options__menu post-options__menu--floating" role="menu" style={{ top: menuPosition.top, right: menuPosition.right, maxHeight: menuPosition.maxHeight }}>
+            {controls.map((control) => <button key={control.label} type="button" role="menuitem" disabled={control.disabled} onClick={() => { setMenuOpen(false); control.run(); }}><Icon name={control.icon} size={16} /><span>{control.label}</span></button>)}
+          </div>, document.body)}
         </div>}
       </div>
       <div className="post-main">
@@ -111,10 +127,14 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
             <PlusBadge plus={post.author.plus} />
           </>}
           {inlineComments ? (
-            <span className="muted">· <Link className="feed-post-time" to={`/posts/${post.id}`} aria-label={`Открыть публикацию ${displayNameOf(post.author)} от ${new Date(post.createdAt).toLocaleString("ru-RU")}`}>
+            <span className="muted post-date"><Link className="feed-post-time" to={`/posts/${post.id}`} onClick={(event) => {
+              if (!communitySource || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              navigate(`/posts/${post.id}`, { state: { communityReturn: { path: communitySource, scrollY: window.scrollY, mainScroll: document.getElementById("main")?.scrollTop ?? 0, postId: post.id, postTop: event.currentTarget.closest("article")?.getBoundingClientRect().top ?? 0 } } });
+            }} aria-label={`Открыть публикацию ${displayNameOf(post.author)} от ${new Date(post.createdAt).toLocaleString("ru-RU")}`}>
               <time dateTime={post.createdAt}>{postTime(post.createdAt)}</time>
             </Link></span>
-          ) : <span className="muted">· {postTime(post.createdAt)}</span>}
+          ) : <span className="muted post-date"><time dateTime={post.createdAt}>{postTime(post.createdAt)}</time></span>}
           {post.visibility === "private" && <span className="repost-private"><Icon name="lock" size={14} /> Только я</span>}
           {post.visibility === "friends" && <span className="repost-private"><Icon name="lock" size={14} /> Только друзья</span>}
         </div>
@@ -149,6 +169,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
         </div>
         {del.error && <p className="error" role="alert">{del.error.message}</p>}
         {pin.error && <p className="error" role="alert">{pin.error.message}</p>}
+        {setGlobalPin.error && <p className="error" role="alert">{setGlobalPin.error.message}</p>}
         {mute.error && <p className="error" role="alert">{mute.error.message}</p>}
         {moderating && <dialog ref={dialog} {...backdrop} className="aero-dialog moderation-dialog post-moderation-dialog" aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (!moderate.isPending) setModerating(false); }}>
           <AeroTitlebar closeLabel="Закрыть окно" onClose={() => { if (!moderate.isPending) setModerating(false); }}><h2 id={titleId}>Удалить запись</h2></AeroTitlebar>
@@ -163,7 +184,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
         {like.error && <p className="error" role="alert">{like.error.message}</p>}
         {inlineComments && (
           <div className={`comments-disclosure${commentsOpen ? " is-open" : ""}`} aria-hidden={!commentsOpen} ref={(node) => { node?.toggleAttribute("inert", !commentsOpen); }}>
-            <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} />}</div>
+            <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} open={commentsOpen} />}</div>
           </div>
         )}
         {reporting && <ReportForm postId={post.id} onClose={() => setReporting(false)} />}
