@@ -343,7 +343,7 @@
   .aero-home { padding: 0; }
   .aero-home .aero-window { border-width: 2px; border-radius: 0; }
   .aero-home .shell.has-left .container { padding-bottom: 12px; }
-  .aero-home .aero-window:has(.bottom-nav) .pwa-bars { bottom: var(--aero-bottom-nav-space); }
+  .aero-home .aero-window:has(.bottom-nav) .pwa-bars { bottom: var(--aero-bottom-space); }
 }
 @media (max-width: 600px) {
   .aero-home .container > .post { margin: 0; border-radius: var(--aero-radius-panel) !important; border-inline-width: 1px; }
@@ -482,6 +482,7 @@
   flex-direction: column;
   min-height: calc(100dvh - var(--aero-frame-top));
 }
+.aero-bottom-dock { display: contents; }
 .aero-home .aero-window-chrome { position: sticky; top: var(--aero-chrome-top); z-index: 41; }
 .aero-home .header { position: relative; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .aero-home .aero-window > .shell {
@@ -525,18 +526,28 @@
     max-width: 100vw;
     box-sizing: border-box;
   }
+  .aero-home .aero-bottom-dock:has(> .music-player--compact) {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+  }
+  .aero-home .aero-bottom-dock:has(> .music-player--compact) > .bottom-nav { position: static; }
+  .aero-home .aero-window {
+    --aero-bottom-space: var(--aero-bottom-nav-space, 0px);
+    --aero-content-height: calc(100dvh - var(--aero-content-top) - var(--aero-bottom-space));
+    padding-bottom: var(--aero-bottom-space);
+  }
   .aero-home .aero-window:has(.bottom-nav) {
     --aero-bottom-nav-space: var(--aero-bottom-nav-height, calc(var(--bottom-h) + env(safe-area-inset-bottom)));
-    --aero-content-height: calc(100dvh - var(--aero-content-top) - var(--aero-bottom-nav-space));
-    padding-bottom: var(--aero-bottom-nav-space);
   }
-  .aero-home .aero-window:has(> .music-player--compact) {
-    --aero-content-height: calc(100dvh - var(--aero-content-top) - var(--aero-bottom-nav-space) - var(--aero-player-height, 43px));
-    padding-bottom: calc(var(--aero-bottom-nav-space) + var(--aero-player-height, 43px));
+  .aero-home .aero-window:has(.aero-bottom-dock > .music-player--compact) {
+    --aero-bottom-space: var(--aero-bottom-dock-height, calc(var(--aero-bottom-nav-space, 0px) + var(--aero-player-height, 43px)));
   }
   .aero-home .shell.has-left .container { padding-bottom: 12px; }
   .aero-home .back-to-top { right: max(12px, env(safe-area-inset-right)); bottom: calc(var(--aero-bottom-nav-space, 0px) + 12px); }
-  .aero-home .aero-window:has(> .music-player) .back-to-top {
+  .aero-home .aero-window:has(.aero-bottom-dock > .music-player) .back-to-top {
     bottom: calc(var(--aero-bottom-nav-space, 0px) + var(--aero-player-height, 0px) + 20px);
   }
 }

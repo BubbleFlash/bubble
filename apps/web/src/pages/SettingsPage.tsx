@@ -47,7 +47,7 @@ type PreviewProps = { onWallpaperPreview?: (path?: string | null) => void; onOpa
 const SETTINGS_TABS = [
   { id: "appearance", label: "Визуал" },
   { id: "privacy", label: "Приватность", mobileLabel: "Приватн." },
-  { id: "notifications", label: "События" },
+  { id: "notifications", label: "Уведомления" },
   { id: "account", label: "Аккаунт" },
 ] as const;
 
