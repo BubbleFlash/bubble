@@ -12,6 +12,7 @@ import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import { LinkPreview } from "./LinkContent";
 import type { MusicTrackDTO } from "@commune/shared";
 import EmojiInputButton from "./EmojiInputButton";
+import TextareaResizeHandle from "./TextareaResizeHandle";
 
 export default function Composer({ communitySlug }: { communitySlug?: string }) {
   const { user } = useAuth();
@@ -91,6 +92,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           }}
         />
         <EmojiInputButton field={textRef} value={content} onChange={setContent} maxLength={maxLength} disabled={create.isPending} />
+        <TextareaResizeHandle field={textRef} disabled={create.isPending} />
         {drop.dragging && <ImageDropHint />}
         </div>
       </div>

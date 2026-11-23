@@ -350,6 +350,30 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
   expect(runtimeErrors).toEqual([]);
 });
 
+test("resize a post draft from its bottom corner on a touch device", async ({ page }) => {
+  test.skip(page.viewportSize()!.width > 1100, "Touch viewport only");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.goto(origin);
+  const field = page.getByRole("textbox", { name: "Написать запись" });
+  const handle = page.getByRole("button", { name: "Изменить высоту поля записи" });
+  await expect(handle).toBeVisible();
+  await field.fill("Черновик записи");
+  await handle.focus();
+  const start = (await field.boundingBox())!.height;
+  await handle.press("ArrowDown");
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(start + 20, 1);
+  const box = (await handle.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 48, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(start + 68, 1);
+  await expect(field).toHaveValue("Черновик записи");
+});
+
 test("notification actor and event have independent links and type icons", async ({ page, browserName }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
@@ -374,6 +398,19 @@ test("notification actor and event have independent links and type icons", async
         text.selectNodeContents(element);
         return text.getClientRects().length;
       })).toBe(1);
+      const boxes = await Promise.all([
+        nav.getByRole("link", { name: "Сообщения", exact: true }).boundingBox(),
+        notificationLink.boundingBox(),
+        nav.getByRole("button", { name: "Открыть меню" }).boundingBox(),
+      ]);
+      const [messages, notifications, menu] = boxes;
+      expect(boxes.every((box) => box !== null)).toBe(true);
+      expect(await nav.locator(".tab-label").evaluateAll((labels) => labels.map((label) => getComputedStyle(label).fontSize)))
+        .toEqual(Array(5).fill("9px"));
+      const center = (box: NonNullable<typeof messages>) => box.x + box.width / 2;
+      expect(center(notifications!)).toBeCloseTo((center(messages!) + center(menu!)) / 2, 1);
+      expect(notifications!.height).toBeCloseTo(messages!.height, 1);
+      expect(notifications!.height).toBeCloseTo(menu!.height, 1);
     }
     await expect.poll(() => nav.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
     await nav.getByRole("button", { name: "Открыть меню" }).click();
@@ -663,7 +700,7 @@ test("keep the accented mini-player attached to the mobile navigation", async ({
   }).toBe(page.viewportSize()!.height);
 });
 
-test("anchor the Android Firefox navigation to the visible viewport", async ({ page, browserName }) => {
+test("keep the Android Firefox navigation stationary while the app scrolls", async ({ page, browserName }) => {
   test.skip(browserName !== "firefox" || page.viewportSize()!.width > 1100, "Mobile Firefox only");
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
@@ -674,34 +711,31 @@ test("anchor the Android Firefox navigation to the visible viewport", async ({ p
   await page.goto(origin);
   const nav = page.getByRole("navigation", { name: "Вкладки" });
   const player = page.getByRole("region", { name: "Музыкальный плеер" });
-  const expectNavBottom = (bottom: number) => expect.poll(async () => {
+  const expectNavBottom = () => expect.poll(async () => {
     const box = await nav.boundingBox();
     return box ? Math.round(box.y + box.height) : null;
-  }).toBe(bottom);
-  async function changeViewport(height: number, offsetTop: number, event: string, scale = 1) {
-    await page.evaluate(({ height, offsetTop, event, scale }) => {
-      const viewport = window.visualViewport!;
-      Object.defineProperties(viewport, {
-        height: { value: height, configurable: true },
-        offsetTop: { value: offsetTop, configurable: true },
-        scale: { value: scale, configurable: true },
-      });
-      viewport.dispatchEvent(new Event(event));
-    }, { height, offsetTop, event, scale });
-  }
-  const viewportHeight = page.viewportSize()!.height;
-  await expectNavBottom(viewportHeight);
-  await changeViewport(viewportHeight - 60, 0, "resize");
-  await expectNavBottom(viewportHeight - 60);
-
+  }).toBe(page.viewportSize()!.height);
+  const pane = page.locator(".aero-window");
+  const scrollPane = (top: number) => pane.evaluate((element, top) => element.scrollTo({ top, behavior: "instant" }), top);
+  const paneTop = () => pane.evaluate((element) => element.scrollTop);
+  await expectNavBottom();
+  await scrollPane(800);
+  await expect.poll(paneTop).toBeGreaterThan(480);
+  await expectNavBottom();
+  await page.getByRole("button", { name: "Вернуться к началу" }).click();
+  await expect.poll(paneTop).toBe(0);
   await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
   await expect(player).toBeVisible();
-  await changeViewport(viewportHeight - 60, 20, "scroll");
-  await expectNavBottom(viewportHeight - 40);
-  expect(Math.round((await player.boundingBox())!.y + (await player.boundingBox())!.height)).toBe(Math.round((await nav.boundingBox())!.y));
-
-  await changeViewport(viewportHeight / 2, 0, "resize", 2);
-  await expectNavBottom(viewportHeight);
+  await scrollPane(1200);
+  await expect.poll(paneTop).toBeGreaterThan(480);
+  await expectNavBottom();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect.poll(async () => {
+    const [playerBox, navBox] = await Promise.all([player.boundingBox(), nav.boundingBox()]);
+    return playerBox && navBox ? Math.round(navBox.y - playerBox.y - playerBox.height) : null;
+  }).toBe(0);
+  await nav.getByRole("link", { name: "Лента" }).click();
+  await expect.poll(paneTop).toBe(0);
 });
 
 test("a failed route preserves the global player until an explicit reload", async ({ page }) => {

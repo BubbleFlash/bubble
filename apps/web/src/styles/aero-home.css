@@ -236,6 +236,33 @@
 .comment-attachment-menu { position: fixed; z-index: 1005; }
 .aero-home .composer .image-drop-field textarea,
 .aero-home .community-post-editor .emoji-input-field textarea { box-sizing: border-box; padding-right: 44px; }
+.post-textarea-resize { display: none; }
+@media (any-pointer: coarse) {
+  .aero-home :is(.composer, .community-post-editor) textarea { min-height: 64px; resize: none; }
+  .aero-home .post-textarea-resize {
+    position: absolute;
+    right: 1px;
+    bottom: 1px;
+    display: grid;
+    place-items: end;
+    width: 32px;
+    height: 24px;
+    padding: 0 4px 4px 0;
+    border: 0;
+    background: transparent;
+    color: var(--aero-color-text-muted);
+    cursor: ns-resize;
+    touch-action: none;
+    user-select: none;
+  }
+  .post-textarea-resize::after {
+    content: "";
+    width: 12px;
+    height: 12px;
+    background: repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px);
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  }
+}
 .aero-home .emoji-input-button { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 36px; height: 36px; min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--aero-color-text-muted); cursor: pointer; }
 .aero-home .emoji-input-button:hover:not(:disabled) { background: transparent; box-shadow: none; color: var(--aero-color-text); }
 .aero-home .emoji-input-button:disabled { opacity: .5; cursor: default; }
@@ -534,13 +561,16 @@
     flex-direction: column;
   }
   .aero-home .aero-bottom-dock:has(> .music-player--compact) > .bottom-nav { position: static; }
-  /* Firefox on Android moves bottom-anchored elements during toolbar transitions. */
-  .aero-home[data-aero-visual-dock] :is(
-    .aero-bottom-dock:has(> .music-player--compact),
-    .aero-bottom-dock:not(:has(> .music-player--compact)) > .bottom-nav
-  ) {
-    top: calc(var(--aero-visible-bottom) - var(--aero-bottom-space));
-    bottom: auto;
+  /* Keep Firefox Android's address bar stationary by scrolling inside the app. */
+  html:has(.aero-home[data-aero-contained-scroll]) { overflow: hidden; scrollbar-gutter: auto; }
+  .aero-home[data-aero-contained-scroll] > .aero-window {
+    height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .aero-home[data-aero-contained-scroll] .bottom-nav {
+    padding-bottom: calc(6px + max(0px, env(safe-area-inset-bottom) - var(--aero-android-bottom-gap, 0px)));
   }
   .aero-home .aero-window {
     --aero-bottom-space: var(--aero-bottom-nav-space, 0px);
