@@ -483,8 +483,8 @@ export function MusicPlayerProvider({
       return;
     }
 
-    if (currentIndex > 0) {
-      const previousIndex = currentIndex - 1;
+    if (currentIndex > 0 || (repeatMode === 1 && queue.length > 0)) {
+      const previousIndex = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
       const track = queue[previousIndex];
       if (!track) return;
 
@@ -493,7 +493,7 @@ export function MusicPlayerProvider({
     } else {
       audio.currentTime = 0;
     }
-  }, []);
+  }, [repeatMode]);
 
   const toggleShuffle = useCallback(() => {
     const currentTrack = track;
