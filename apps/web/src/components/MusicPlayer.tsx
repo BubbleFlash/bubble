@@ -86,7 +86,7 @@ export default function MusicPlayer() {
   }, [track?.id, setVolume]);
   useLayoutEffect(() => {
     const player = playerRef.current;
-    const host = player?.parentElement;
+    const host = player?.closest<HTMLElement>(".aero-window");
     if (!player || !host) return;
     const resize = () => host.style.setProperty("--aero-player-height", `${player.getBoundingClientRect().height}px`);
     resize();

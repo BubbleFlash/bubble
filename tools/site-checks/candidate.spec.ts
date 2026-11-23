@@ -359,6 +359,23 @@ test("notification actor and event have independent links and type icons", async
   await expect(row.getByRole("link", { name: "Автор", exact: true })).toHaveAttribute("href", "/u/author");
   await expect(row.locator(".notification-target")).toHaveAttribute("href", "/posts/fixture-0");
   await expect(row.locator(".notification-type--comment")).toBeVisible();
+
+  const viewport = page.viewportSize()!;
+  if (viewport.width <= 1100) {
+    await page.setViewportSize({ ...viewport, width: 320 });
+    const nav = page.getByRole("navigation", { name: "Вкладки" });
+    await expect(nav.getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
+    await expect.poll(() => nav.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+    await nav.getByRole("button", { name: "Открыть меню" }).click();
+    await expect(page.locator(".drawer").getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
+  } else {
+    await expect(page.getByLabel("Основная навигация").getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
+  }
+
+  await page.goto(`${origin}/settings?tab=notifications`);
+  const settingsTab = page.getByRole("tab", { name: "Уведомления", exact: true });
+  await expect(settingsTab).toHaveAttribute("aria-selected", "true");
+  expect(await settingsTab.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
 });
 
 test("post action menu stays above the next card", async ({ page }) => {
@@ -577,6 +594,64 @@ async function installMusicFixture(page: Page, origin: string) {
     });
   });
 }
+
+test("keep the accented mini-player attached to the mobile navigation", async ({ page }) => {
+  const viewport = page.viewportSize()!;
+  test.skip(viewport.width > 1100, "Mobile navigation only");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { accentColor: "#ff6868" } },
+  } }));
+  const conversation = { id: "thread", other: { ...posts[0]!.author, bio: "" }, lastMessage: null, lastMessageAt: createdAt, unread: 0, seenByOther: true };
+  await page.route("**/api/messages", (route) => route.fulfill({ json: [conversation] }));
+  await page.route("**/api/messages/thread", (route) => route.fulfill({ json: { conversation, items: [], nextCursor: null } }));
+  await page.goto(origin);
+  await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  const nav = page.getByRole("navigation", { name: "Вкладки" });
+  const expand = player.getByRole("button", { name: "Развернуть плеер" });
+  const icon = player.getByRole("button", { name: "Добавить в библиотеку" });
+  await expect(icon).toHaveCSS("color", "rgb(255, 104, 104)");
+  await expect(expand).toHaveCSS("color", "rgb(255, 104, 104)");
+  await page.locator(".aero-home").evaluate((home) => home.style.setProperty("--aero-player-icon", "#66d9cc"));
+  await expect(expand).toHaveCSS("color", "rgb(102, 217, 204)");
+
+  const expectAttached = async () => {
+    await expect.poll(async () => {
+      const [playerBox, navBox] = await Promise.all([player.boundingBox(), nav.boundingBox()]);
+      if (!playerBox || !navBox) return null;
+      return [Math.round(playerBox.height), Math.round(navBox.y - playerBox.y - playerBox.height), Math.round(navBox.y + navBox.height)];
+    }).toEqual([43, 0, page.viewportSize()!.height]);
+  };
+  await expectAttached();
+  const lastPost = page.locator("article.feed-post").last();
+  await lastPost.scrollIntoViewIfNeeded();
+  await expect.poll(() => lastPost.evaluate((post) => {
+    // Bringing off-screen posts into view can update the document height.
+    const root = document.scrollingElement!;
+    window.scrollTo({ top: root.scrollHeight, behavior: "instant" });
+    const dock = document.querySelector(".aero-bottom-dock")!;
+    return post.getBoundingClientRect().bottom - dock.getBoundingClientRect().top;
+  })).toBeLessThanOrEqual(1);
+  await expectAttached();
+  await page.setViewportSize({ ...viewport, height: viewport.height - 80 });
+  await expectAttached();
+  await expand.click();
+  await expect(player.getByRole("slider", { name: "Позиция воспроизведения" })).toBeVisible();
+  await player.getByRole("button", { name: "Показать очередь" }).click();
+  await expect(player.locator(".music-player__queue")).toBeVisible();
+  await player.getByRole("button", { name: "Свернуть плеер" }).click();
+  await expectAttached();
+  await page.goto(`${origin}/messages/thread`);
+  await expect(page.locator(".chat-open")).toBeVisible();
+  await expect(nav).toBeHidden();
+  await expect.poll(async () => {
+    const box = await player.boundingBox();
+    return box ? Math.round(box.y + box.height) : null;
+  }).toBe(page.viewportSize()!.height);
+});
 
 test("a failed route preserves the global player until an explicit reload", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
