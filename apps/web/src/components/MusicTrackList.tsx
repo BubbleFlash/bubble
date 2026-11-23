@@ -4,7 +4,6 @@ import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { useMusicPlayer } from "../store/music";
 import Icon from "./Icon";
-import AeroTitlebar from "./AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -122,13 +121,18 @@ export default function MusicTrackList({ tracks, source, order, selection, loadL
         </>}
       </article>;
     })}
-    {editing && <dialog ref={editDialog} {...editBackdrop} className="aero-dialog" aria-labelledby={editTitleId} onCancel={(event) => { event.preventDefault(); closeEdit(); }}>
-      <AeroTitlebar closeLabel="Закрыть окно" onClose={closeEdit}><h2 id={editTitleId}>Изменить трек</h2></AeroTitlebar>
-      <form className="aero-dialog__body music-track-rename" onSubmit={(event) => { event.preventDefault(); if (editing.title.trim() && editing.artist.trim() && !rename.isPending) rename.mutate({ id: editing.id, title: editing.title.trim(), artist: editing.artist.trim() }); }}>
-        <label>Название трека <input autoFocus value={editing.title} maxLength={200} onChange={(event) => setEditing({ ...editing, title: event.target.value })} /></label>
-        <label>Исполнитель <input value={editing.artist} maxLength={200} onChange={(event) => setEditing({ ...editing, artist: event.target.value })} /></label>
-        {rename.isError && <p className="error" role="alert">{rename.error.message}</p>}
-        <div className="row"><button type="submit" className="btn" disabled={rename.isPending || !editing.title.trim() || !editing.artist.trim()}>Сохранить</button><button type="button" className="btn" disabled={rename.isPending} onClick={closeEdit}>Отмена</button></div>
+    {editing && <dialog ref={editDialog} {...editBackdrop} className="music-page__upload-dialog" aria-labelledby={editTitleId} onCancel={(event) => { event.preventDefault(); closeEdit(); }}>
+      <header className="music-attachment-picker__header">
+        <h2 id={editTitleId}>Изменить трек</h2>
+        <span className="aero-window-controls music-player__window-controls"><span className="aero-window-control aero-window-close"><button type="button" className="music-player__close" onClick={closeEdit} disabled={rename.isPending} aria-label="Закрыть окно" title="Закрыть"><i className="aero-control-close" aria-hidden="true" /></button></span></span>
+      </header>
+      <form className="music-page__upload-form" onSubmit={(event) => { event.preventDefault(); if (editing.title.trim() && editing.artist.trim() && !rename.isPending) rename.mutate({ id: editing.id, title: editing.title.trim(), artist: editing.artist.trim() }); }}>
+        <fieldset disabled={rename.isPending}>
+          <label className="music-page__field"><span>Название трека</span><input className="aero-input" autoFocus value={editing.title} maxLength={200} onChange={(event) => setEditing({ ...editing, title: event.target.value })} /></label>
+          <label className="music-page__field"><span>Исполнитель</span><input className="aero-input" value={editing.artist} maxLength={200} onChange={(event) => setEditing({ ...editing, artist: event.target.value })} /></label>
+        </fieldset>
+        {rename.isError && <p className="aero-error" role="alert">{rename.error.message}</p>}
+        <div className="music-page__upload-actions"><button type="submit" className="btn btn-primary" disabled={rename.isPending || !editing.title.trim() || !editing.artist.trim()}>Сохранить</button><button type="button" className="btn" disabled={rename.isPending} onClick={closeEdit}>Отмена</button></div>
       </form>
     </dialog>}
     {statuses.isError && <p className="error" role="alert">Не удалось проверить библиотеку. <button type="button" onClick={() => void statuses.refetch()}>Повторить</button></p>}

@@ -5,13 +5,13 @@ export type NavigationItem = { id: string; label: string; guestLabel?: string; t
 const friends = { id: "friends", label: "Друзья", to: () => "/friends", audience: "member" } as const;
 export const navigation: readonly NavigationItem[] = [
   { id: "profile", label: "Профиль", to: (username) => `/u/${username}`, icon: "user", audience: "member", surfaces: ["desktop", "drawer", "bottom"] },
-  { ...friends, icon: "users", surfaces: ["drawer"] },
   { id: "feed", label: "Лента", to: () => "/", icon: "home", audience: "member", surfaces: ["desktop", "drawer", "bottom"], end: true },
-  { ...friends, icon: "friends", surfaces: ["desktop"] },
-  { id: "search", label: "Поиск", to: () => "/search", icon: "search", audience: "member", surfaces: ["drawer", "header"] },
   { id: "messages", label: "Сообщения", to: () => "/messages", icon: "mail", audience: "member", surfaces: ["desktop", "drawer", "bottom"] },
-  { id: "music", label: "Музыка", to: () => "/music", icon: "music", audience: "member", surfaces: ["desktop", "drawer"],},
+  { ...friends, icon: "users", surfaces: ["drawer"] },
+  { ...friends, icon: "friends", surfaces: ["desktop"] },
   { id: "communities", label: "Группы", to: () => "/communities", icon: "users", audience: "member", surfaces: ["desktop", "drawer"] },
+  { id: "music", label: "Музыка", to: () => "/music", icon: "music", audience: "member", surfaces: ["desktop", "drawer"] },
+  { id: "search", label: "Поиск", to: () => "/search", icon: "search", audience: "member", surfaces: ["drawer", "header"] },
   { id: "notifications", label: "События", to: () => "/notifications", icon: "bell", audience: "member", surfaces: ["desktop", "drawer", "bottom"] },
   { id: "settings", label: "Настройки", to: () => "/settings", icon: "settings", audience: "member", surfaces: ["desktop", "drawer"] },
   { id: "explore", label: "Обзор", to: () => "/explore", icon: "compass", audience: "guest", surfaces: ["header", "drawer"] },

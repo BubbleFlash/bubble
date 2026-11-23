@@ -96,7 +96,7 @@ function CommunityView({ slug }: { slug: string }) {
           <div className="profile-id">
             <Avatar username={c.slug} displayName={c.name} url={showEdit ? avatarUrl : c.avatarUrl} size={72} preview />
             <div>
-              {showEdit ? <input aria-label="Название группы" form="community-edit" value={name} required minLength={3} maxLength={48} onChange={(event) => setName(event.target.value)} /> : <h1 className="profile-name">{c.name}</h1>}
+              {showEdit ? <input aria-label="Название группы" form="community-edit" value={name} required minLength={3} maxLength={48} onChange={(event) => setName(event.target.value)} /> : <h1 className={`profile-name community-head__name${c.name.length > 24 ? " community-head__name--long" : ""}`}>{c.name}</h1>}
               <p className="muted">
                 c/{c.slug} · {c.memberCount} {pluralRu(c.memberCount, "участник", "участника", "участников")}
                 {c.myRole && ` · ${COMMUNITY_ROLES[c.myRole]}`}

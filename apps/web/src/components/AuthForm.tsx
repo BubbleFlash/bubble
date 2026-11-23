@@ -128,12 +128,12 @@ export default function AuthForm({ mode, compact = false }: { mode: "login" | "r
         Пароль
         <span className="auth-password">
         <input
-          type={mode === "register" && showPassword ? "text" : "password"}
+          type={showPassword ? "text" : "password"}
           value={fields.password}
           onChange={set("password")}
           autoComplete={mode === "login" ? "current-password" : "new-password"}
         />
-        {mode === "register" && <button type="button" className="auth-password__toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"} aria-pressed={showPassword} title={showPassword ? "Скрыть пароль" : "Показать пароль"}><Icon name={showPassword ? "eye-off" : "eye"} size={20} /></button>}
+        <button type="button" className="auth-password__toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"} aria-pressed={showPassword} title={showPassword ? "Скрыть пароль" : "Показать пароль"}><Icon name={showPassword ? "eye-off" : "eye"} size={20} /></button>
         </span>
       </label>
       {notice && mode === "login" && <p className="notice">{notice}</p>}
