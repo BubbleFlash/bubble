@@ -105,11 +105,11 @@ export const communityTransferSchema = z.object({
 
 export const createCommunitySchema = z.object({
   slug: communitySlugSchema,
-  name: z.string().trim().min(3, "Name needs at least 3 characters").max(40),
+  name: z.string().trim().min(3, "Name needs at least 3 characters").max(48),
   description: z.string().trim().max(280).default(""),
 });
 export const updateCommunitySchema = z.object({
-  name: z.string().trim().min(3).max(40).optional(),
+  name: z.string().trim().min(3).max(48).optional(),
   description: z.string().trim().max(280).optional(),
   avatarUrl: uploadUrlSchema.nullable().optional(),
 }).strict();
@@ -200,6 +200,9 @@ export const friendsQuerySchema = z.object({
   cursor: z.string().max(64).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
+export const profileFriendsQuerySchema = friendsQuerySchema.extend({
+  preview: z.literal("1").optional(),
+});
 export const relationshipsQuerySchema = friendsQuerySchema.extend({
   type: z.enum(["friends", "following", "followers", "outgoing", "incoming"]),
 });
@@ -213,10 +216,12 @@ export type FriendsAccessDTO =
 
 export const COMMENTS_PAGE_SIZE = 200;
 export const createCommentSchema = z.object({
-  content: z.string().trim().min(1).max(COMMENT_MAX_LENGTH),
+  content: z.string().trim().max(COMMENT_MAX_LENGTH).default(""),
+  imageUrls: z.array(uploadUrlSchema).max(2).optional(),
+  musicTrackIds: musicTrackIdsSchema.refine((ids) => ids.length <= 2).optional(),
   parentId: objectIdSchema.optional(),
   mention: z.string().trim().min(1).max(100).optional(),
-});
+}).refine((value) => Boolean(value.content || value.imageUrls?.length || value.musicTrackIds?.length), { message: "Write something or attach a file" });
 
 export const appearanceColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i).transform((color) => color.toLowerCase());
 
@@ -232,7 +237,7 @@ export const MAX_FONT_BYTES = 2 * 1024 * 1024;
 export const fontUploadUrlSchema = z.string().regex(/^\/uploads\/[a-f0-9]{24}-[a-f0-9]{32}\.(woff2?|ttf|otf)$/);
 export const siteFontSchema = z.union([z.enum(SITE_FONTS), fontUploadUrlSchema]);
 export type SiteFont = z.infer<typeof siteFontSchema>;
-export const MIN_WINDOW_OPACITY = 78;
+export const MIN_WINDOW_OPACITY = 0;
 export const DEFAULT_WINDOW_OPACITY = 100;
 export const windowOpacitySchema = z.number().int().min(MIN_WINDOW_OPACITY).max(DEFAULT_WINDOW_OPACITY);
 
@@ -511,6 +516,8 @@ export interface UserSummaryDTO {
   avatarUrl: string | null;
   avatarFrame?: AvatarFrame;
   plus: boolean;
+  followedByMe?: boolean;
+  followsMe?: boolean;
 }
 
 export interface BillingDTO {
@@ -605,6 +612,8 @@ export interface CommentDTO {
   replyCount: number;
   likedByMe: boolean;
   content: string;
+  imageUrls?: string[];
+  musicAttachments?: MusicAttachmentDTO[];
   author: AuthorDTO;
   createdAt: string;
 }
@@ -651,6 +660,7 @@ export type NotificationPreference = z.infer<typeof notificationPreferenceSchema
 export type NotificationPreferences = Record<NotificationType, Omit<NotificationPreference, "type">>;
 
 export const readNotificationsSchema = z.object({
+  all: z.boolean().optional(),
   type: notificationTypeSchema.optional(),
   through: z.string().datetime().optional(),
   items: z.array(z.object({
@@ -663,8 +673,10 @@ export type ReadNotificationsInput = z.infer<typeof readNotificationsSchema>;
 export interface NotificationDTO {
   id: string;
   type: NotificationType;
-  actor: Pick<PublicUser, "id" | "username" | "displayName">;
+  actor: Pick<PublicUser, "id" | "username" | "displayName"> & { avatarUrl?: string | null; avatarFrame?: AvatarFrame };
   postId: string | null;
+  commentId?: string;
+  postComment?: boolean;
   read: boolean;
   createdAt: string;
 }
@@ -708,6 +720,8 @@ export const musicUploadCompleteSchema = z.object({
   uploadId: z.string().regex(/^[a-f0-9]{24}$/i, "Invalid upload ID"),
   duration: z.number().finite().positive().max(604800).optional(),
 });
+
+export const musicRenameSchema = z.object({ title: z.string().trim().min(1).max(200), artist: z.string().trim().min(1).max(200) }).strict();
 
 export const musicListQuerySchema = z.object({
   scope: z.enum(["all", "mine"]).default("all"),
@@ -759,6 +773,7 @@ export interface MusicTrackDTO {
   duration: number | null;
   addedAt: string | null;
   addedByMe: boolean;
+  editableUntil?: string;
 }
 
 

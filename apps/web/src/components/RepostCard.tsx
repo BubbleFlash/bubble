@@ -31,7 +31,7 @@ export default function RepostCard({
       <div className="repost-card__header">
         {preview.kind === "post" && preview.community ? <Link to={`/c/${preview.community.slug}`}><Avatar username={preview.community.slug} displayName={preview.community.name} url={preview.community.avatarUrl} size={30} /></Link> : <ProfileAvatar username={author.username} displayName={author.displayName} url={author.avatarUrl} frame={author.avatarFrame} size={30} online={author.online} />}
         <div>
-          {preview.kind === "post" && preview.community ? <Link to={`/c/${preview.community.slug}`} className="user-link">{preview.community.name}</Link> : <Link to={`/u/${author.username}`} className="user-link">{displayNameOf(author)}</Link>}
+          {preview.kind === "post" && preview.community ? <Link to={`/c/${preview.community.slug}`} className="user-link community-name">{preview.community.name}</Link> : <Link to={`/u/${author.username}`} className="user-link">{displayNameOf(author)}</Link>}
           <Link className="repost-card__date" to={postLink(preview.postId, preview.kind === "comment" ? preview.commentId : undefined)}>
             {preview.kind === "comment" ? "Комментарий" : "Запись"} · <time dateTime={preview.createdAt}>{new Date(preview.createdAt).toLocaleDateString("ru-RU")}</time>
           </Link>

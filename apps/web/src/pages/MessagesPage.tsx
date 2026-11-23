@@ -181,7 +181,7 @@ function Composer({
     }}>
       {error && <p className="error small">{error}</p>}
       <LinkPreview text={text} />
-      {images.images.length > 0 && <div className="image-draft">{images.images.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt="Предпросмотр вложения" /><button type="button" className="image-remove" disabled={busy} aria-label="Удалить изображение" onClick={() => images.remove(image.id)}>×</button>{image.pending && <span role="status">Загрузка…</span>}{image.error && <p className="error" role="alert">{image.error} <button type="button" onClick={() => images.retry(image)}>Повторить</button></p>}</div>)}</div>}
+      {images.images.length > 0 && <div className="image-draft">{images.images.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt="Предпросмотр вложения" /><button type="button" className="image-remove" disabled={busy} aria-label="Удалить изображение" onClick={() => images.remove(image.id)}>×</button>{image.pending && <span role="status">{image.progress === undefined ? "Подготовка…" : `Загрузка ${image.progress}%`}</span>}{image.error && <p className="error" role="alert">{image.error} <button type="button" onClick={() => images.retry(image)}>Повторить</button></p>}</div>)}</div>}
       {images.error && <p className="error" role="alert">{images.error}</p>}
       {tracks.length > 0 && <div className="chat-draft-tracks" aria-label="Выбранная музыка">
         {tracks.map((track) => <div className="chat-draft-track" key={track.id}>
@@ -201,6 +201,14 @@ function Composer({
             if (e.target.value) onTyping?.();
           }}
           onKeyDown={onKey}
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.items)
+              .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+              .map((item) => item.getAsFile()).filter((file): file is File => Boolean(file));
+            if (!files.length) return;
+            if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+            images.add(files);
+          }}
           onScroll={(event) => {
             if (mirror.current) {
               mirror.current.scrollTop = event.currentTarget.scrollTop;

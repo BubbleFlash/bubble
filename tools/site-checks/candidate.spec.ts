@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
+import { DEFAULT_COMMUNITY_PERMISSIONS, rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
 import type { AccountUser, ClientNetworkEvent, MetricsReport, NetworkReport, PostDTO } from "@commune/shared";
 
 const createdAt = "2026-11-17T00:00:00Z";
@@ -86,6 +86,78 @@ async function installFixtures(
   });
   return () => refreshes;
 }
+
+test("keep long group names within search results, group headers and reposts", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  const name = "Ш".repeat(48);
+  const group = { id: "long-group", slug: "long-group", name, createdAt, description: "",
+    memberCount: 1, joinedByMe: true, myRole: "owner", permissions: DEFAULT_COMMUNITY_PERMISSIONS,
+    actions: { publish: true, editAppearance: true, manageMembers: true } };
+  const post: PostDTO = { ...posts[0]!, community: group, musicAttachments: [], repost: {
+    kind: "post", postId: "original", community: group, author: posts[0]!.author,
+    content: "Исходная запись", imageUrls: [], musicAttachments: [], createdAt,
+  } };
+  const pageOfPosts = { items: [post], nextCursor: null };
+  await installFixtures(page, origin);
+  await page.route(/\/api\/communities(\?.*)?$/, (route) => route.fulfill({ json: [group] }));
+  await page.route("**/api/communities/long-group", (route) => route.fulfill({ json: group }));
+  await page.route("**/api/communities/long-group/team", (route) => route.fulfill({ json: { items: [], nextCursor: null } }));
+  await page.route("**/api/communities/long-group/posts", (route) => route.fulfill({ json: pageOfPosts }));
+  await page.route(/\/api\/posts(\?.*)?$/, (route) => route.fulfill({ json: pageOfPosts }));
+  await page.route("**/api/posts/fixture-0", (route) => route.fulfill({ json: post }));
+  const conversation = { id: "thread", other: { ...post.author, bio: "" }, lastMessage: null, lastMessageAt: createdAt, unread: 0, seenByOther: true };
+  await page.route("**/api/messages", (route) => route.fulfill({ json: [conversation] }));
+  await page.route("**/api/messages/thread", (route) => route.fulfill({ json: {
+    conversation, nextCursor: null, items: [{ id: "message", conversationId: "thread", senderId: post.author.id,
+      text: "", repost: post.repost, createdAt }],
+  } }));
+
+  async function expectNameToFit(container: Locator) {
+    const title = container.getByText(name, { exact: true });
+    await expect(title).toBeVisible();
+    expect(await title.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const bounds = element.closest(".community-result, .community-head, .community-management__summary, .post-meta, .repost-card__header, button, article")!.getBoundingClientRect();
+      return Array.from(range.getClientRects()).every((line) => line.left >= bounds.left - 1 && line.right <= bounds.right + 1);
+    })).toBe(true);
+  }
+
+  await page.goto(`${origin}/communities`);
+  await page.getByRole("tab", { name: "Все группы" }).click();
+  await page.getByRole("searchbox", { name: "Найти группу" }).fill(name.slice(0, 10));
+  await expectNameToFit(page.locator(".community-result"));
+
+  await page.locator(".community-result").click();
+  await expectNameToFit(page.locator(".community-head"));
+  const actionButtons = page.locator(".community-head__actions button");
+  await expect(actionButtons).toHaveCount(2);
+  expect((await actionButtons.nth(0).boundingBox())?.y).toBe((await actionButtons.nth(1).boundingBox())?.y);
+  await page.getByRole("button", { name: "Управление группой", exact: true }).click();
+  await expectNameToFit(page.locator(".community-management__summary"));
+
+  await page.goto(origin);
+  await expectNameToFit(page.locator(".feed-post .post-meta"));
+  await page.goto(`${origin}/posts/fixture-0`);
+  await expectNameToFit(page.locator(".post-meta"));
+  await expectNameToFit(page.locator(".repost-card__header"));
+  await page.getByRole("button", { name: /^Поделиться записью/ }).click();
+  await page.getByRole("radio", { name: "Группа", exact: true }).check();
+  const groupPicker = page.getByRole("button", { name: "Группа", exact: true });
+  await groupPicker.click();
+  const option = page.getByRole("option", { name, exact: true });
+  await expectNameToFit(option);
+  await option.click();
+  await expectNameToFit(page.locator(".repost-select__control"));
+
+  await page.goto(`${origin}/messages/thread`);
+  await expectNameToFit(page.locator(".chat .repost-card__header"));
+
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 401, json: { error: "No session" } }));
+  await page.route("**/api/public/posts/fixture-0", (route) => route.fulfill({ json: { ...post, repost: undefined } }));
+  await page.goto(`${origin}/posts/fixture-0`);
+  await expectNameToFit(page.locator("article.post"));
+});
 
 test("refresh the registration captcha after rejection and keep the form fields", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -276,6 +348,104 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
     contentType: "application/json",
   });
   expect(runtimeErrors).toEqual([]);
+});
+
+test("resize a post draft from its bottom corner on a touch device", async ({ page }) => {
+  test.skip(page.viewportSize()!.width > 1100, "Touch viewport only");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.goto(origin);
+  const field = page.getByRole("textbox", { name: "Написать запись" });
+  const handle = page.getByRole("button", { name: "Изменить высоту поля записи" });
+  await expect(handle).toBeVisible();
+  await field.fill("Черновик записи");
+  await handle.focus();
+  const start = (await field.boundingBox())!.height;
+  await handle.press("ArrowDown");
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(start + 20, 1);
+  const box = (await handle.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 48, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(start + 68, 1);
+  await expect(field).toHaveValue("Черновик записи");
+});
+
+test("notification actor and event have independent links and type icons", async ({ page, browserName }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/notifications?**", (route) => route.fulfill({ json: { items: [{ id: "event", type: "comment", actor: { id: "author", username: "author", displayName: "Автор" }, postId: "fixture-0", read: false, createdAt }], nextCursor: null } }));
+  await page.goto(`${origin}/notifications`);
+  const row = page.locator(".notification").first();
+  await expect(row.getByRole("link", { name: "Автор", exact: true })).toHaveAttribute("href", "/u/author");
+  await expect(row.locator(".notification-target")).toHaveAttribute("href", "/posts/fixture-0");
+  await expect(row.locator(".notification-type--comment")).toBeVisible();
+
+  const viewport = page.viewportSize()!;
+  if (viewport.width <= 1100) {
+    await page.setViewportSize({ ...viewport, width: 320 });
+    const nav = page.getByRole("navigation", { name: "Вкладки" });
+    const notificationLink = nav.getByRole("link", { name: "Уведомления", exact: true });
+    await expect(notificationLink).toHaveAttribute("href", "/notifications");
+    const notificationLabel = notificationLink.locator(".tab-label");
+    await expect(notificationLabel).toHaveCSS("font-size", browserName === "firefox" ? "9px" : "10px");
+    if (browserName === "firefox") {
+      expect(await notificationLabel.evaluate((element) => {
+        const text = document.createRange();
+        text.selectNodeContents(element);
+        return text.getClientRects().length;
+      })).toBe(1);
+      const boxes = await Promise.all([
+        nav.getByRole("link", { name: "Сообщения", exact: true }).boundingBox(),
+        notificationLink.boundingBox(),
+        nav.getByRole("button", { name: "Открыть меню" }).boundingBox(),
+      ]);
+      const [messages, notifications, menu] = boxes;
+      expect(boxes.every((box) => box !== null)).toBe(true);
+      expect(await nav.locator(".tab-label").evaluateAll((labels) => labels.map((label) => getComputedStyle(label).fontSize)))
+        .toEqual(Array(5).fill("9px"));
+      const center = (box: NonNullable<typeof messages>) => box.x + box.width / 2;
+      expect(center(notifications!)).toBeCloseTo((center(messages!) + center(menu!)) / 2, 1);
+      expect(notifications!.height).toBeCloseTo(messages!.height, 1);
+      expect(notifications!.height).toBeCloseTo(menu!.height, 1);
+    }
+    await expect.poll(() => nav.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+    await nav.getByRole("button", { name: "Открыть меню" }).click();
+    await expect(page.locator(".drawer").getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
+  } else {
+    await expect(page.getByLabel("Основная навигация").getByRole("link", { name: "Уведомления", exact: true })).toHaveAttribute("href", "/notifications");
+  }
+
+  await page.goto(`${origin}/settings?tab=notifications`);
+  const settingsTab = page.getByRole("tab", { name: "Уведомления", exact: true });
+  await expect(settingsTab).toHaveAttribute("aria-selected", "true");
+  expect(await settingsTab.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+});
+
+test("post action menu stays above the next card", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.goto(origin);
+  const card = page.locator("article.feed-post").first();
+  await card.evaluate((element) => { element.style.overflow = "hidden"; });
+  await card.getByRole("button", { name: "Действия с записью" }).click();
+  const item = page.getByRole("menuitem", { name: "Скрыть публикации пользователя" });
+  await expect(item).toBeVisible();
+  expect(await item.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return node.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  })).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(item).toHaveCount(0);
+  for (let i = 0; i < 12; i++) {
+    await card.getByRole("button", { name: "Действия с записью" }).click();
+    await card.locator(".post-body").click({ position: { x: 5, y: 5 } });
+    await expect(item).toHaveCount(0);
+  }
+  await expect(card.getByRole("button", { name: "Действия с записью" })).toBeVisible();
 });
 
 test("feed navigation jumps to the top and refreshes only the first page", async ({ page }) => {
@@ -472,6 +642,102 @@ async function installMusicFixture(page: Page, origin: string) {
   });
 }
 
+test("keep the accented mini-player attached to the mobile navigation", async ({ page }) => {
+  const viewport = page.viewportSize()!;
+  test.skip(viewport.width > 1100, "Mobile navigation only");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { accentColor: "#ff6868" } },
+  } }));
+  const conversation = { id: "thread", other: { ...posts[0]!.author, bio: "" }, lastMessage: null, lastMessageAt: createdAt, unread: 0, seenByOther: true };
+  await page.route("**/api/messages", (route) => route.fulfill({ json: [conversation] }));
+  await page.route("**/api/messages/thread", (route) => route.fulfill({ json: { conversation, items: [], nextCursor: null } }));
+  await page.goto(origin);
+  await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  const nav = page.getByRole("navigation", { name: "Вкладки" });
+  const expand = player.getByRole("button", { name: "Развернуть плеер" });
+  const icon = player.getByRole("button", { name: "Добавить в библиотеку" });
+  await expect(icon).toHaveCSS("color", "rgb(255, 104, 104)");
+  await expect(expand).toHaveCSS("color", "rgb(255, 104, 104)");
+  await page.locator(".aero-home").evaluate((home) => home.style.setProperty("--aero-player-icon", "#66d9cc"));
+  await expect(expand).toHaveCSS("color", "rgb(102, 217, 204)");
+
+  const expectAttached = async () => {
+    await expect.poll(async () => {
+      const [playerBox, navBox] = await Promise.all([player.boundingBox(), nav.boundingBox()]);
+      if (!playerBox || !navBox) return null;
+      return [Math.round(playerBox.height), Math.round(navBox.y - playerBox.y - playerBox.height), Math.round(navBox.y + navBox.height)];
+    }).toEqual([43, 0, page.viewportSize()!.height]);
+  };
+  await expectAttached();
+  const lastPost = page.locator("article.feed-post").last();
+  await lastPost.scrollIntoViewIfNeeded();
+  await expect.poll(() => lastPost.evaluate((post) => {
+    // Bringing off-screen posts into view can update the document height.
+    const root = document.scrollingElement!;
+    window.scrollTo({ top: root.scrollHeight, behavior: "instant" });
+    const dock = document.querySelector(".aero-bottom-dock")!;
+    return post.getBoundingClientRect().bottom - dock.getBoundingClientRect().top;
+  })).toBeLessThanOrEqual(1);
+  await expectAttached();
+  await page.setViewportSize({ ...viewport, height: viewport.height - 80 });
+  await expectAttached();
+  await expand.click();
+  await expect(player.getByRole("slider", { name: "Позиция воспроизведения" })).toBeVisible();
+  await player.getByRole("button", { name: "Показать очередь" }).click();
+  await expect(player.locator(".music-player__queue")).toBeVisible();
+  await player.getByRole("button", { name: "Свернуть плеер" }).click();
+  await expectAttached();
+  await page.goto(`${origin}/messages/thread`);
+  await expect(page.locator(".chat-open")).toBeVisible();
+  await expect(nav).toBeHidden();
+  await expect.poll(async () => {
+    const box = await player.boundingBox();
+    return box ? Math.round(box.y + box.height) : null;
+  }).toBe(page.viewportSize()!.height);
+});
+
+test("keep the Android Firefox navigation stationary while the app scrolls", async ({ page, browserName }) => {
+  test.skip(browserName !== "firefox" || page.viewportSize()!.width > 1100, "Mobile Firefox only");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (Android 15; Mobile; rv:149.0) Gecko/149.0 Firefox/149.0" });
+  });
+  await page.goto(origin);
+  const nav = page.getByRole("navigation", { name: "Вкладки" });
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  const expectNavBottom = () => expect.poll(async () => {
+    const box = await nav.boundingBox();
+    return box ? Math.round(box.y + box.height) : null;
+  }).toBe(page.viewportSize()!.height);
+  const pane = page.locator(".aero-window");
+  const scrollPane = (top: number) => pane.evaluate((element, top) => element.scrollTo({ top, behavior: "instant" }), top);
+  const paneTop = () => pane.evaluate((element) => element.scrollTop);
+  await expectNavBottom();
+  await scrollPane(800);
+  await expect.poll(paneTop).toBeGreaterThan(480);
+  await expectNavBottom();
+  await page.getByRole("button", { name: "Вернуться к началу" }).click();
+  await expect.poll(paneTop).toBe(0);
+  await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
+  await expect(player).toBeVisible();
+  await scrollPane(1200);
+  await expect.poll(paneTop).toBeGreaterThan(480);
+  await expectNavBottom();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect.poll(async () => {
+    const [playerBox, navBox] = await Promise.all([player.boundingBox(), nav.boundingBox()]);
+    return playerBox && navBox ? Math.round(navBox.y - playerBox.y - playerBox.height) : null;
+  }).toBe(0);
+  await nav.getByRole("link", { name: "Лента" }).click();
+  await expect.poll(paneTop).toBe(0);
+});
+
 test("a failed route preserves the global player until an explicit reload", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
@@ -494,7 +760,7 @@ test("a failed route preserves the global player until an explicit reload", asyn
     page.getByRole("button", { name: "Обновить страницу" }).click(),
   ]);
   await expect(page.getByRole("heading", { name: "Страница не загрузилась" })).toBeVisible();
-  await expect(player.getByText("Исполнитель — Тестовый трек", { exact: true })).toBeVisible();
+  await expect(player.getByText("Исполнитель — Тестовый трек", { exact: true }).filter({ visible: true })).toBeVisible();
 });
 
 test("the player restores the queue and position after reload", async ({ page }) => {
@@ -525,7 +791,10 @@ test("the player restores the queue and position after reload", async ({ page })
   const pause = player.getByRole("button", { name: "Пауза", exact: true });
   const play = player.getByRole("button", { name: "Воспроизвести", exact: true });
   const position = player.getByRole("slider", { name: "Позиция воспроизведения" });
+  const expand = player.getByRole("button", { name: "Развернуть плеер", exact: true });
+  const thirdTrackTitle = player.getByText("Исполнитель — Трек 3", { exact: true }).filter({ visible: true });
   await expect(pause).toBeVisible();
+  if (await expand.isVisible()) await expand.click();
   await expect.poll(() => position.inputValue().then(Number)).toBeGreaterThan(3);
   await player.getByRole("button", { name: "Перемешивание" }).click();
   await player.getByRole("button", { name: "Повтор выключен" }).click();
@@ -536,6 +805,7 @@ test("the player restores the queue and position after reload", async ({ page })
   await page.reload();
   await newUrl;
   await expect(play).toBeEnabled();
+  if (await expand.isVisible()) await expand.click();
   await expect(player.getByRole("alert")).toHaveCount(0);
   await expect.poll(async () => Math.abs(Number(await position.inputValue()) - savedPosition)).toBeLessThan(1);
   await expect(player.getByRole("button", { name: "Повтор всего списка" })).toBeVisible();
@@ -553,7 +823,7 @@ test("the player restores the queue and position after reload", async ({ page })
   await expect(pause).toBeVisible();
   await pause.click();
   await page.reload();
-  await expect(player.locator(".music-player__title")).toHaveText("Исполнитель — Трек 3");
+  await expect(thirdTrackTitle).toBeVisible();
   await expect(play).toBeEnabled();
   await player.getByRole("button", { name: "Закрыть плеер" }).click();
   await page.reload();
@@ -681,4 +951,51 @@ test("admin monitoring filters incidents and downloads the selected CSV", async 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerWidth),
   );
+});
+
+test("download feedback from the selected group and show its last exported period", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const period = { from: "2026-11-20", to: "2026-11-22" };
+  const record = { ...period, exportedAt: createdAt };
+  const posts = [{ id: "post", content: "Отзыв", comments: [{ content: "Ответ" }] }];
+  const groups = [
+    { id: "feedback-id", name: "Жалобы и предложения Bubble", slug: "feedback" },
+    { id: "other-id", name: "Другая" + "Ш".repeat(42), slug: "other" },
+  ];
+  let exported = false;
+  await page.route("**/api/auth/refresh", (route) =>
+    route.fulfill({ json: { accessToken: "fixture", user: { ...viewer, role: "admin" } } }));
+  await page.route("**/api/admin/feedback-export/groups", (route) => route.fulfill({ json: groups }));
+  await page.route("**/api/admin/feedback-export/feedback-id", (route) => route.fulfill({
+    body: "null", contentType: "application/json",
+  }));
+  await page.route("**/api/admin/feedback-export/other-id", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ body: JSON.stringify(exported ? record : null), contentType: "application/json" });
+    expect(route.request().postDataJSON()).toEqual(period);
+    exported = true;
+    return route.fulfill({ json: { ...record, community: groups[1], posts } });
+  });
+  await page.goto(`${origin}/admin/errors?tab=feedback`);
+  await expect(page.getByText("Выгрузок пока нет.")).toBeVisible();
+  const group = page.getByRole("combobox", { name: "Группа", exact: true });
+  await expect(group).toHaveValue("feedback-id");
+  await page.getByLabel("Поиск группы").fill("Другая");
+  await group.selectOption("other-id");
+  expect(await group.evaluate((element) => {
+    const toolbar = element.closest(".admin-monitor-toolbar")!.getBoundingClientRect();
+    return element.getBoundingClientRect().right <= toolbar.right;
+  })).toBe(true);
+  await page.reload();
+  await expect(group).toHaveValue("other-id");
+  await page.getByLabel("С даты (UTC)").fill(period.from);
+  await page.getByLabel("По дату включительно (UTC)").fill(period.to);
+  const ready = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать JSON" }).click();
+  const file = await ready;
+  expect(file.suggestedFilename()).toBe("bubble-other-2026-11-20-2026-11-22.json");
+  expect(JSON.parse(await readFile(await file.path(), "utf8")).posts).toEqual(posts);
+  await expect(page.getByText(/Последняя выгрузка за 20\.11\.2026 — 22\.11\.2026/)).toBeVisible();
+  await group.selectOption("feedback-id");
+  await expect(page.getByText("Выгрузок пока нет.")).toBeVisible();
 });

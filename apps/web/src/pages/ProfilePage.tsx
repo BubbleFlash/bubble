@@ -49,7 +49,7 @@ export default function ProfilePage() {
   const friendship: { icon: "person_remove" | "close" | "how_to_reg" | "person_add"; label: string } = p.followedByMe
     ? p.followsMe
       ? { icon: "person_remove", label: "Удалить из друзей" }
-      : { icon: "close", label: "Отменить исходящую заявку" }
+      : { icon: "close", label: "Отписаться" }
     : p.followsMe
       ? { icon: "how_to_reg", label: "Добавить в ответ" }
       : { icon: "person_add", label: "Добавить в друзья" };

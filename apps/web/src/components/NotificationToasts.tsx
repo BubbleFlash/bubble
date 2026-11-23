@@ -12,7 +12,7 @@ export default function NotificationToasts({ items, dismiss }: {
         const version = notificationVersion(item);
         return (
           <Link key={version} className="notification-toast" to={notificationTarget(item)} onClick={() => dismiss(version)}>
-            <strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}
+            <strong>{displayNameOf(item.actor)}</strong> {notificationText(item)}
           </Link>
         );
       })}

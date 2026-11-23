@@ -1,6 +1,7 @@
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { telemetryMethods, telemetryPage, telemetryRoute } from "@commune/shared";
 import { TelemetryPanel } from "../components/AdminTelemetry";
+import AdminFeedbackExport from "../components/AdminFeedbackExport";
 import { timeAgo } from "../components/PostCard";
 import { useErrorEvents, useResolveError } from "../hooks/useErrors";
 import { downloadCsv } from "../lib/csv";
@@ -11,6 +12,7 @@ const tabs = [
   { id: "errors", label: "Ошибки приложения" },
   { id: "metrics", label: "Метрики API" },
   { id: "network", label: "Сеть и 429" },
+  { id: "feedback", label: "Выгрузка группы" },
 ] as const;
 
 function ErrorsPanel() {
@@ -143,6 +145,8 @@ export default function AdminPage() {
       </nav>
       {activeTab === "errors" ? (
         <ErrorsPanel />
+      ) : activeTab === "feedback" ? (
+        <AdminFeedbackExport />
       ) : (
         <TelemetryPanel key={activeTab} view={activeTab} />
       )}

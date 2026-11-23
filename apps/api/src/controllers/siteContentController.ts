@@ -35,10 +35,10 @@ export async function team(_req: Request, res: Response) {
   const config = await SiteTeamSettings.findById("site-team").lean();
   const ids = [...(config?.developers ?? []), ...(config?.artists ?? []), ...(config?.testers ?? [])];
   const users = await User.find({ $or: [{ role: { $in: ["admin", "moderator"] } }, { _id: { $in: ids } }], deletionExpiresAt: null, anonymizedAt: null })
-    .select("username displayName role banned accountRestriction").sort({ username: 1 }).lean();
+    .select("username displayName avatarUrl avatarFrame role banned accountRestriction").sort({ username: 1 }).lean();
   const visible = users.filter((user) => !accountRestriction(user));
   const byId = new Map(visible.map((user) => [String(user._id), user]));
-  const present = (user: typeof visible[number]) => ({ username: user.username, displayName: user.displayName || user.username, role: user.role });
+  const present = (user: typeof visible[number]) => ({ username: user.username, displayName: user.displayName || user.username, avatarUrl: user.avatarUrl ?? null, avatarFrame: user.avatarFrame, role: user.role });
   const group = (list: typeof ids) => list.flatMap((id) => { const user = byId.get(String(id)); return user ? [present(user)] : []; });
   res.json({
     members: visible.filter((user) => user.role === "admin" || user.role === "moderator").map(present),

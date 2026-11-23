@@ -116,6 +116,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       onNotification: (event) => {
         if (event?.notification) {
           const item = event.notification;
+          if (item.type === "comment" && item.postId) {
+            void invalidate(["comments", item.postId]);
+            void invalidate(["post", item.postId], true);
+            void invalidate(["feed"]);
+            void invalidate(["search", "posts"]);
+            void invalidate(["public", "posts"]);
+          }
           const visible = document.visibilityState === "visible";
           if (event.sound !== false) playSound(item.type);
           const version = notificationVersion(item);

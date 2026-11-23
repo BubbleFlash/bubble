@@ -13,6 +13,7 @@ import {
   useToggleFollow,
   useRelationshipCounts,
   usePeople,
+  useDeclineFriendRequest,
 } from "../hooks/useSocial";
 import { useAuth } from "../store/auth";
 import { ApiError } from "../lib/api";
@@ -27,12 +28,12 @@ const tabs: { id: Tab; label: string; empty: string }[] = [
 
 function PersonRow({ person, tab, isMe }: { person: UserSummaryDTO; tab: Tab; isMe: boolean }) {
   const follow = useToggleFollow(person.username);
-  const action =
-    tab === "incoming"
-      ? "Добавить в ответ"
-      : tab === "outgoing"
-        ? "Отменить заявку"
-        : "Удалить из друзей";
+  const decline = useDeclineFriendRequest(person.username);
+  const { user } = useAuth();
+  let action = "Удалить из друзей";
+  if (tab === "incoming" || (tab === "people" && !person.followedByMe && person.followsMe)) action = "Добавить в ответ";
+  else if (tab === "outgoing" || (tab === "people" && person.followedByMe && !person.followsMe)) action = "Отписаться";
+  else if (tab === "people" && !person.followedByMe) action = "Добавить в друзья";
   return (
     <div className="card person friend-list-row">
       <Link className="friend-person-link" to={`/u/${encodeURIComponent(person.username)}`}>
@@ -40,24 +41,26 @@ function PersonRow({ person, tab, isMe }: { person: UserSummaryDTO; tab: Tab; is
         <strong>{displayNameOf(person)}</strong>
         <PlusBadge plus={person.plus} />
       </Link>
-      {isMe && tab !== "people" && (
+      {isMe && (tab !== "people" || person.id !== user?.id) && (
         <div>
           <button
             type="button"
             className="btn btn-outline"
-            disabled={follow.isPending}
+            disabled={follow.isPending || decline.isPending}
             onClick={() => {
               if (
-                tab === "friends" &&
+                (tab === "friends" || (tab === "people" && person.followedByMe && person.followsMe)) &&
                 !window.confirm("Удалить пользователя из друзей? Вы отпишетесь от него.")
               )
                 return;
-              follow.mutate(tab === "incoming");
+              follow.mutate(tab === "people" ? !person.followedByMe : tab === "incoming");
             }}
           >
             {action}
           </button>
+          {tab === "incoming" && <button type="button" className="btn btn-outline" disabled={decline.isPending || follow.isPending} onClick={() => decline.mutate()}>Отклонить</button>}
           {follow.isError && <p className="error">{follow.error.message}</p>}
+          {decline.isError && <p className="error">{decline.error.message}</p>}
         </div>
       )}
     </div>

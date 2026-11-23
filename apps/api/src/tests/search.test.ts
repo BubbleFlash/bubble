@@ -7,6 +7,7 @@ import { Like } from "../models/Like.js";
 import { Post } from "../models/Post.js";
 import { Follow } from "../models/Follow.js";
 import { User } from "../models/User.js";
+import { PeopleSearchSnapshot } from "../models/PeopleSearchSnapshot.js";
 import { escapeRegex } from "../utils/regex.js";
 import { signAccessToken } from "../utils/tokens.js";
 
@@ -104,22 +105,32 @@ describe("GET /api/search/people", () => {
   });
 
   it("lists available people without a query and returns a cursor", async () => {
+    const snapshotId = new mongoose.Types.ObjectId();
+    vi.spyOn(PeopleSearchSnapshot, "create").mockResolvedValue({ _id: snapshotId, online: [] } as never);
     const rows = Array.from({ length: 21 }, (_, i) => ({ _id: new mongoose.Types.ObjectId(), username: `user${i}` }));
     const find = vi.spyOn(User, "find").mockReturnValue(queryChain(rows) as never);
+    vi.spyOn(Follow, "find")
+      .mockReturnValueOnce(queryChain([{ following: rows[0]!._id }]) as never)
+      .mockReturnValueOnce(queryChain([{ follower: rows[1]!._id }]) as never);
     const res = await request(app).get("/api/search/people").set(auth);
     expect(res.status).toBe(200);
     expect(find).toHaveBeenCalledWith(expect.objectContaining({ banned: { $ne: true }, $nor: expect.any(Array) }));
     expect(res.body.items).toHaveLength(20);
-    expect(res.body.nextCursor).toBe(String(rows[19]!._id));
+    expect(res.body.items[0]).toMatchObject({ followedByMe: true, followsMe: false });
+    expect(res.body.items[1]).toMatchObject({ followedByMe: false, followsMe: true });
+    expect(res.body.nextCursor).toBe(`${snapshotId}|0|${rows[19]!._id}`);
   });
 
   it("filters by escaped name prefix and cursor", async () => {
     const find = vi.spyOn(User, "find").mockReturnValue(queryChain([]) as never);
+    vi.spyOn(Follow, "find").mockReturnValue(queryChain([]) as never);
     const cursor = new mongoose.Types.ObjectId().toString();
-    const res = await request(app).get(`/api/search/people?q=a.b&cursor=${cursor}`).set(auth);
+    const snapshotId = new mongoose.Types.ObjectId();
+    vi.spyOn(PeopleSearchSnapshot, "findOne").mockReturnValue(queryChain({ _id: snapshotId, online: [] }) as never);
+    const res = await request(app).get(`/api/search/people?q=a.b&cursor=${snapshotId}|1|${cursor}`).set(auth);
     expect(res.status).toBe(200);
     expect(find).toHaveBeenCalledWith(expect.objectContaining({
-      _id: { $lt: new mongoose.Types.ObjectId(cursor) },
+      _id: { $nin: [], $lt: new mongoose.Types.ObjectId(cursor) },
       $or: [{ displayName: { $regex: "^a\\.b", $options: "i" } }, { username: { $regex: "^a\\.b", $options: "i" } }],
     }));
   });

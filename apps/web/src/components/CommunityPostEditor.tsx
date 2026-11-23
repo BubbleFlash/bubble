@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { COMMUNITY_POST_LENGTH, PLUS_POST_LENGTH, type MusicTrackDTO, type PostDTO } from "@commune/shared";
 import { useUpdateCommunityPost } from "../hooks/usePosts";
 import { useImageDraft } from "../hooks/useImageDraft";
@@ -6,6 +6,7 @@ import { assetUrl } from "../lib/api";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import EmojiInputButton from "./EmojiInputButton";
 import Icon from "./Icon";
+import TextareaResizeHandle from "./TextareaResizeHandle";
 
 export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; onClose: () => void }) {
   const [content, setContent] = useState(post.content);
@@ -17,6 +18,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
   const [musicOpen, setMusicOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const textId = useId();
   const imageDraft = useImageDraft();
   const [attachmentError, setAttachmentError] = useState("");
   const update = useUpdateCommunityPost(post.id);
@@ -45,12 +47,13 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
         ...(hideAuthor !== Boolean(post.hideAuthor) ? { hideAuthor } : {}),
       }, { onSuccess: onClose });
     }}>
-      <label>
-        Текст записи
-        <div className="emoji-input-field"><textarea ref={textRef} className="aero-input" rows={4} value={content} maxLength={Math.max(maxLength, post.content.length)} onChange={(event) => setContent(event.target.value)} disabled={update.isPending} />
+      <div>
+        <label htmlFor={textId}>Текст записи</label>
+        <div className="emoji-input-field"><textarea id={textId} ref={textRef} className="aero-input" rows={4} value={content} maxLength={Math.max(maxLength, post.content.length)} onChange={(event) => setContent(event.target.value)} disabled={update.isPending} />
           <EmojiInputButton field={textRef} value={content} onChange={setContent} maxLength={Math.max(maxLength, post.content.length)} disabled={update.isPending} />
+          <TextareaResizeHandle field={textRef} disabled={update.isPending} />
         </div>
-      </label>
+      </div>
       {content.trim() !== post.content && content.trim().length > maxLength && <p className="error">Текст должен содержать не более {maxLength} символов.</p>}
       {imageCount > 0 && <div className="image-draft">
         {images.map((url, index) => (
@@ -63,7 +66,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
           <div className="image-preview" key={image.id}>
             <img src={image.preview} alt="Предпросмотр вложения" />
             <button type="button" className="image-remove" aria-label="Удалить новое изображение" disabled={update.isPending} onClick={() => imageDraft.remove(image.id)}>×</button>
-            {image.pending && <span role="status">Загрузка…</span>}
+            {image.pending && <span role="status">{image.progress === undefined ? "Подготовка…" : `Загрузка ${image.progress}%`}</span>}
             {image.error && <p className="error" role="alert">{image.error} <button type="button" onClick={() => imageDraft.retry(image)}>Повторить</button></p>}
           </div>
         ))}

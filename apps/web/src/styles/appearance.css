@@ -391,6 +391,8 @@
 .aero-home .account-delete-button:is(:hover, :active):not(:disabled) { color: var(--aero-color-error-text); }
 .aero-home[data-custom-opacity] .aero-dialog.account-settings-dialog { background: var(--aero-gradient-glass); }
 .settings-panel:not([hidden]) { display: grid; gap: 8px; }
+.muted-user-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.muted-user-row > button { margin-left: auto; }
 .settings-panel .sound-settings, .settings-panel .push-settings { margin-bottom: 0; }
 .friends-privacy-field { display: grid; gap: 6px; justify-items: start; }
 .friends-privacy-field select { width: auto; max-width: 100%; }
@@ -409,6 +411,10 @@
 
 .unsaved-appearance-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .settings-tab-mobile { display: none; }
+@media (max-width: 600px) {
+  .aero-home .settings-tabs .tab { flex-basis: max-content; overflow-wrap: anywhere; }
+  .settings-tabs .settings-tab-full { min-width: 0; }
+}
 @media (max-width: 600px) {
   .settings-tabs .tab:has(.settings-tab-mobile) .settings-tab-full { display: none; }
   .settings-tab-mobile { display: inline; }

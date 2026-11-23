@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getPageScroller } from "../lib/scrollToTop";
 
 export default function BackToTop({ route }: { route: string }) {
   const scroller = useRef<Element | null>(null);
@@ -6,10 +7,10 @@ export default function BackToTop({ route }: { route: string }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const main = document.getElementById("main");
-    scroller.current = document.scrollingElement;
     const update = (event?: Event) => {
+      const page = getPageScroller();
       if (event?.target === main) scroller.current = main;
-      else if (!event || event.target === document || event.target === window) scroller.current = document.scrollingElement;
+      else if (!event || event.target === page || event.target === document || event.target === window) scroller.current = page;
       else return;
       const next = (scroller.current?.scrollTop ?? 0) > 480;
       if (next !== showing.current) {

@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import type { Page, PostDTO, UserSummaryDTO } from "@commune/shared";
 import { SEARCH_PAGE_SIZE } from "@commune/shared";
 import { Post } from "../models/Post.js";
+import { Follow } from "../models/Follow.js";
 import { User } from "../models/User.js";
 import { isPlusActive } from "../utils/plan.js";
 import { escapeRegex } from "../utils/regex.js";
@@ -11,7 +12,8 @@ import type { PopulatedPost } from "../utils/serializers.js";
 import { AUTHOR_FIELDS, COMMUNITY_FIELDS, readablePostFilter } from "../services/postAccess.js";
 import { presentPosts } from "./postController.js";
 import { badRequest } from "../utils/errors.js";
-import { onlineUsers } from "../services/realtime.js";
+import { onlineUsers, onlineUserSnapshot } from "../services/realtime.js";
+import { PeopleSearchSnapshot } from "../models/PeopleSearchSnapshot.js";
 
 interface SearchQuery {
   q: string;
@@ -62,23 +64,43 @@ export async function users(_req: Request, res: Response) {
 }
 
 /** Browse all available profiles, with an optional name prefix and stable cursor. */
-export async function people(_req: Request, res: Response) {
+export async function people(req: Request, res: Response) {
   const { q, cursor, limit } = res.locals.query as { q: string; cursor?: string; limit: number };
-  if (cursor && !mongoose.isObjectIdOrHexString(cursor)) throw badRequest("Invalid cursor");
+  const match = cursor && /^([a-f0-9]{24})\|([01])\|([a-f0-9]{24})$/i.exec(cursor);
+  if (cursor && !match) throw badRequest("Invalid cursor");
+  const snapshot = match
+    ? await PeopleSearchSnapshot.findOne({ _id: match[1], user: req.userId, query: q, expiresAt: { $gt: new Date() } }).lean()
+    : await PeopleSearchSnapshot.create({ user: req.userId, query: q, online: await onlineUserSnapshot(), expiresAt: new Date(Date.now() + 30 * 60_000) });
+  if (!snapshot) throw badRequest("Search expired. Refresh the page.");
+  const phase = match?.[2] === "1" ? 1 : 0;
+  const boundary = match?.[3];
   const prefix = { $regex: `^${escapeRegex(q)}`, $options: "i" };
-  const rows = await User.find({
+  const filter = {
     ...usableAccountFilter(),
     ...(q ? { $or: [{ displayName: prefix }, { username: prefix }] } : {}),
-    ...(cursor ? { _id: { $lt: new mongoose.Types.ObjectId(cursor) } } : {}),
-  }).sort({ _id: -1 }).limit(limit + 1)
-    .select("username displayName bio avatarUrl avatarFrame plusUntil").lean();
+  };
+  const select = "username displayName bio avatarUrl avatarFrame plusUntil";
+  const fetchPhase = (current: number, before: string | undefined, count: number) => User.find({ ...filter,
+    _id: { [current === 0 ? "$in" : "$nin"]: snapshot.online, ...(before ? { $lt: new mongoose.Types.ObjectId(before) } : {}) },
+  }).sort({ _id: -1 }).limit(count).select(select).lean();
+  const first = await fetchPhase(phase, boundary, limit + 1);
+  const rest = phase === 0 && first.length <= limit ? await fetchPhase(1, undefined, limit + 1 - first.length) : [];
+  const rows = [...first, ...rest];
   const items = rows.slice(0, limit);
-  const online = await onlineUsers(items.map((user) => String(user._id)));
+  const ids = items.map((user) => user._id);
+  const [online, outgoing, incoming] = await Promise.all([
+    onlineUsers(ids.map(String)),
+    Follow.find({ follower: req.userId, following: { $in: ids } }).select("following").lean(),
+    Follow.find({ following: req.userId, follower: { $in: ids }, requestDeclined: { $ne: true } }).select("follower").lean(),
+  ]);
+  const followed = new Set(outgoing.map((follow) => String(follow.following)));
+  const followers = new Set(incoming.map((follow) => String(follow.follower)));
   const body: Page<UserSummaryDTO> = {
     items: items.map((u) => ({ id: u._id.toString(), online: online.has(String(u._id)), username: u.username,
       displayName: u.displayName ?? undefined, bio: u.bio ?? "", avatarUrl: u.avatarUrl ?? null,
-      avatarFrame: u.avatarFrame ?? undefined, plus: isPlusActive(u.plusUntil) })),
-    nextCursor: rows.length > limit ? String(items[items.length - 1]!._id) : null,
+      avatarFrame: u.avatarFrame ?? undefined, plus: isPlusActive(u.plusUntil),
+      followedByMe: followed.has(String(u._id)), followsMe: followers.has(String(u._id)) })),
+    nextCursor: rows.length > limit ? `${snapshot._id}|${phase === 1 || items.length > first.length ? 1 : 0}|${items[items.length - 1]!._id}` : null,
   };
   res.json(body);
 }

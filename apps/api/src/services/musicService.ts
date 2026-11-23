@@ -31,7 +31,8 @@ export async function listPickerMusic(userId: string, query: { scope: "all" | "m
   const addedById = new Map(entries.map((entry) => [String(entry.trackId), entry.createdAt]));
   const tracks = page.map((track) => {
     const added = query.scope === "mine" ? (track as { libraryAddedAt?: Date }).libraryAddedAt : addedById.get(String(track._id));
-    return { id: track._id.toString(), title: track.title, artist: track.artist, duration: track.duration ?? null, mimeType: track.mimeType, size: track.size, addedAt: added?.toISOString() ?? null, addedByMe: query.scope === "mine" || Boolean(added) };
+    const deadline = track.createdAt && String(track.uploadedBy) === userId ? new Date(new Date(track.createdAt).getTime() + 5 * 60_000) : undefined;
+    return { id: track._id.toString(), title: track.title, artist: track.artist, duration: track.duration ?? null, mimeType: track.mimeType, size: track.size, addedAt: added?.toISOString() ?? null, addedByMe: query.scope === "mine" || Boolean(added), ...(deadline && deadline.getTime() > Date.now() ? { editableUntil: deadline.toISOString() } : {}) };
   });
   const last = page[page.length - 1];
   return { tracks, nextCursor: rows.length > 50 && last ? ("cursorId" in last ? last.cursorId : last._id).toString() : null };

@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useMemo, useState, type MouseEvent } from "react";
+import { useId, useLayoutEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { displayNameOf, notificationTypes, type NotificationDTO, type NotificationType } from "@commune/shared";
 import { useNotificationPreferences, useNotifications } from "../hooks/useSocial";
@@ -7,11 +7,15 @@ import { notificationLabels, notificationTarget, notificationText } from "../lib
 import { timeAgo } from "./PostCard";
 import { RowsSkeleton } from "./Skeleton";
 import Avatar from "./Avatar";
+import Icon from "./Icon";
 
-export default function NotificationList({ compact, onItems, onSelect }: {
+const typeIcons = { follow: "users", like: "heart", comment: "comment", repost: "repost" } as const;
+
+export default function NotificationList({ compact, onItems, onSelect, filterAction }: {
   compact?: boolean;
   onItems: (items: NotificationDTO[]) => void;
   onSelect?: (item: NotificationDTO, event: MouseEvent<HTMLAnchorElement>) => void;
+  filterAction?: ReactNode;
 }) {
   const filterId = useId();
   const [type, setType] = useState<NotificationType>();
@@ -45,6 +49,7 @@ export default function NotificationList({ compact, onItems, onSelect }: {
             <option key={value} value={value}>{notificationLabels[value]}</option>
           ))}
         </select>
+        {filterAction}
       </div>
       <div className={compact ? "notification-list notification-list-compact" : "notification-list"}>
         {list.isLoading && <RowsSkeleton count={compact ? 3 : 5} avatar={36} card />}
@@ -57,19 +62,18 @@ export default function NotificationList({ compact, onItems, onSelect }: {
           </p>
         )}
         {items.map((item) => (
-          <Link
+          <div
             key={item.id}
-            to={notificationTarget(item)}
             className={`card notification${item.read ? "" : " unread"}`}
             aria-description={item.read ? "Прочитано" : "Не прочитано"}
-            onClick={(event) => onSelect?.(item, event)}
           >
+            <Link className="notification-target" to={notificationTarget(item)} aria-label={`${displayNameOf(item.actor)} ${notificationText(item)}`} onClick={(event) => onSelect?.(item, event)} />
             <span className="row">
-              <Avatar username={item.actor.username} displayName={item.actor.displayName} size={24} trackOnline />
-              <span><strong>{displayNameOf(item.actor)}</strong> {notificationText[item.type]}</span>
+              <span className="notification-avatar"><Avatar username={item.actor.username} displayName={item.actor.displayName} url={item.actor.avatarUrl} frame={item.actor.avatarFrame} size={24} trackOnline /><span className={`notification-type notification-type--${item.type}`} title={notificationLabels[item.type]}><Icon name={typeIcons[item.type]} size={12} /></span></span>
+              <span><Link className="notification-actor" to={`/u/${encodeURIComponent(item.actor.username)}`} onClick={(event) => onSelect?.(item, event)}><strong>{displayNameOf(item.actor)}</strong></Link> {notificationText(item)}</span>
             </span>
             <time className="muted small" dateTime={item.createdAt}>{timeAgo(item.createdAt)}</time>
-          </Link>
+          </div>
         ))}
         {list.isFetchingNextPage && <RowsSkeleton count={3} avatar={36} card />}
         {list.hasNextPage && <div ref={sentinel} aria-hidden="true" />}

@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from "react";
 import type { MusicTrackDTO } from "@commune/shared";
 import { api } from "../lib/api";
-import { readMusicSession, writeMusicSession, type RepeatMode } from "../lib/musicSession";
+import { readMusicSession, writeMusicSession, type MusicSession, type RepeatMode } from "../lib/musicSession";
 import { useAuth } from "./auth";
 
 interface MusicState {
@@ -24,6 +24,7 @@ interface MusicState {
   error: string | null;
   playTrack: (track: MusicTrackDTO, queue?: MusicTrackDTO[], source?: string) => Promise<void>;
   setCurrentQueue: (queue: MusicTrackDTO[], source?: string) => void;
+  renameTrack: (id: string, title: string, artist: string) => void;
   togglePlayback: () => Promise<void>;
   pause: () => void;
   seek: (time: number) => void;
@@ -65,6 +66,8 @@ export function MusicPlayerProvider({
   );
   const originalQueueRef = useRef<MusicTrackDTO[]>([]);
   const endedTrackRef = useRef<() => void>(() => {});
+  const broadcastMusic = useRef<(message: { kind: "play" | "request" } | { kind: "state"; session: MusicSession }) => void>(() => {});
+  const sharedMusic = useRef<MusicSession | null>(null);
 
   const [track, setTrack] = useState<MusicTrackDTO | null>(null);
   const [queue, setQueue] = useState<MusicTrackDTO[]>([]);
@@ -245,6 +248,71 @@ export function MusicPlayerProvider({
     }
   }, [isCurrentAccount]);
 
+  // Only one tab plays audio; other tabs mirror its selected track and queue.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const key = "bubble-music-playback-v1";
+    const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(key) : undefined;
+    const receive = (message: { kind: "play" | "request" } | { kind: "state"; session: MusicSession }) => {
+      if (message?.kind === "request") {
+        if (sharedMusic.current && !audio.paused) broadcastMusic.current({ kind: "state", session: { ...sharedMusic.current, position: audio.currentTime } });
+        return;
+      }
+      if (message?.kind !== "play" && message?.kind !== "state") return;
+      if (message.kind === "state" && (!accountId || !isCurrentAccount(accountId) || message.session?.accountId !== accountId)) return;
+      requestIdRef.current++;
+      resumeRef.current = false;
+      setIsLoading(false);
+      audio.pause();
+      if (message.kind !== "state") return;
+      const saved = message.session;
+      const selected = saved.queue.find((item) => item.id === saved.trackId);
+      if (!selected) return;
+      queueRef.current = saved.queue;
+      originalQueueRef.current = saved.originalQueue;
+      queueIndexRef.current = saved.queue.indexOf(selected);
+      setQueue(saved.queue);
+      setQueueSource(saved.source);
+      setIsShuffled(saved.shuffled);
+      setRepeatMode(saved.repeat);
+      void loadTrack(selected, saved.position, false, true);
+    };
+    const onMessage = (event: MessageEvent) => receive(event.data);
+    const onStorage = (event: StorageEvent) => {
+      if (!channel && event.key === key && event.newValue) {
+        try { receive(JSON.parse(event.newValue).message); } catch { /* Ignore malformed messages. */ }
+      }
+    };
+    broadcastMusic.current = (message) => {
+      if (channel) channel.postMessage(message);
+      else {
+        try { localStorage.setItem(key, JSON.stringify({ message, nonce: Math.random() })); localStorage.removeItem(key); } catch { /* Storage is optional. */ }
+      }
+    };
+    const onPlay = () => broadcastMusic.current({ kind: "play" });
+    channel?.addEventListener("message", onMessage);
+    window.addEventListener("storage", onStorage);
+    audio.addEventListener("play", onPlay);
+    broadcastMusic.current({ kind: "request" });
+    return () => {
+      broadcastMusic.current = () => {};
+      audio.removeEventListener("play", onPlay);
+      window.removeEventListener("storage", onStorage);
+      channel?.close();
+    };
+  }, [accountId, isCurrentAccount, loadTrack]);
+
+  useEffect(() => {
+    if (!accountId || !track || !isPlaying || activeAccount.current !== accountId) { sharedMusic.current = null; return; }
+    const session: MusicSession = {
+      accountId, trackId: track.id, queue: queueRef.current, originalQueue: originalQueueRef.current,
+      source: queueSource, position: positionRef.current, resume: false, shuffled: isShuffled, repeat: repeatMode,
+    };
+    sharedMusic.current = session;
+    broadcastMusic.current({ kind: "state", session });
+  }, [accountId, track, queue, queueSource, isPlaying, isShuffled, repeatMode]);
+
   useEffect(() => {
     if (!accountId) {
       // A cached profile may be displayed while its session is still being checked.
@@ -415,8 +483,8 @@ export function MusicPlayerProvider({
       return;
     }
 
-    if (currentIndex > 0) {
-      const previousIndex = currentIndex - 1;
+    if (currentIndex > 0 || (repeatMode === 1 && queue.length > 0)) {
+      const previousIndex = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
       const track = queue[previousIndex];
       if (!track) return;
 
@@ -425,7 +493,7 @@ export function MusicPlayerProvider({
     } else {
       audio.currentTime = 0;
     }
-  }, []);
+  }, [repeatMode]);
 
   const toggleShuffle = useCallback(() => {
     const currentTrack = track;
@@ -463,6 +531,14 @@ export function MusicPlayerProvider({
 
   const cycleRepeatMode = useCallback(() => {
     setRepeatMode((previous) => ((previous + 1) % 3) as RepeatMode);
+  }, []);
+
+  const renameTrack = useCallback((id: string, title: string, artist: string) => {
+    const update = (item: MusicTrackDTO) => item.id === id ? { ...item, title, artist } : item;
+    queueRef.current = queueRef.current.map(update);
+    originalQueueRef.current = originalQueueRef.current.map(update);
+    setQueue(queueRef.current);
+    setTrack((current) => current ? update(current) : null);
   }, []);
 
   const setCurrentQueue = useCallback((queue: MusicTrackDTO[], source?: string) => {
@@ -551,6 +627,7 @@ export function MusicPlayerProvider({
       error,
       playTrack,
       setCurrentQueue,
+      renameTrack,
       togglePlayback,
       pause,
       seek,
@@ -574,6 +651,7 @@ export function MusicPlayerProvider({
       error,
       playTrack,
       setCurrentQueue,
+      renameTrack,
       togglePlayback,
       pause,
       seek,

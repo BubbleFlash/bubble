@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../store/auth";
 import GoogleButton, { GOOGLE_CLIENT_ID } from "./GoogleButton";
+import Icon from "./Icon";
 
 export default function AuthForm({ mode, compact = false }: { mode: "login" | "register"; compact?: boolean }) {
   const { user, login, register, loginWithGoogle } = useAuth();
@@ -14,6 +15,7 @@ export default function AuthForm({ mode, compact = false }: { mode: "login" | "r
   const [fields, setFields] = useState({ username: "", email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [registrationSent, setRegistrationSent] = useState(false);
   const [answer, setAnswer] = useState("");
   const formId = useId();
@@ -112,7 +114,8 @@ export default function AuthForm({ mode, compact = false }: { mode: "login" | "r
         <label>
 
           ID профиля
-          <input value={fields.username} onChange={set("username")} autoComplete="username" />
+          <input value={fields.username} onChange={set("username")} autoComplete="username" aria-describedby={`${formId}-username-help`} />
+          <small id={`${formId}-username-help`} className="muted">ID — уникальный адрес профиля, его нельзя изменить. Отображаемый ник можно изменить в профиле.</small>
         </label>
       )}
       <label>
@@ -123,12 +126,15 @@ export default function AuthForm({ mode, compact = false }: { mode: "login" | "r
       <label>
 
         Пароль
+        <span className="auth-password">
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           value={fields.password}
           onChange={set("password")}
           autoComplete={mode === "login" ? "current-password" : "new-password"}
         />
+        <button type="button" className="auth-password__toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"} aria-pressed={showPassword} title={showPassword ? "Скрыть пароль" : "Показать пароль"}><Icon name={showPassword ? "eye-off" : "eye"} size={20} /></button>
+        </span>
       </label>
       {notice && mode === "login" && <p className="notice">{notice}</p>}
       {mode === "register" && (challenge || captcha.isFetching || captcha.isError) && (

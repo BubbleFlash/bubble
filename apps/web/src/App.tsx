@@ -271,11 +271,13 @@ export default function App() {
   }, [onNotificationsPage, userId, finish]);
   const projectLanding = ["/about", "/rules", "/explore", "/verify-email", ...AUTH_PATHS].includes(pathname) || (!user && pathname === "/");
   const signedIn = Boolean(user);
+  const containedScroll = signedIn && !projectLanding && /\bAndroid\b.*\bFirefox\//.test(navigator.userAgent);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
   const [opacityPreview, setOpacityPreview] = useState<number>();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const homeRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const profileName = matchPath("/u/:username", pathname)?.params.username;
   const visitingProfile = Boolean(user && profileName && profileName.toLowerCase() !== user.username.toLowerCase());
@@ -358,14 +360,42 @@ export default function App() {
   }, [projectLanding, pathname]);
   useLayoutEffect(() => {
     const home = homeRef.current;
+    const dock = dockRef.current;
     const nav = navRef.current;
-    if (!home || !nav) return;
-    const update = () => home.style.setProperty("--aero-bottom-nav-height", `${nav.getBoundingClientRect().height}px`);
+    if (!home || !dock || !nav) return;
+    const update = () => {
+      home.style.setProperty("--aero-bottom-nav-height", `${nav.getBoundingClientRect().height}px`);
+      const dockHeight = dock.getBoundingClientRect().height;
+      if (dockHeight) home.style.setProperty("--aero-bottom-dock-height", `${dockHeight}px`);
+      else home.style.removeProperty("--aero-bottom-dock-height");
+    };
     update();
     const observer = new ResizeObserver(update);
+    observer.observe(dock);
     observer.observe(nav);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      home.style.removeProperty("--aero-bottom-nav-height");
+      home.style.removeProperty("--aero-bottom-dock-height");
+    };
   }, [projectLanding, signedIn]);
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    if (!home || !containedScroll) return;
+    const firefoxWindow = window as Window & { mozInnerScreenY?: number };
+    const update = () => {
+      const top = firefoxWindow.mozInnerScreenY;
+      if (top === undefined) return;
+      const outsideViewport = Math.max(0, Math.ceil(window.screen.height - top - window.innerHeight));
+      home.style.setProperty("--aero-android-bottom-gap", `${outsideViewport}px`);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      home.style.removeProperty("--aero-android-bottom-gap");
+    };
+  }, [containedScroll]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
   const guestLanding = projectLanding;
@@ -381,6 +411,7 @@ export default function App() {
       className="aero-app aero-home"
       ref={homeRef}
       data-theme="aero-blue"
+      data-aero-contained-scroll={containedScroll || undefined}
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
       data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
@@ -410,9 +441,11 @@ export default function App() {
           </main>
           {!wide && !guestLanding && <RightRail />}
         </div>
-        {!projectLanding && <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />}
         {!wide && <BackToTop route={pathname} />}
-        {!projectLanding && <MusicPlayer />}
+        {!projectLanding && <div className="aero-bottom-dock" ref={dockRef}>
+          <MusicPlayer />
+          <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
+        </div>}
       </div>
     </div>
   );

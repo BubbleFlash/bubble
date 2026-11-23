@@ -352,7 +352,10 @@ h3,
   flex-wrap: wrap;
   align-items: center;
   gap: 2px 6px;
+  font-size: 13px;
 }
+
+.post-meta .post-date { flex-basis: 100%; }
 
 .user-link {
   color: var(--text);
@@ -361,7 +364,7 @@ h3,
 
 .post-body {
   margin: 4px 0 10px;
-  font-size: 15.5px;
+  font-size: 14px;
   line-height: 1.55;
 }
 
@@ -385,7 +388,7 @@ h3,
 .post-actions .btn-ghost {
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -617,6 +620,11 @@ h3,
 .auth label {
   font-size: 0.85rem;
 }
+
+.auth-password { position: relative; display: block; width: 100%; }
+.auth .auth-password input { box-sizing: border-box; width: 100%; padding-right: 44px; }
+.auth-password__toggle { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 40px; height: 100%; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.auth-password__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .auth .btn.block {
   min-height: 48px;
@@ -892,11 +900,11 @@ h3,
   .tab-link.active::before {
     content: "";
     position: absolute;
-    top: -7px;
+    bottom: -6px;
     left: 32%;
     right: 32%;
     height: 3px;
-    border-radius: 0 0 3px 3px;
+    border-radius: 3px 3px 0 0;
     background: var(--gold);
   }
 

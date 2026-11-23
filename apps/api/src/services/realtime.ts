@@ -72,6 +72,11 @@ export async function onlineUsers(ids: string[]): Promise<Set<string>> {
   return new Set(responses.flatMap((response) => Array.isArray(response?.online) ? response.online : []));
 }
 
+export async function onlineUserSnapshot(): Promise<string[]> {
+  const result = await post<{ online?: string[] }>("/internal/online-list", {});
+  return Array.isArray(result?.online) ? result.online.filter((id) => /^[a-f0-9]{24}$/i.test(id)) : [];
+}
+
 /** Number of distinct connected accounts; null means realtime is unavailable. */
 export async function onlineCount(): Promise<number | null> {
   const res = await post<{ count?: unknown }>("/internal/online-count", {});

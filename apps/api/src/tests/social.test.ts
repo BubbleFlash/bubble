@@ -203,6 +203,21 @@ describe("reading specific notifications", () => {
       expect(res.status).toBe(400);
     }
   });
+
+  it("marks all categories through the server request time", async () => {
+    const update = vi.spyOn(Notification, "updateMany").mockResolvedValue({ modifiedCount: 0 } as never);
+    const before = Date.now();
+    try {
+      const res = await request(app).post("/api/notifications/read").set(authorization).send({ all: true });
+      expect(res.status).toBe(204);
+      const filter = update.mock.calls[0]![0] as { user: string; read: boolean; createdAt: { $lte: Date }; type?: unknown };
+      expect(filter.user).toBe(user);
+      expect(filter.read).toBe(false);
+      expect(filter.type).toBeUndefined();
+      expect(filter.createdAt.$lte.getTime()).toBeGreaterThanOrEqual(before);
+      expect(filter.createdAt.$lte.getTime()).toBeLessThanOrEqual(Date.now());
+    } finally { update.mockRestore(); }
+  });
 });
 
 describe("notification pagination", () => {

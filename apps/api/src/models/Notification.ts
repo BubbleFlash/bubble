@@ -8,6 +8,8 @@ const notificationSchema = new Schema({
   actor: { type: Schema.Types.ObjectId, ref: "User", required: true },
   type: { type: String, enum: notificationTypes, required: true },
   post: { type: Schema.Types.ObjectId, ref: "Post", default: null },
+  comment: { type: Schema.Types.ObjectId, ref: "Comment" },
+  postComment: { type: Boolean, default: false },
   read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });

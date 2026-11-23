@@ -11,10 +11,12 @@ export default function MusicAttachmentPicker({
   selected,
   onChange,
   onClose,
+  maxSelection = 10,
 }: {
   selected: MusicTrackDTO[];
   onChange: (tracks: MusicTrackDTO[]) => void;
   onClose: () => void;
+  maxSelection?: number;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -118,7 +120,7 @@ export default function MusicAttachmentPicker({
             Вся музыка
           </button>
         </div>
-        <p aria-live="polite">Выбрано {selected.length}/10</p>
+        <p aria-live="polite">Выбрано {selected.length}/{maxSelection}</p>
         <div className="music-attachment-picker__scroll" tabIndex={0} aria-label="Список музыки">
         {query.isLoading && <p>Загрузка музыки...</p>}
         {query.isError && (
@@ -131,7 +133,7 @@ export default function MusicAttachmentPicker({
         )}
         {query.isSuccess && !tracks.length && <p>Ничего не найдено.</p>}
         <div className="music-attachment-picker__list">
-          <MusicTrackList tracks={tracks} source={`picker:${user?.id}:${scope}`} selection={{ selected, onChange }} />
+          <MusicTrackList tracks={tracks} source={`picker:${user?.id}:${scope}`} selection={{ selected, onChange, max: maxSelection }} />
         </div>
         {query.hasNextPage && (
           <button
