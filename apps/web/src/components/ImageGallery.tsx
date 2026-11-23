@@ -13,7 +13,7 @@ function GalleryImage({ src, alt, eager = false }: { src: string; alt: string; e
   </span>;
 }
 
-export default function ImageGallery({ images, alt }: { images: string[]; alt: string }) {
+export default function ImageGallery({ images, alt, mobileCarouselFrom = 3 }: { images: string[]; alt: string; mobileCarouselFrom?: number }) {
   const [index, setIndex] = useState<number | null>(null);
   const [slide, setSlide] = useState(0);
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 600px)").matches);
@@ -96,7 +96,7 @@ export default function ImageGallery({ images, alt }: { images: string[]; alt: s
     if (Math.abs(dx) >= 45 && Math.abs(dx) > Math.abs(dy) * 1.2) action(dx < 0 ? 1 : -1);
   };
   return <>
-    {images.length > (mobile ? 2 : 4) ? <div className="image-gallery image-gallery--carousel" onPointerDown={mouseDown} onPointerMove={mouseMove} onPointerUp={(event) => mouseUp(event, moveSlide)} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={startSwipe} onTouchEnd={(event) => endSwipe(event, moveSlide)} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
+    {images.length >= (mobile ? mobileCarouselFrom : 5) ? <div className="image-gallery image-gallery--carousel" onPointerDown={mouseDown} onPointerMove={mouseMove} onPointerUp={(event) => mouseUp(event, moveSlide)} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={startSwipe} onTouchEnd={(event) => endSwipe(event, moveSlide)} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
       {images.map((url, i) => <button type="button" className="image-gallery__item" key={`${url}-${i}`} hidden={i !== activeSlide} onClick={() => setIndex(i)} aria-label={`Открыть изображение ${i + 1} из ${images.length}`}><GalleryImage src={url} alt={alt} eager /></button>)}
       <span className="image-gallery__count" aria-live="polite">{activeSlide + 1} / {images.length}</span>
       <button type="button" className="image-gallery__zone image-gallery__zone--previous" aria-label="Предыдущее фото" onClick={() => moveSlide(-1)}><span className="image-gallery__arrow" aria-hidden="true">‹</span></button>

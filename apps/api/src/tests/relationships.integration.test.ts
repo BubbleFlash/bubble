@@ -66,18 +66,78 @@ integration("relationships with isolated local MongoDB", () => {
     expect(await Follow.countDocuments({ follower: viewer, following: owner })).toBe(1);
   });
 
-  it("shows online friends ahead of offline friends across pages", async () => {
+  it("declines an incoming request without changing an established friendship", async () => {
+    await Follow.deleteMany({ $or: [{ follower: owner, following: viewer }, { follower: viewer, following: owner }] });
+    await Follow.create({ follower: owner, following: viewer });
+    await notify({ user: viewer, actor: String(owner), type: "follow" });
+    expect((await request(app).delete("/api/users/owner/friend-request").set(auth)).status).toBe(204);
+    expect(await Follow.findOne({ follower: owner, following: viewer }).lean()).toMatchObject({ requestDeclined: true });
+    expect(await Notification.exists({ user: viewer, actor: owner, type: "follow" })).toBeNull();
+    expect((await request(app).get("/api/users/me/relationships?type=incoming").set(auth)).body.items).toHaveLength(0);
+    const senderAuth = { Authorization: `Bearer ${signAccessToken(String(owner))}` };
+    expect((await request(app).get("/api/users/viewer").set(senderAuth)).body.followedByMe).toBe(true);
+    await request(app).delete("/api/users/viewer/follow").set(senderAuth);
+    expect((await request(app).get("/api/users/viewer").set(senderAuth)).body.followedByMe).toBe(false);
+    await Follow.create([{ follower: owner, following: viewer }, { follower: viewer, following: owner }]);
+    expect((await request(app).delete("/api/users/owner/friend-request").set(auth)).status).toBe(403);
+    expect(await Follow.countDocuments({ $or: [{ follower: owner, following: viewer }, { follower: viewer, following: owner }] })).toBe(2);
+    await Follow.deleteMany({ $or: [{ follower: owner, following: viewer }, { follower: viewer, following: owner }] });
+  });
+
+  it("keeps online people first across pages when their presence changes", async () => {
+    const snapshot = vi.spyOn(realtime, "onlineUserSnapshot").mockResolvedValue([String(owner), String(third)]);
+    const first = await request(app).get("/api/search/people?limit=1").set(auth);
+    expect(first.status).toBe(200);
+    expect([String(owner), String(third)]).toContain(first.body.items[0].id);
+    snapshot.mockResolvedValue([String(viewer)]);
+    const second = await request(app).get("/api/search/people").query({ limit: 1, cursor: first.body.nextCursor }).set(auth);
+    const thirdPage = await request(app).get("/api/search/people").query({ limit: 1, cursor: second.body.nextCursor }).set(auth);
+    expect(new Set([first.body.items[0].id, second.body.items[0].id])).toEqual(new Set([String(owner), String(third)]));
+    expect(thirdPage.body.items[0].id).toBe(String(viewer));
+    expect(thirdPage.body.nextCursor).toBeNull();
+  });
+
+  it("shows online friends first in the preview without presence affecting pagination", async () => {
     await Follow.insertMany([
       { follower: viewer, following: owner }, { follower: owner, following: viewer },
       { follower: third, following: owner }, { follower: owner, following: third },
     ], { ordered: false }).catch((error: { code?: number }) => { if (error.code !== 11000) throw error; });
-    vi.spyOn(realtime, "onlineUsers").mockResolvedValue(new Set([String(viewer)]));
+    const presence = vi.spyOn(realtime, "onlineUsers").mockResolvedValue(new Set([String(viewer)]));
+    const preview = await request(app).get("/api/users/owner/friends?limit=1&preview=1").set(auth);
+    expect(preview.body).toMatchObject({ items: [{ id: String(viewer), online: true }], nextCursor: null });
     const first = await request(app).get("/api/users/owner/friends?limit=1").set(auth);
     expect(first.status).toBe(200);
-    expect(first.body.items[0]).toMatchObject({ id: String(viewer), online: true });
+    presence.mockResolvedValue(new Set([String(third)]));
     const second = await request(app).get("/api/users/owner/friends").query({ limit: 1, cursor: first.body.nextCursor }).set(auth);
-    expect(second.body.items[0]).toMatchObject({ id: String(third), online: false });
+    expect(second.status).toBe(200);
+    expect(new Set([first.body.items[0]?.id, second.body.items[0]?.id])).toEqual(new Set([String(viewer), String(third)]));
+    expect(second.body.nextCursor).toBeNull();
     await Follow.deleteMany({ $or: [{ follower: owner, following: { $in: [viewer, third] } }, { follower: third, following: owner }] });
+  });
+
+  it("counts and displays an old duplicate pair only once", async () => {
+    const people = await User.create([
+      { username: "duplicateowner", email: "duplicateowner@example.invalid", passwordHash: "test" },
+      { username: "duplicatefriend", email: "duplicatefriend@example.invalid", passwordHash: "test" },
+    ]);
+    const [profile, friend] = people.map((person) => person._id) as [mongoose.Types.ObjectId, mongoose.Types.ObjectId];
+    const session = { Authorization: `Bearer ${signAccessToken(String(profile))}` };
+    const createdAt = new Date();
+    await Follow.collection.dropIndex("follower_1_following_1");
+    try {
+      await Follow.collection.insertMany([
+        { follower: profile, following: friend, createdAt },
+        { follower: profile, following: friend, createdAt },
+        { follower: friend, following: profile, createdAt },
+      ]);
+      const preview = await request(app).get("/api/users/duplicateowner/friends?preview=1").set(session);
+      expect(preview.body.items.map((person: { id: string }) => person.id)).toEqual([String(friend)]);
+      expect((await request(app).get("/api/users/duplicateowner/friends/access").set(session)).body.count).toBe(1);
+      expect((await request(app).get("/api/users/me/relationships/counts").set(session)).body.friends).toBe(1);
+    } finally {
+      await Follow.deleteMany({ $or: [{ follower: profile }, { following: profile }] });
+      await Follow.createIndexes();
+    }
   });
 
   it("looks up avatar presence in one authenticated request", async () => {

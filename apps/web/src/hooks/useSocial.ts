@@ -59,6 +59,12 @@ export function useToggleFollow(username: string) {
       void qc.invalidateQueries({ queryKey: ["friends-access"] });
       void qc.invalidateQueries({ queryKey: ["friends-list"] });
       void qc.invalidateQueries({ queryKey: ["relationships"] });
+      qc.setQueriesData<InfiniteData<Page<UserSummaryDTO>>>({ queryKey: ["people", user?.id] }, (data) => data && ({
+        ...data,
+        pages: data.pages.map((page) => ({ ...page, items: page.items.map((person) =>
+          person.id === profile.id ? { ...person, followedByMe: profile.followedByMe, followsMe: profile.followsMe } : person) })),
+      }));
+      void qc.invalidateQueries({ queryKey: ["people", user?.id] });
       void qc.invalidateQueries({ queryKey: ["profile-music"] });
     },
     onError: () => {
@@ -67,6 +73,17 @@ export function useToggleFollow(username: string) {
       void qc.invalidateQueries({ queryKey: ["friends-list"] });
       void qc.invalidateQueries({ queryKey: ["feed", "following"] });
       void qc.invalidateQueries({ queryKey: ["relationships"] });
+      void qc.invalidateQueries({ queryKey: ["people", user?.id] });
+    },
+  });
+}
+
+export function useDeclineFriendRequest(username: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>(`/users/${encodeURIComponent(username)}/friend-request`, { method: "DELETE" }),
+    onSettled: () => {
+      for (const key of [["relationships"], ["notifications"], ["unread-count"], ["people"], ["profile"]]) void qc.invalidateQueries({ queryKey: key });
     },
   });
 }
@@ -83,10 +100,10 @@ export function useFriendsAccess(username: string) {
   });
 }
 
-export function useFriends(username: string, q: string, enabled: boolean, limit = 20) {
+export function useFriends(username: string, q: string, enabled: boolean, limit = 20, preview = false) {
   const { user } = useAuth();
   return useInfiniteQuery({
-    queryKey: ["friends-list", user?.id, username.toLowerCase(), q, limit],
+    queryKey: ["friends-list", user?.id, username.toLowerCase(), q, limit, preview],
     enabled: Boolean(user && enabled),
     gcTime: 0,
     staleTime: 0,
@@ -99,6 +116,7 @@ export function useFriends(username: string, q: string, enabled: boolean, limit 
           q,
           cursor: pageParam,
           limit: String(limit),
+          preview: preview ? "1" : undefined,
         }),
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
@@ -237,6 +255,20 @@ export function useReadNotifications() {
       }
       await Promise.all(requests);
     },
+    onSettled: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["notifications", user?.id] }),
+        qc.invalidateQueries({ queryKey: ["unread-count"] }),
+      ]);
+    },
+  });
+}
+
+export function useReadAllNotifications() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>("/notifications/read", { method: "POST", body: { all: true } }),
     onSettled: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["notifications", user?.id] }),

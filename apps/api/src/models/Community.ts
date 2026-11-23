@@ -5,7 +5,7 @@ const communitySchema = new Schema(
   {
     // URL-safe, lowercase, unique: /c/<slug>
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    name: { type: String, required: true, trim: true, maxlength: 40 },
+    name: { type: String, required: true, trim: true, maxlength: 48 },
     description: { type: String, default: "", maxlength: 280 },
     avatarUrl: { type: String, default: null },
     pinnedPost: { type: Schema.Types.ObjectId, ref: "Post" },

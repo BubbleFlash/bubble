@@ -19,6 +19,8 @@ import {
   listPickerMusic,
 } from "../services/musicService.js";
 import { UserMusic } from "../models/UserMusic.js";
+import { MusicTrack } from "../models/MusicTrack.js";
+import { forbidden } from "../utils/errors.js";
 
 export async function libraryStatus(req: Request, res: Response) {
   res.set("Cache-Control", "private, no-store");
@@ -53,6 +55,16 @@ export async function completeUpload(req: Request, res: Response) {
   const body = await completeMusicUpload(req.userId!, uploadId, duration);
 
   res.status(201).json(body);
+}
+
+export async function rename(req: Request, res: Response) {
+  const track = await MusicTrack.findOneAndUpdate(
+    { _id: req.params.id, uploadedBy: req.userId!, createdAt: { $gt: new Date(Date.now() - 5 * 60_000) } },
+    { $set: { title: req.body.title, artist: req.body.artist } },
+    { new: true, runValidators: true },
+  ).lean();
+  if (!track) throw forbidden("The editing period has expired or you are not the uploader");
+  res.json({ id: track._id.toString(), title: track.title, artist: track.artist });
 }
 
 export async function list(req: Request, res: Response) {

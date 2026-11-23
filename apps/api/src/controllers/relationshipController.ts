@@ -15,6 +15,7 @@ type Query = {
   q: string;
   cursor?: string;
   limit: number;
+  preview?: "1";
 };
 type Row = {
   _id: Types.ObjectId;
@@ -50,11 +51,21 @@ function relationshipPipeline(
   const anchor = inbound ? "following" : "follower";
   const target = inbound ? "follower" : "following";
   const match: Record<string, unknown> = { [anchor]: owner };
+  if (type === "incoming") match.requestDeclined = { $ne: true };
+  if (type === "friends") match[target] = { $ne: owner };
   if (cursor !== undefined && type !== "friends") {
     const { createdAt, id } = parseCursor(cursor);
     match.$or = [{ createdAt: { $lt: createdAt } }, { createdAt, _id: { $lt: id } }];
   }
   const pipeline: PipelineStage.FacetPipelineStage[] = [{ $match: match }];
+  if (type === "friends") {
+    // Keep one canonical follow per account even if old data predates the unique index.
+    pipeline.push(
+      { $sort: { createdAt: 1, _id: 1 } },
+      { $group: { _id: `$${target}`, follow: { $first: "$$ROOT" } } },
+      { $replaceRoot: { newRoot: "$follow" } },
+    );
+  }
   if (sort && type !== "friends") pipeline.push({ $sort: { createdAt: -1, _id: -1 } });
   if (type === "friends" || type === "outgoing" || type === "incoming") {
     pipeline.push(
@@ -72,6 +83,7 @@ function relationshipPipeline(
                 },
               },
             },
+            ...(type === "friends" ? [{ $sort: { createdAt: 1 as const, _id: 1 as const } }] : []),
             { $limit: 1 },
           ],
           as: "reverse",
@@ -125,9 +137,11 @@ function relationshipPipeline(
 async function page(owner: Types.ObjectId, query: Query): Promise<Page<UserSummaryDTO>> {
   const { limit } = query;
   if (query.cursor) parseCursor(query.cursor);
-  const pipeline = relationshipPipeline(owner, query.type === "friends" ? { ...query, cursor: undefined } : query);
+  const preview = query.type === "friends" && query.preview === "1" && !query.cursor;
+  // Presence can change between requests. Only an unpaginated preview can use it as a sort key.
+  const pipeline = relationshipPipeline(owner, query);
   pipeline.push(
-    ...(query.type === "friends" ? [] : [{ $limit: limit + 1 }]),
+    ...(preview ? [] : [{ $limit: limit + 1 }]),
     {
       $project: {
         _id: 1,
@@ -144,17 +158,10 @@ async function page(owner: Types.ObjectId, query: Query): Promise<Page<UserSumma
     },
   );
   const rows = await Follow.aggregate<Row>(pipeline);
-  const online = await onlineUsers(rows.map((row) => String(row.person._id)));
-  if (query.type === "friends") rows.sort((a, b) => Number(online.has(String(b.person._id))) - Number(online.has(String(a.person._id))) || b.friendshipAt!.getTime() - a.friendshipAt!.getTime() || String(b._id).localeCompare(String(a._id)));
-  const cursorIndex = query.type === "friends" && query.cursor
-    ? rows.findIndex((row) => `${row.friendshipAt!.toISOString()}|${row._id}` === query.cursor)
-    : -1;
-  const after = query.type === "friends" && query.cursor
-    ? cursorIndex === -1 ? rows.length : cursorIndex + 1
-    : 0;
-  const remaining = rows.slice(after);
-  const hasMore = remaining.length > limit;
-  const selected = remaining.slice(0, limit);
+  const online = await onlineUsers((preview ? rows : rows.slice(0, limit)).map((row) => String(row.person._id)));
+  if (preview) rows.sort((a, b) => Number(online.has(String(b.person._id))) - Number(online.has(String(a.person._id))));
+  const hasMore = !preview && rows.length > limit;
+  const selected = rows.slice(0, limit);
   const last = selected[selected.length - 1];
   return {
     items: selected.map(({ person }) => ({

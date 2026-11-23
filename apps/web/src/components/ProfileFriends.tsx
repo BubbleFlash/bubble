@@ -9,7 +9,7 @@ export default function ProfileFriends({ username, isMe }: { username: string; i
   const allowed = Boolean(
     access.isFetchedAfterMount && !access.isFetching && !access.isError && access.data?.canView,
   );
-  const friends = useFriends(username, "", allowed, 6);
+  const friends = useFriends(username, "", allowed, 6, true);
   const denied = friends.error instanceof ApiError && friends.error.status === 403;
   if (access.isFetching) return <p className="muted">Загрузка друзей…</p>;
   if (access.isError)

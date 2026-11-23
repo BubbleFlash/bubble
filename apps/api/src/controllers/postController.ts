@@ -132,13 +132,29 @@ export async function listPosts(req: Request, res: Response) {
   const viewer = await User.findById(req.userId).select("mutedUsers mutedCommunities").lean();
   baseFilter.$and = [{ $or: [{ community: { $ne: null } }, { author: { $nin: viewer?.mutedUsers ?? [] } }] }, { community: { $nin: viewer?.mutedCommunities ?? [] } }];
   if (feed === "following") {
-    // Posts from people I follow, plus my own.
-    const follows = await Follow.find({ follower: req.userId }).select("following").lean();
-    baseFilter.author = { $in: [...follows.map((f) => f.following), req.userId] };
-    (baseFilter.$and as object[]).push({ $or: [{ hideAuthor: { $ne: true } }, { author: req.userId }] });
+    const [follows, memberships] = await Promise.all([
+      Follow.find({ follower: req.userId }).select("following").lean(),
+      Membership.find({ user: req.userId }).select("community").lean(),
+    ]);
+    const communities = await Community.find({ $or: [
+      { creator: req.userId },
+      { _id: { $in: memberships.map((membership) => membership.community) },
+        departingMemberships: { $nin: memberships.map((membership) => membership._id) } },
+    ] }).select("_id").lean();
+    (baseFilter.$and as object[]).push({ $or: [
+      { community: null, author: { $in: [...follows.map((follow) => follow.following), req.userId] } },
+      { community: { $in: communities.map((community) => community._id) } },
+    ] });
+  } else {
+    baseFilter.repost = null;
   }
   const globalPin = feed === "all" ? await FeedSettings.findById("main-feed").lean() : null;
   await sendPostPage(req, res, baseFilter, feed === "all" ? { id: globalPin?.pinnedPost, canPin: req.userRole === "admin", global: true } : undefined);
+}
+
+export async function getFeedPin(_req: Request, res: Response) {
+  const settings = await FeedSettings.findById("main-feed").lean();
+  res.json({ postId: settings?.pinnedPost?.toString() ?? null });
 }
 
 export async function pinFeedPost(req: Request, res: Response) {
@@ -361,11 +377,12 @@ export async function listComments(req: Request, res: Response) {
   ]) : [[], []];
   const likesById = new Map(likes.map((like) => [String(like._id), like]));
   const repliesById = new Map(replies.map((reply) => [String(reply._id), reply.count]));
+  const music = await loadPostMusic(comments);
   comments.sort((a, b) => String(a._id).localeCompare(String(b._id)));
   res.json(comments.map((comment) => {
     const key = String(comment._id);
     const like = likesById.get(key);
-    return toCommentDTO(comment, like?.count, Boolean(like?.mine), repliesById.get(key));
+    return { ...toCommentDTO(comment, like?.count, Boolean(like?.mine), repliesById.get(key)), musicAttachments: music.get(key) ?? [] };
   }));
 }
 
@@ -373,7 +390,8 @@ export async function addComment(req: Request, res: Response) {
   const id = param(req, "id");
   const author = await loadReadablePostAuthor(id, req.userId!);
 
-  const { content, parentId, mention } = req.body as CreateCommentInput;
+  const { content, parentId, mention, imageUrls = [], musicTrackIds = [] } = req.body as CreateCommentInput;
+  await validateMusicTrackIds(musicTrackIds);
   const parent = parentId ? await Comment.findOne({ _id: parentId, post: id, ...visibleContent }).select("author").lean() : null;
   if (parentId && !parent) throw notFound("Comment not found");
   let recipient: { name: string; username: string } | undefined;
@@ -381,32 +399,54 @@ export async function addComment(req: Request, res: Response) {
     const user = await User.findById(parent.author).select("username displayName").lean();
     if (user && mention === (user.displayName || user.username)) recipient = { name: mention, username: user.username };
   }
-  const created = await Comment.create({ post: id, author: req.userId, content, parent: parentId, mention: recipient });
+  const created = await Comment.create({ post: id, author: req.userId, content, imageUrls, musicTrackIds, parent: parentId, mention: recipient });
   await Post.updateOne({ _id: id }, { $inc: { commentCount: 1 } });
-  await notify({ user: author, actor: req.userId!, type: "comment", post: id });
+  const actor = req.userId!;
+  const events = [];
+  if (parent) events.push(notify({ user: parent.author, actor, type: "comment", post: id, comment: created._id }));
+  if (!parent?.author.equals(author)) events.push(notify({ user: author, actor, type: "comment", post: id, comment: created._id, postComment: true }));
+  await Promise.all(events);
 
   const comment = (await Comment.findById(created._id)
     .populate("author", AUTHOR_FIELDS)
     .lean()) as unknown as PopulatedComment;
-  res.status(201).json(toCommentDTO(comment));
+  const music = await loadPostMusic([comment]);
+  res.status(201).json({ ...toCommentDTO(comment), musicAttachments: music.get(String(comment._id)) ?? [] });
+}
+
+export async function deleteComment(req: Request, res: Response) {
+  const post = param(req, "id");
+  const comment = param(req, "commentId");
+  await loadReadablePostAuthor(post, req.userId!);
+  const removed = await Comment.findOneAndDelete({ _id: comment, post, author: req.userId!, ...visibleContent });
+  if (!removed) throw notFound("Comment not found");
+  await Promise.all([
+    Post.updateOne({ _id: post, commentCount: { $gt: 0 } }, { $inc: { commentCount: -1 } }),
+    CommentLike.deleteMany({ comment }),
+  ]);
+  res.status(204).end();
 }
 
 export async function setCommentLike(req: Request, res: Response) {
   const post = param(req, "id");
   const comment = param(req, "commentId");
   await loadReadablePostAuthor(post, req.userId!);
-  if (!await Comment.exists({ _id: comment, post, ...visibleContent })) throw notFound("Comment not found");
+  const target = await Comment.findOne({ _id: comment, post, ...visibleContent }).select("author").lean();
+  if (!target) throw notFound("Comment not found");
   const filter = { post, comment, user: req.userId! };
   if (req.method === "DELETE") {
     await CommentLike.deleteOne(filter);
   } else {
+    let added = false;
     try {
-      await CommentLike.updateOne(filter, { $setOnInsert: filter }, { upsert: true });
+      const result = await CommentLike.updateOne(filter, { $setOnInsert: filter }, { upsert: true });
+      added = result.upsertedCount > 0;
     } catch (err) {
       if ((err as { code?: number }).code !== 11000) throw err;
     }
     // A post deletion racing with the upsert must not leave an orphan reaction.
     if (!await Comment.exists({ _id: comment, post })) await CommentLike.deleteOne(filter);
+    else if (added) await notify({ user: target.author, actor: req.userId!, type: "like", post, comment });
   }
   res.status(204).end();
 }

@@ -35,7 +35,7 @@ export async function list(req: Request, res: Response) {
   })
     .sort({ createdAt: -1, _id: -1 })
     .limit(paginated ? pageSize + 1 : pageSize)
-    .populate("actor", "username displayName")
+    .populate("actor", "username displayName avatarUrl avatarFrame")
     .lean()) as unknown as PopulatedNotification[];
   const selected = rows.slice(0, pageSize);
   const items = selected.filter((row) => row.actor).map(toNotificationDTO);
@@ -62,16 +62,17 @@ export async function unreadCount(req: Request, res: Response) {
 }
 
 export async function markAllRead(req: Request, res: Response) {
-  const { type, through, items } = (req.body ?? {}) as ReadNotificationsInput;
+  const { type, through, items, all } = (req.body ?? {}) as ReadNotificationsInput;
+  const cutoff = new Date();
   const prefs = await getNotificationPreferences(req.userId!);
   const result = await Notification.updateMany({
     user: req.userId,
     read: false,
-    type: { $in: visibleTypes(prefs, type) },
+    ...(!all && { type: { $in: visibleTypes(prefs, type) } }),
     // Preserve events that arrived after the client fetched this list.
-    ...(through && { createdAt: { $lte: new Date(through) } }),
+    ...((all || through) && { createdAt: { $lte: all ? cutoff : new Date(through!) } }),
     // Likes and follows can reuse an ID when they become unread again.
-    ...(items && { $or: items.map(({ id, createdAt }) => ({ _id: id, createdAt: new Date(createdAt) })) }),
+    ...(!all && items && { $or: items.map(({ id, createdAt }) => ({ _id: id, createdAt: new Date(createdAt) })) }),
   }, { $set: { read: true } });
   if (result.modifiedCount) {
     await emitToUsers([req.userId!], "notification:new", { readStateChanged: true } satisfies NotificationNewEvent);

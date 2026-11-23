@@ -3,6 +3,12 @@ import { Community } from "../models/Community.js";
 import { User } from "../models/User.js";
 import { badRequest, notFound } from "../utils/errors.js";
 
+export async function list(req: Request, res: Response) {
+  const owner = await User.findById(req.userId).select("mutedUsers").lean();
+  const users = await User.find({ _id: { $in: owner?.mutedUsers ?? [] } }).select("username displayName avatarUrl").sort({ username: 1 }).lean();
+  res.json(users.map((user) => ({ id: String(user._id), username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl ?? null })));
+}
+
 async function target(req: Request) {
   if (req.params.kind === "users") {
     const user = await User.findOne({ username: req.params.name }).collation({ locale: "en", strength: 2 }).select("_id").lean();

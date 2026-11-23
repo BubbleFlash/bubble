@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { fontUploadUrlSchema, usernameSchema, type UpdateAppearanceInput } from "@commune/shared";
 import { Follow } from "../models/Follow.js";
+import { Notification } from "../models/Notification.js";
+import { emitToUsers } from "../services/realtime.js";
 import { User } from "../models/User.js";
 import { Post } from "../models/Post.js";
 import { accountRestriction } from "../services/restrictions.js";
@@ -41,7 +43,7 @@ async function buildProfile(user: Awaited<ReturnType<typeof findByUsername>>, vi
     Follow.countDocuments({ following: user._id }),
     Follow.countDocuments({ follower: user._id }),
     Follow.exists({ follower: viewerId, following: user._id }),
-    Follow.exists({ follower: user._id, following: viewerId }),
+    Follow.exists({ follower: user._id, following: viewerId, requestDeclined: { $ne: true } }),
     onlineUsers([user._id.toString()]),
   ]);
   return { ...toProfileDTO(
@@ -155,14 +157,14 @@ export async function getProfile(req: Request, res: Response) {
 export async function userPosts(req: Request, res: Response) {
   const user = await findByUsername(req.params.username);
   const showHidden = String(user._id) === req.userId || req.userRole === "admin" || req.userRole === "moderator";
-  await sendPostPage(req, res, { author: user._id, ...(!showHidden && { hideAuthor: { $ne: true } }) }, { id: user.pinnedPost, canPin: String(user._id) === req.userId });
+  await sendPostPage(req, res, { author: user._id, community: null, ...(!showHidden && { hideAuthor: { $ne: true } }) }, { id: user.pinnedPost, canPin: String(user._id) === req.userId });
 }
 
 export async function pinPost(req: Request, res: Response) {
   const user = await findByUsername(req.params.username);
   if (String(user._id) !== req.userId) throw forbidden("You cannot pin posts on this profile");
   if (!mongoose.isValidObjectId(req.params.id)) throw badRequest("Invalid post ID");
-  const post = await Post.findOne({ _id: req.params.id, author: user._id, moderationState: { $nin: ["hidden", "removed", "withdrawn"] } }).select("_id").lean();
+  const post = await Post.findOne({ _id: req.params.id, author: user._id, ...(req.method !== "DELETE" && { community: null }), moderationState: { $nin: ["hidden", "removed", "withdrawn"] } }).select("_id").lean();
   if (!post) throw notFound("Post not found");
   if (req.method === "DELETE") await User.updateOne({ _id: user._id, pinnedPost: post._id }, { $unset: { pinnedPost: 1 } });
   else await User.updateOne({ _id: user._id }, { $set: { pinnedPost: post._id } });
@@ -206,4 +208,14 @@ export async function unfollow(req: Request, res: Response) {
   const user = await findByUsername(req.params.username);
   await Follow.findOneAndDelete({ follower: req.userId, following: user._id });
   res.json(await buildProfile(user, req.userId!));
+}
+
+export async function declineFriendRequest(req: Request, res: Response) {
+  const sender = await findByUsername(req.params.username);
+  if (String(sender._id) === req.userId) throw badRequest("You can't follow yourself");
+  if (await Follow.exists({ follower: req.userId, following: sender._id })) throw forbidden("Friend request has already been accepted");
+  await Follow.updateOne({ follower: sender._id, following: req.userId }, { $set: { requestDeclined: true } });
+  await Notification.deleteMany({ user: req.userId, actor: sender._id, type: "follow" });
+  await emitToUsers([req.userId!, sender._id], "notification:new");
+  res.status(204).end();
 }

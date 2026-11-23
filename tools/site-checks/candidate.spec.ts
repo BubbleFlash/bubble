@@ -278,6 +278,40 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
   expect(runtimeErrors).toEqual([]);
 });
 
+test("notification actor and event have independent links and type icons", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/notifications?**", (route) => route.fulfill({ json: { items: [{ id: "event", type: "comment", actor: { id: "author", username: "author", displayName: "Автор" }, postId: "fixture-0", read: false, createdAt }], nextCursor: null } }));
+  await page.goto(`${origin}/notifications`);
+  const row = page.locator(".notification").first();
+  await expect(row.getByRole("link", { name: "Автор", exact: true })).toHaveAttribute("href", "/u/author");
+  await expect(row.locator(".notification-target")).toHaveAttribute("href", "/posts/fixture-0");
+  await expect(row.locator(".notification-type--comment")).toBeVisible();
+});
+
+test("post action menu stays above the next card", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.goto(origin);
+  const card = page.locator("article.feed-post").first();
+  await card.evaluate((element) => { element.style.overflow = "hidden"; });
+  await card.getByRole("button", { name: "Действия с записью" }).click();
+  const item = page.getByRole("menuitem", { name: "Скрыть публикации пользователя" });
+  await expect(item).toBeVisible();
+  expect(await item.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return node.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  })).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(item).toHaveCount(0);
+  for (let i = 0; i < 12; i++) {
+    await card.getByRole("button", { name: "Действия с записью" }).click();
+    await card.locator(".post-body").click({ position: { x: 5, y: 5 } });
+    await expect(item).toHaveCount(0);
+  }
+  await expect(card.getByRole("button", { name: "Действия с записью" })).toBeVisible();
+});
+
 test("feed navigation jumps to the top and refreshes only the first page", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
@@ -494,7 +528,7 @@ test("a failed route preserves the global player until an explicit reload", asyn
     page.getByRole("button", { name: "Обновить страницу" }).click(),
   ]);
   await expect(page.getByRole("heading", { name: "Страница не загрузилась" })).toBeVisible();
-  await expect(player.getByText("Исполнитель — Тестовый трек", { exact: true })).toBeVisible();
+  await expect(player.getByText("Исполнитель — Тестовый трек", { exact: true }).filter({ visible: true })).toBeVisible();
 });
 
 test("the player restores the queue and position after reload", async ({ page }) => {
@@ -525,7 +559,10 @@ test("the player restores the queue and position after reload", async ({ page })
   const pause = player.getByRole("button", { name: "Пауза", exact: true });
   const play = player.getByRole("button", { name: "Воспроизвести", exact: true });
   const position = player.getByRole("slider", { name: "Позиция воспроизведения" });
+  const expand = player.getByRole("button", { name: "Развернуть плеер", exact: true });
+  const thirdTrackTitle = player.getByText("Исполнитель — Трек 3", { exact: true }).filter({ visible: true });
   await expect(pause).toBeVisible();
+  if (await expand.isVisible()) await expand.click();
   await expect.poll(() => position.inputValue().then(Number)).toBeGreaterThan(3);
   await player.getByRole("button", { name: "Перемешивание" }).click();
   await player.getByRole("button", { name: "Повтор выключен" }).click();
@@ -536,6 +573,7 @@ test("the player restores the queue and position after reload", async ({ page })
   await page.reload();
   await newUrl;
   await expect(play).toBeEnabled();
+  if (await expand.isVisible()) await expand.click();
   await expect(player.getByRole("alert")).toHaveCount(0);
   await expect.poll(async () => Math.abs(Number(await position.inputValue()) - savedPosition)).toBeLessThan(1);
   await expect(player.getByRole("button", { name: "Повтор всего списка" })).toBeVisible();
@@ -553,7 +591,7 @@ test("the player restores the queue and position after reload", async ({ page })
   await expect(pause).toBeVisible();
   await pause.click();
   await page.reload();
-  await expect(player.locator(".music-player__title")).toHaveText("Исполнитель — Трек 3");
+  await expect(thirdTrackTitle).toBeVisible();
   await expect(play).toBeEnabled();
   await player.getByRole("button", { name: "Закрыть плеер" }).click();
   await page.reload();
@@ -681,4 +719,47 @@ test("admin monitoring filters incidents and downloads the selected CSV", async 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerWidth),
   );
+});
+
+test("download feedback from the selected group and show its last exported period", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const period = { from: "2026-11-20", to: "2026-11-22" };
+  const record = { ...period, exportedAt: createdAt };
+  const posts = [{ id: "post", content: "Отзыв", comments: [{ content: "Ответ" }] }];
+  const groups = [
+    { id: "feedback-id", name: "Жалобы и предложения Bubble", slug: "feedback" },
+    { id: "other-id", name: "Другая группа", slug: "other" },
+  ];
+  let exported = false;
+  await page.route("**/api/auth/refresh", (route) =>
+    route.fulfill({ json: { accessToken: "fixture", user: { ...viewer, role: "admin" } } }));
+  await page.route("**/api/admin/feedback-export/groups", (route) => route.fulfill({ json: groups }));
+  await page.route("**/api/admin/feedback-export/feedback-id", (route) => route.fulfill({
+    body: "null", contentType: "application/json",
+  }));
+  await page.route("**/api/admin/feedback-export/other-id", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ body: JSON.stringify(exported ? record : null), contentType: "application/json" });
+    expect(route.request().postDataJSON()).toEqual(period);
+    exported = true;
+    return route.fulfill({ json: { ...record, community: groups[1], posts } });
+  });
+  await page.goto(`${origin}/admin/errors?tab=feedback`);
+  await expect(page.getByText("Выгрузок пока нет.")).toBeVisible();
+  const group = page.getByRole("combobox", { name: "Группа", exact: true });
+  await expect(group).toHaveValue("feedback-id");
+  await page.getByLabel("Поиск группы").fill("Другая");
+  await group.selectOption("other-id");
+  await page.reload();
+  await expect(group).toHaveValue("other-id");
+  await page.getByLabel("С даты (UTC)").fill(period.from);
+  await page.getByLabel("По дату включительно (UTC)").fill(period.to);
+  const ready = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать JSON" }).click();
+  const file = await ready;
+  expect(file.suggestedFilename()).toBe("bubble-other-2026-11-20-2026-11-22.json");
+  expect(JSON.parse(await readFile(await file.path(), "utf8")).posts).toEqual(posts);
+  await expect(page.getByText(/Последняя выгрузка за 20\.11\.2026 — 22\.11\.2026/)).toBeVisible();
+  await group.selectOption("feedback-id");
+  await expect(page.getByText("Выгрузок пока нет.")).toBeVisible();
 });

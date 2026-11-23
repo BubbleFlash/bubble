@@ -106,11 +106,17 @@ export function createApp() {
 
       let object;
       const validator = req.get("If-None-Match");
+      const key = `uploads/${file}`;
 
       try {
         object = validator
-          ? await getObject(`uploads/${file}`, validator)
-          : await getObject(`uploads/${file}`);
+          ? await getObject(key, validator).catch((err: unknown) => {
+              const status = (err as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata?.httpStatusCode;
+              if (status !== 400) throw err;
+              // Some storage providers reject the conditional header. Retry the same object without it.
+              return getObject(key);
+            })
+          : await getObject(key);
       } catch (err) {
         if (validator && err instanceof Error && (err.name === "NotModified" || (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304)) {
           res.status(304).set("Cache-Control", "private, no-cache").end();

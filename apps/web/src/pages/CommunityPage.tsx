@@ -1,10 +1,10 @@
 import { pluralRu } from "../lib/plural";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { CardsSkeleton } from "../components/Skeleton";
 import Composer from "../components/Composer";
 import PostList from "../components/PostList";
 import { refreshCommunity, useCommunity, useCommunityMembers, useCommunityPosts, useMembership } from "../hooks/useCommunities";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useUploadImage } from "../hooks/useUpload";
@@ -25,6 +25,21 @@ function CommunityView({ slug }: { slug: string }) {
   const community = useCommunity(slug);
   const team = useCommunityMembers(slug, "team", "", true);
   const posts = useCommunityPosts(slug);
+  const location = useLocation();
+  const restored = useRef(false);
+  const scroll = (location.state as { restoreCommunityScroll?: { scrollY: number; mainScroll: number; postId?: string; postTop?: number } } | null)?.restoreCommunityScroll;
+  useLayoutEffect(() => {
+    if (restored.current || !scroll || !community.data || !posts.data) return;
+    restored.current = true;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scroll.scrollY, behavior: "instant" });
+      document.getElementById("main")?.scrollTo({ top: scroll.mainScroll, behavior: "instant" });
+      requestAnimationFrame(() => {
+        const card = [...document.querySelectorAll<HTMLElement>("[data-post-id]")].find((element) => element.dataset.postId === scroll.postId);
+        if (card && typeof scroll.postTop === "number") window.scrollBy({ top: card.getBoundingClientRect().top - scroll.postTop, behavior: "instant" });
+      });
+    });
+  }, [scroll, community.data, posts.data]);
   const { join, leave } = useMembership(slug);
   const qc = useQueryClient();
   const upload = useUploadImage("avatar");
@@ -81,7 +96,7 @@ function CommunityView({ slug }: { slug: string }) {
           <div className="profile-id">
             <Avatar username={c.slug} displayName={c.name} url={showEdit ? avatarUrl : c.avatarUrl} size={72} preview />
             <div>
-              {showEdit ? <input aria-label="Название группы" form="community-edit" value={name} required minLength={3} maxLength={40} onChange={(event) => setName(event.target.value)} /> : <h1 className="profile-name">{c.name}</h1>}
+              {showEdit ? <input aria-label="Название группы" form="community-edit" value={name} required minLength={3} maxLength={48} onChange={(event) => setName(event.target.value)} /> : <h1 className="profile-name">{c.name}</h1>}
               <p className="muted">
                 c/{c.slug} · {c.memberCount} {pluralRu(c.memberCount, "участник", "участника", "участников")}
                 {c.myRole && ` · ${COMMUNITY_ROLES[c.myRole]}`}
@@ -147,7 +162,7 @@ function CommunityView({ slug }: { slug: string }) {
           ? "Вступите в группу, чтобы публиковать записи."
           : "Ваша роль не позволяет публиковать записи в этой группе."}</p>
       )}
-      <PostList query={posts} emptyMessage="Записей пока нет. Начните обсуждение." pinTarget={`/communities/${encodeURIComponent(slug)}`} />
+      <PostList inlineComments communitySource={`/c/${encodeURIComponent(slug)}`} query={posts} emptyMessage="Записей пока нет. Начните обсуждение." pinTarget={`/communities/${encodeURIComponent(slug)}`} />
     </>
   );
 }

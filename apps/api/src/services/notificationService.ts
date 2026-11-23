@@ -19,6 +19,8 @@ interface NotifyInput {
   actor: string;
   type: NotificationType;
   post?: Types.ObjectId | string;
+  comment?: Types.ObjectId | string;
+  postComment?: boolean;
 }
 
 export async function getNotificationPreferences(userId: Types.ObjectId | string) {
@@ -42,12 +44,12 @@ export async function getNotificationPreferences(userId: Types.ObjectId | string
  * Likes and follows are upserted so repeated like/unlike or follow/unfollow does not
  * spam the recipient; each comment and repost creates its own notification.
  */
-export async function notify({ user, actor, type, post }: NotifyInput): Promise<void> {
+export async function notify({ user, actor, type, post, comment, postComment }: NotifyInput): Promise<void> {
   if (user.toString() === actor) return;
   try {
-    const key = { user, actor, type, post: post ?? null };
+    const key = { user, actor, type, post: post ?? null, comment: comment ?? null };
     const saved = type === "comment" || type === "repost"
-      ? await Notification.create({ ...key, read: false })
+      ? await Notification.create({ ...key, postComment: Boolean(postComment), read: false })
       : await Notification.findOneAndUpdate(
         key,
         { $set: { read: false, createdAt: new Date() } },
@@ -59,7 +61,7 @@ export async function notify({ user, actor, type, post }: NotifyInput): Promise<
       await emitToUsers([user], "notification:new");
       return;
     }
-    const actorUser = await User.findById(actor).select("username displayName").lean();
+    const actorUser = await User.findById(actor).select("username displayName avatarUrl avatarFrame").lean();
     const event: NotificationNewEvent = saved && actorUser
       ? {
           notification: toNotificationDTO({ ...saved.toObject(), post: saved.post ?? null, actor: actorUser }),
@@ -70,16 +72,16 @@ export async function notify({ user, actor, type, post }: NotifyInput): Promise<
     if (pushConfigured()) {
       const name = actorUser?.displayName || actorUser?.username || "Someone";
       const text = {
-        like: "liked your post",
-        comment: "commented on your post",
+        like: comment ? "liked your comment" : "liked your post",
+        comment: comment && !postComment ? "replied to your comment" : "commented on your post",
         repost: "shared your post",
         follow: "wants to add you as a friend",
       }[type];
       await pushToUser(user.toString(), "social", {
         title: "Commune",
         body: `${name} ${text}`,
-        url: post ? `/posts/${post.toString()}` : `/u/${actorUser?.username ?? ""}`,
-        tag: `social-${type}-${post?.toString() ?? actor}`,
+        url: post ? `/posts/${post}${comment ? `?comment=${comment}#comment-${comment}` : ""}` : `/u/${actorUser?.username ?? ""}`,
+        tag: `social-${type}-${comment ?? post ?? actor}`,
       }, type);
     }
   } catch (err) {
