@@ -20,6 +20,7 @@ function formatTime(seconds: number): string {
 export default function MusicPlayer() {
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
   const [showQueue, setShowQueue] = useState(false);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const libraryBusy = useIsMutating({ mutationKey: ["music-library", user?.id] }) > 0;
@@ -133,6 +134,30 @@ export default function MusicPlayer() {
 
   if (!track) return null;
 
+  const swipeHandlers = {
+    onTouchStart: (event: React.TouchEvent) => {
+      const touch = event.touches[0];
+      if (touch) swipeStart.current = { x: touch.clientX, y: touch.clientY };
+    },
+    onTouchEnd: (event: React.TouchEvent) => {
+      const start = swipeStart.current;
+      swipeStart.current = null;
+      const touch = event.changedTouches[0];
+      if (!start || !touch || !window.matchMedia("(max-width: 1100px)").matches) return;
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      if (Math.abs(dy) < 45 || Math.abs(dy) <= Math.abs(dx)) return;
+
+      const swipedUp = dy < 0;
+      if ((compact && swipedUp) || (!compact && !showQueue && !swipedUp)) {
+        prepareModeSwitch();
+        setCompact(!compact);
+      } else if (!compact) {
+        setShowQueue(swipedUp);
+      }
+    },
+    onTouchCancel: () => { swipeStart.current = null; },
+  };
 
   return (
     <section
@@ -144,14 +169,14 @@ export default function MusicPlayer() {
     >
       {compact && <div className="music-player__mobile-compact">
         <div className="music-player__mobile-row">
-          <div ref={mobileTitleRef} className="music-player__mobile-title" title={`${track.artist} — ${track.title}`}><span ref={mobileTitleTextRef}>{track.artist} — {track.title}</span></div>
+          <div ref={mobileTitleRef} {...swipeHandlers} className="music-player__mobile-title" title={`${track.artist} — ${track.title}`}><span ref={mobileTitleTextRef}>{track.artist} — {track.title}</span></div>
           <div className="music-player__mobile-actions">
-            <button type="button" disabled={!membership.data || membership.isFetching || libraryBusy} onClick={() => membership.data && library.mutate({ id: track.id, added: membership.data.added })} aria-label={!membership.data ? "Проверка библиотеки" : membership.data.added ? "Убрать из библиотеки" : "Добавить в библиотеку"}>
+            <button type="button" className="music-player__mobile-library" disabled={!membership.data || membership.isFetching || libraryBusy} onClick={() => membership.data && library.mutate({ id: track.id, added: membership.data.added })} aria-label={!membership.data ? "Проверка библиотеки" : membership.data.added ? "Убрать из библиотеки" : "Добавить в библиотеку"}>
               {membership.data && <svg viewBox="0 0 24 24" aria-hidden="true"><path transform={membership.data.added ? "translate(2.4 2.4) scale(.8)" : undefined} d={membership.data.added ? "M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" : "M12 5v14M5 12h14"} /></svg>}
             </button>
-            <button type="button" onClick={previousTrack} aria-label="Предыдущий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M19 5 7 12l12 7z" /></svg></button>
-            <button type="button" onClick={() => void togglePlayback()} disabled={isLoading} aria-label={isPlaying ? "Пауза" : "Воспроизвести"}>{isLoading ? "…" : isPlaying ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14l9-7z" /></svg>}</button>
-            <button type="button" onClick={nextTrack} aria-label="Следующий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 5l12 7-12 7z" /></svg></button>
+            <button type="button" className="music-player__play" onClick={previousTrack} aria-label="Предыдущий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M19 5 7 12l12 7z" /></svg></button>
+            <button type="button" className="music-player__play music-player__play--main" onClick={() => void togglePlayback()} disabled={isLoading} aria-label={isPlaying ? "Пауза" : "Воспроизвести"}>{isLoading ? "…" : isPlaying ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l8-7z" /></svg>}</button>
+            <button type="button" className="music-player__play" onClick={nextTrack} aria-label="Следующий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 5l12 7-12 7z" /></svg></button>
             <button type="button" onClick={() => { prepareModeSwitch(); setCompact(false); }} aria-label="Развернуть плеер"><i className="aero-control-maximize" aria-hidden="true" /></button>
             <button type="button" onClick={() => { prepareModeSwitch(); setCompact(false); setShowQueue(true); }} aria-label="Показать очередь"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h2m2 0h14M3 12h2m2 0h14M3 19h2m2 0h14" /></svg></button>
             <button type="button" onClick={clear} aria-label="Закрыть плеер"><i className="aero-control-close" aria-hidden="true" /></button>
@@ -268,7 +293,7 @@ export default function MusicPlayer() {
       </div>
 
       <div className="music-player__extras" {...handleEvents}>
-        <div ref={titleRef} className="music-player__title" title={`${track.artist} — ${track.title}`}>
+        <div ref={titleRef} {...swipeHandlers} className="music-player__title" title={`${track.artist} — ${track.title}`}>
           <span ref={titleTextRef}>{track.artist} — {track.title}</span>
         </div>
         <span className="aero-window-controls music-player__window-controls">

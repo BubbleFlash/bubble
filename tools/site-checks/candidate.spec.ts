@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
+import { DEFAULT_COMMUNITY_PERMISSIONS, rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
 import type { AccountUser, ClientNetworkEvent, MetricsReport, NetworkReport, PostDTO } from "@commune/shared";
 
 const createdAt = "2026-11-17T00:00:00Z";
@@ -86,6 +86,78 @@ async function installFixtures(
   });
   return () => refreshes;
 }
+
+test("keep long group names within search results, group headers and reposts", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  const name = "Ш".repeat(48);
+  const group = { id: "long-group", slug: "long-group", name, createdAt, description: "",
+    memberCount: 1, joinedByMe: true, myRole: "owner", permissions: DEFAULT_COMMUNITY_PERMISSIONS,
+    actions: { publish: true, editAppearance: true, manageMembers: true } };
+  const post: PostDTO = { ...posts[0]!, community: group, musicAttachments: [], repost: {
+    kind: "post", postId: "original", community: group, author: posts[0]!.author,
+    content: "Исходная запись", imageUrls: [], musicAttachments: [], createdAt,
+  } };
+  const pageOfPosts = { items: [post], nextCursor: null };
+  await installFixtures(page, origin);
+  await page.route(/\/api\/communities(\?.*)?$/, (route) => route.fulfill({ json: [group] }));
+  await page.route("**/api/communities/long-group", (route) => route.fulfill({ json: group }));
+  await page.route("**/api/communities/long-group/team", (route) => route.fulfill({ json: { items: [], nextCursor: null } }));
+  await page.route("**/api/communities/long-group/posts", (route) => route.fulfill({ json: pageOfPosts }));
+  await page.route(/\/api\/posts(\?.*)?$/, (route) => route.fulfill({ json: pageOfPosts }));
+  await page.route("**/api/posts/fixture-0", (route) => route.fulfill({ json: post }));
+  const conversation = { id: "thread", other: { ...post.author, bio: "" }, lastMessage: null, lastMessageAt: createdAt, unread: 0, seenByOther: true };
+  await page.route("**/api/messages", (route) => route.fulfill({ json: [conversation] }));
+  await page.route("**/api/messages/thread", (route) => route.fulfill({ json: {
+    conversation, nextCursor: null, items: [{ id: "message", conversationId: "thread", senderId: post.author.id,
+      text: "", repost: post.repost, createdAt }],
+  } }));
+
+  async function expectNameToFit(container: Locator) {
+    const title = container.getByText(name, { exact: true });
+    await expect(title).toBeVisible();
+    expect(await title.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const bounds = element.closest(".community-result, .community-head, .community-management__summary, .post-meta, .repost-card__header, button, article")!.getBoundingClientRect();
+      return Array.from(range.getClientRects()).every((line) => line.left >= bounds.left - 1 && line.right <= bounds.right + 1);
+    })).toBe(true);
+  }
+
+  await page.goto(`${origin}/communities`);
+  await page.getByRole("tab", { name: "Все группы" }).click();
+  await page.getByRole("searchbox", { name: "Найти группу" }).fill(name.slice(0, 10));
+  await expectNameToFit(page.locator(".community-result"));
+
+  await page.locator(".community-result").click();
+  await expectNameToFit(page.locator(".community-head"));
+  const actionButtons = page.locator(".community-head__actions button");
+  await expect(actionButtons).toHaveCount(2);
+  expect((await actionButtons.nth(0).boundingBox())?.y).toBe((await actionButtons.nth(1).boundingBox())?.y);
+  await page.getByRole("button", { name: "Управление группой", exact: true }).click();
+  await expectNameToFit(page.locator(".community-management__summary"));
+
+  await page.goto(origin);
+  await expectNameToFit(page.locator(".feed-post .post-meta"));
+  await page.goto(`${origin}/posts/fixture-0`);
+  await expectNameToFit(page.locator(".post-meta"));
+  await expectNameToFit(page.locator(".repost-card__header"));
+  await page.getByRole("button", { name: /^Поделиться записью/ }).click();
+  await page.getByRole("radio", { name: "Группа", exact: true }).check();
+  const groupPicker = page.getByRole("button", { name: "Группа", exact: true });
+  await groupPicker.click();
+  const option = page.getByRole("option", { name, exact: true });
+  await expectNameToFit(option);
+  await option.click();
+  await expectNameToFit(page.locator(".repost-select__control"));
+
+  await page.goto(`${origin}/messages/thread`);
+  await expectNameToFit(page.locator(".chat .repost-card__header"));
+
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 401, json: { error: "No session" } }));
+  await page.route("**/api/public/posts/fixture-0", (route) => route.fulfill({ json: { ...post, repost: undefined } }));
+  await page.goto(`${origin}/posts/fixture-0`);
+  await expectNameToFit(page.locator("article.post"));
+});
 
 test("refresh the registration captcha after rejection and keep the form fields", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -729,7 +801,7 @@ test("download feedback from the selected group and show its last exported perio
   const posts = [{ id: "post", content: "Отзыв", comments: [{ content: "Ответ" }] }];
   const groups = [
     { id: "feedback-id", name: "Жалобы и предложения Bubble", slug: "feedback" },
-    { id: "other-id", name: "Другая группа", slug: "other" },
+    { id: "other-id", name: "Другая" + "Ш".repeat(42), slug: "other" },
   ];
   let exported = false;
   await page.route("**/api/auth/refresh", (route) =>
@@ -750,6 +822,10 @@ test("download feedback from the selected group and show its last exported perio
   await expect(group).toHaveValue("feedback-id");
   await page.getByLabel("Поиск группы").fill("Другая");
   await group.selectOption("other-id");
+  expect(await group.evaluate((element) => {
+    const toolbar = element.closest(".admin-monitor-toolbar")!.getBoundingClientRect();
+    return element.getBoundingClientRect().right <= toolbar.right;
+  })).toBe(true);
   await page.reload();
   await expect(group).toHaveValue("other-id");
   await page.getByLabel("С даты (UTC)").fill(period.from);

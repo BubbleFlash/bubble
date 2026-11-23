@@ -17,7 +17,7 @@ function GuestPost({ id }: { id: string }) {
   const post = useQuery({ queryKey: ["public", "post", id], queryFn: () => api<PostDTO>(`/public/posts/${id}`) });
   return <><Link to="/explore" className="muted">← Вернуться к обзору</Link>
     {post.isLoading && <PostListSkeleton count={1} />}{post.isError && <p className="error center">Запись не найдена.</p>}
-    {post.data && <article className="card post"><strong>{post.data.community?.name ?? displayNameOf(post.data.author)}</strong>
+    {post.data && <article className="card post"><strong className={post.data.community ? "community-name" : undefined}>{post.data.community?.name ?? displayNameOf(post.data.author)}</strong>
       {post.data.content && <PostText text={post.data.content} expandable={false} />}
       <PostImages images={post.data.imageUrls?.length ? post.data.imageUrls : post.data.imageUrl ? [post.data.imageUrl] : []} adult={post.data.adult} alt="Изображение записи" />
       {post.data.musicAttachments.map((track) => <p key={track.id}>{track.unavailable ? "Трек недоступен" : `${track.artist} — ${track.title}`}</p>)}
