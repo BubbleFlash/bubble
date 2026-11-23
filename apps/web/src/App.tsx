@@ -378,6 +378,36 @@ export default function App() {
       home.style.removeProperty("--aero-bottom-dock-height");
     };
   }, [projectLanding, signedIn]);
+  useLayoutEffect(() => {
+    const home = homeRef.current;
+    const viewport = window.visualViewport;
+    if (!home || !viewport || projectLanding || !signedIn || !/\bAndroid\b.*\bFirefox\//.test(navigator.userAgent)) return;
+
+    let frame = 0;
+    const reset = () => {
+      delete home.dataset.aeroVisualDock;
+      home.style.removeProperty("--aero-visible-bottom");
+    };
+    const update = () => {
+      frame = 0;
+      if (Math.abs(viewport.scale - 1) > 0.01) {
+        reset();
+        return;
+      }
+      home.style.setProperty("--aero-visible-bottom", `${viewport.offsetTop + viewport.height}px`);
+      home.dataset.aeroVisualDock = "true";
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
+    viewport.addEventListener("resize", schedule);
+    viewport.addEventListener("scroll", schedule);
+    return () => {
+      viewport.removeEventListener("resize", schedule);
+      viewport.removeEventListener("scroll", schedule);
+      if (frame) cancelAnimationFrame(frame);
+      reset();
+    };
+  }, [projectLanding, signedIn]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
   const guestLanding = projectLanding;

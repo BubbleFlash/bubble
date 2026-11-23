@@ -534,6 +534,14 @@
     flex-direction: column;
   }
   .aero-home .aero-bottom-dock:has(> .music-player--compact) > .bottom-nav { position: static; }
+  /* Firefox on Android moves bottom-anchored elements during toolbar transitions. */
+  .aero-home[data-aero-visual-dock] :is(
+    .aero-bottom-dock:has(> .music-player--compact),
+    .aero-bottom-dock:not(:has(> .music-player--compact)) > .bottom-nav
+  ) {
+    top: calc(var(--aero-visible-bottom) - var(--aero-bottom-space));
+    bottom: auto;
+  }
   .aero-home .aero-window {
     --aero-bottom-space: var(--aero-bottom-nav-space, 0px);
     --aero-content-height: calc(100dvh - var(--aero-content-top) - var(--aero-bottom-space));
