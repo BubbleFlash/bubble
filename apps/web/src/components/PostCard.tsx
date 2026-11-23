@@ -22,6 +22,7 @@ import CommunityPostEditor from "./CommunityPostEditor";
 import AeroTitlebar from "./AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { violationReasons } from "../lib/moderationReasons";
+import { getPageScroller } from "../lib/scrollToTop";
 
 const relativeTime = new Intl.RelativeTimeFormat("ru", { numeric: "always" });
 export function timeAgo(iso: string): string {
@@ -130,7 +131,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
             <span className="muted post-date"><Link className="feed-post-time" to={`/posts/${post.id}`} onClick={(event) => {
               if (!communitySource || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               event.preventDefault();
-              navigate(`/posts/${post.id}`, { state: { communityReturn: { path: communitySource, scrollY: window.scrollY, mainScroll: document.getElementById("main")?.scrollTop ?? 0, postId: post.id, postTop: event.currentTarget.closest("article")?.getBoundingClientRect().top ?? 0 } } });
+              navigate(`/posts/${post.id}`, { state: { communityReturn: { path: communitySource, scrollY: getPageScroller()?.scrollTop ?? 0, mainScroll: document.getElementById("main")?.scrollTop ?? 0, postId: post.id, postTop: event.currentTarget.closest("article")?.getBoundingClientRect().top ?? 0 } } });
             }} aria-label={`Открыть публикацию ${displayNameOf(post.author)} от ${new Date(post.createdAt).toLocaleString("ru-RU")}`}>
               <time dateTime={post.createdAt}>{postTime(post.createdAt)}</time>
             </Link></span>

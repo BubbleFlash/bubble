@@ -15,6 +15,7 @@ import CommunityManagement from "../components/CommunityManagement";
 import { COMMUNITY_ROLES } from "../lib/communityRoles";
 import type { CommunityDTO } from "@commune/shared";
 import FeedMuteButton from "../components/FeedMuteButton";
+import { getPageScroller } from "../lib/scrollToTop";
 
 export default function CommunityPage() {
   const { slug = "" } = useParams();
@@ -32,11 +33,12 @@ function CommunityView({ slug }: { slug: string }) {
     if (restored.current || !scroll || !community.data || !posts.data) return;
     restored.current = true;
     requestAnimationFrame(() => {
-      window.scrollTo({ top: scroll.scrollY, behavior: "instant" });
+      const page = getPageScroller();
+      page?.scrollTo({ top: scroll.scrollY, behavior: "instant" });
       document.getElementById("main")?.scrollTo({ top: scroll.mainScroll, behavior: "instant" });
       requestAnimationFrame(() => {
         const card = [...document.querySelectorAll<HTMLElement>("[data-post-id]")].find((element) => element.dataset.postId === scroll.postId);
-        if (card && typeof scroll.postTop === "number") window.scrollBy({ top: card.getBoundingClientRect().top - scroll.postTop, behavior: "instant" });
+        if (card && typeof scroll.postTop === "number") page?.scrollBy({ top: card.getBoundingClientRect().top - scroll.postTop, behavior: "instant" });
       });
     });
   }, [scroll, community.data, posts.data]);

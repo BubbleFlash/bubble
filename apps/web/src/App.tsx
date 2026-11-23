@@ -271,6 +271,7 @@ export default function App() {
   }, [onNotificationsPage, userId, finish]);
   const projectLanding = ["/about", "/rules", "/explore", "/verify-email", ...AUTH_PATHS].includes(pathname) || (!user && pathname === "/");
   const signedIn = Boolean(user);
+  const containedScroll = signedIn && !projectLanding && /\bAndroid\b.*\bFirefox\//.test(navigator.userAgent);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
   const [opacityPreview, setOpacityPreview] = useState<number>();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -380,34 +381,21 @@ export default function App() {
   }, [projectLanding, signedIn]);
   useLayoutEffect(() => {
     const home = homeRef.current;
-    const viewport = window.visualViewport;
-    if (!home || !viewport || projectLanding || !signedIn || !/\bAndroid\b.*\bFirefox\//.test(navigator.userAgent)) return;
-
-    let frame = 0;
-    const reset = () => {
-      delete home.dataset.aeroVisualDock;
-      home.style.removeProperty("--aero-visible-bottom");
-    };
+    if (!home || !containedScroll) return;
+    const firefoxWindow = window as Window & { mozInnerScreenY?: number };
     const update = () => {
-      frame = 0;
-      if (Math.abs(viewport.scale - 1) > 0.01) {
-        reset();
-        return;
-      }
-      home.style.setProperty("--aero-visible-bottom", `${viewport.offsetTop + viewport.height}px`);
-      home.dataset.aeroVisualDock = "true";
+      const top = firefoxWindow.mozInnerScreenY;
+      if (top === undefined) return;
+      const outsideViewport = Math.max(0, Math.ceil(window.screen.height - top - window.innerHeight));
+      home.style.setProperty("--aero-android-bottom-gap", `${outsideViewport}px`);
     };
-    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     update();
-    viewport.addEventListener("resize", schedule);
-    viewport.addEventListener("scroll", schedule);
+    window.addEventListener("resize", update);
     return () => {
-      viewport.removeEventListener("resize", schedule);
-      viewport.removeEventListener("scroll", schedule);
-      if (frame) cancelAnimationFrame(frame);
-      reset();
+      window.removeEventListener("resize", update);
+      home.style.removeProperty("--aero-android-bottom-gap");
     };
-  }, [projectLanding, signedIn]);
+  }, [containedScroll]);
   // Messages need room for two panes, so that page drops the news column.
   const wide = pathname.startsWith("/messages") || inStaffArea(user?.role, pathname);
   const guestLanding = projectLanding;
@@ -423,6 +411,7 @@ export default function App() {
       className="aero-app aero-home"
       ref={homeRef}
       data-theme="aero-blue"
+      data-aero-contained-scroll={containedScroll || undefined}
       data-custom-font={Boolean(fontFamily) || undefined}
       data-custom-primary={Boolean(appearance?.primaryColor) || undefined}
       data-custom-wallpaper={Boolean(backgroundUrl) || undefined}
