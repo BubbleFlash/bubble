@@ -14,9 +14,9 @@
     "preview:mail": "tsup src/scripts/previewMail.ts --no-config --format esm --target node20 --out-dir dist/mail-tool && node dist/mail-tool/previewMail.js"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1165.0",
-    "@aws-sdk/s3-presigned-post": "^3.1166.0",
-    "@aws-sdk/s3-request-presigner": "^3.1166.0",
+    "@aws-sdk/client-s3": "^3.1175.0",
+    "@aws-sdk/s3-presigned-post": "^3.1175.0",
+    "@aws-sdk/s3-request-presigner": "^3.1175.0",
     "@commune/shared": "*",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
