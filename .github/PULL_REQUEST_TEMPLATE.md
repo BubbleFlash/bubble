@@ -1,27 +1,37 @@
-## What changed and why
+## Что сделано
 
-<!-- One or two sentences. Link the issue: "Closes #123". -->
+<!-- Опишите, что изменилось, зачем это было сделано и какое поведение теперь ожидается. -->
 
-## Type
+## Как проверить
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor or performance
-- [ ] Documentation or tooling
+<!-- Опишите последовательность действий, по которой QA сможет проверить изменения. -->
 
-## How I checked it
+1.
+2.
+3.
 
+**Ожидаемый результат:**
+<!-- Что должно произойти при успешной проверке? -->
+
+**Дополнительные условия:**
+<!-- Тестовые данные, необходимые настройки, особые сценарии. Если ничего не требуется — удалите блок. -->
+
+## Для администратора
+
+<!-- Укажите всё, что необходимо сделать при релизе, например изменение конфигурации в .env, изменение инфраструктуры и т.д. Если дополнительных действий не требуется, явно укажите это. -->
+
+## Скриншоты
+
+<!-- Добавьте скриншоты, если изменения затрагивают интерфейс. При необходимости приложите другие материалы. -->
+
+## Чек-лист
+
+- [ ] Код проверен локально.
 - [ ] `npm run typecheck`
 - [ ] `npm test`
 - [ ] `npm run lint`
 - [ ] `npm run build`
-- [ ] Tried it in the browser (screenshots below for visible changes)
-
-## Before merging
-
-- [ ] No secrets, `.env` files or personal data in the diff
-- [ ] Tests added or updated for backend logic
-- [ ] Docs updated if behaviour or environment variables changed
-- [ ] Anything that needs an action after deploy (new environment variable, database change) is written here:
-
-<!-- Screenshots or notes -->
+- [ ] Добавлены или обновлены тесты, если изменялась логика.
+- [ ] Обновлена документация, если изменилось поведение или конфигурация.
+- [ ] В изменениях нет секретов, персональных данных и случайно добавленных файлов.
+- [ ] PR связан с соответствующей задачей
