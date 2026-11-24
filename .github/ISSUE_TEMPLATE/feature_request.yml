@@ -1,28 +1,28 @@
-name: Feature request
-description: Suggest an idea or an improvement
+name: Задача
+description: Предложить новую функциональность или улучшение
 title: "feat: "
-labels: [enhancement]
+labels: [feature]
+
 body:
   - type: textarea
-    id: problem
+    id: description
     attributes:
-      label: What problem would this solve?
-      description: Describe who is affected and what is hard today.
-    validations:
-      required: true
+      label: Описание
+      description: Что необходимо реализовать и зачем?
+      placeholder: |
+        Описать требуемую функциональность,
+        текущую проблему или причину изменения.
+
   - type: textarea
-    id: idea
+    id: expected
     attributes:
-      label: What would you like to see?
-    validations:
-      required: true
+      label: Ожидаемый результат
+      description: Как должно работать после реализации?
+      placeholder: |
+        Описать ожидаемое поведение системы.
+
   - type: textarea
-    id: alternatives
+    id: additional
     attributes:
-      label: Other ways you considered
-  - type: checkboxes
-    id: help
-    attributes:
-      label: Contributing
-      options:
-        - label: I would like to work on this myself
+      label: Дополнительная информация
+      description: Технические детали, ограничения, ссылки и другие важные сведения.
