@@ -104,8 +104,7 @@
 }
 
 .aero-comment-input { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; }
-.aero-comment-input input { flex: 1 1 0; width: 0; min-width: 0; height: 40px; }
-.aero-comment-input .btn { flex: 0 0 auto; min-height: 40px; padding-inline: 10px; }
+.aero-comment-input .aero-send-button { align-self: start; }
 .aero-comment-input .aero-comment-photo { width: 40px; padding: 0; }
 .aero-comment-photo-hint { display: inline-flex; flex: 0 0 auto; }
 @media (min-width: 1240px) {

@@ -18,6 +18,7 @@ import { useImageDraft } from "../hooks/useImageDraft";
 import { useImageDrop } from "../hooks/useImageDrop";
 import ImageDropHint from "../components/ImageDropHint";
 import Icon from "../components/Icon";
+import SendButton from "../components/SendButton";
 import PlusBadge from "../components/PlusBadge";
 import { timeAgo } from "../components/PostCard";
 import {
@@ -33,6 +34,7 @@ import {
 import { joinConversation, noteTyping, stopTyping, useRealtime } from "../lib/realtime";
 import { useAuth } from "../store/auth";
 import {createId} from "../lib/uuid";
+import { usesMobileKeyboard } from "../lib/mobileKeyboard";
 
 const EmojiPicker = lazy(() => import("../components/EmojiPicker"));
 
@@ -42,19 +44,17 @@ function MessageText({ text }: { text: string }) {
     : <EmojiText key={index} text={part.value} />)}</>;
 }
 
-/** Text box that sends on Enter (Shift+Enter makes a new line). */
+/** On desktop, Enter sends and Shift+Enter inserts a new line. */
 function Composer({
   onSend,
   busy,
   error,
-  placeholder,
   onTyping,
   onStopTyping,
 }: {
   onSend: (draft: MessageDraft) => Promise<unknown>;
   busy: boolean;
   error?: string | null;
-  placeholder: string;
   onTyping?: () => void;
   onStopTyping?: () => void;
 }) {
@@ -163,7 +163,7 @@ function Composer({
     }
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !usesMobileKeyboard()) {
       e.preventDefault();
       void submit();
     }
@@ -191,7 +191,7 @@ function Composer({
       </div>}
       <div className="chat-form-row">
         <div className="image-drop-field">
-        {text && <div ref={mirror} className="chat-form__mirror" aria-hidden="true"><EmojiText text={text} measureFont={inputFont} fontRevision={fontRevision} />{"\n"}</div>}
+        {text && <div ref={mirror} className="chat-form__mirror" aria-hidden="true"><EmojiText key={fontRevision} text={text} measureFont={inputFont} />{"\n"}</div>}
         <textarea
           ref={field}
           disabled={busy}
@@ -216,10 +216,11 @@ function Composer({
             }
           }}
           className={text ? "chat-form__text--mirrored" : undefined}
-          placeholder={placeholder}
+          placeholder="Сообщение..."
           rows={1}
           maxLength={MESSAGE_MAX_LENGTH}
           aria-label="Сообщение"
+          enterKeyHint="enter"
         />
         {drop.dragging && <ImageDropHint />}
         <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) images.add(files); }} />
@@ -243,10 +244,7 @@ function Composer({
         </div>
         </div>
         </div>
-        <button type="submit" className="btn chat-form__send" aria-label="Отправить" title="Отправить" disabled={busy || images.busy || !images.ready || (!text.trim() && !tracks.length && !images.images.length)}>
-          {/* Google Material Icons: send, Apache-2.0. */}
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z" /></svg>
-        </button>
+        <SendButton disabled={busy || images.busy || !images.ready || (!text.trim() && !tracks.length && !images.images.length)} />
       </div>
       {text.length > MESSAGE_MAX_LENGTH - 200 && (
         <span className="muted small">
@@ -458,7 +456,6 @@ function Thread({ id }: { id: string }) {
         onDelete={() => { const messageId = messageMenu.id; setMessageMenu(undefined); if (window.confirm("Удалить сообщение у обоих участников?")) change.mutate({ messageId }); }} />}
 
       <Composer
-        placeholder="Напишите сообщение…"
         busy={send.isPending}
         error={send.isError ? send.error.message : null}
         onTyping={() => noteTyping(id)}
@@ -492,7 +489,6 @@ function NewChat({ username }: { username: string }) {
         <p className="muted center">{name && `Поздоровайтесь с ${name}. `} Соблюдайте правила общения: пользователи могут пожаловаться на нарушения.</p>
       </div>
       <Composer
-        placeholder={name ? `Сообщение для ${name}…` : "Сообщение…"}
         busy={start.isPending}
         error={start.isError ? start.error.message : null}
         onSend={async (text) => {

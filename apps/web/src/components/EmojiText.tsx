@@ -20,7 +20,7 @@ const Segmenter = (Intl as unknown as {
 }).Segmenter;
 const segmenter = Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : undefined;
 
-export default function EmojiText({ text, measureFont, fontRevision }: { text: string; measureFont?: string; fontRevision?: number }) {
+export default function EmojiText({ text, measureFont }: { text: string; measureFont?: string }) {
   const measure = useMemo(() => {
     if (!measureFont) return undefined;
     const context = document.createElement("canvas").getContext("2d");
@@ -35,7 +35,7 @@ export default function EmojiText({ text, measureFont, fontRevision }: { text: s
       }
       return width;
     };
-  }, [measureFont, fontRevision]);
+  }, [measureFont]);
   const segments = segmenter ? Array.from(segmenter.segment(text), (item) => item.segment) : Array.from(text);
   return <>{segments.map((segment, index) => {
     const position = positions.get(segment.replaceAll("\ufe0f", ""));

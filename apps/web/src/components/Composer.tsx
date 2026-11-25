@@ -13,6 +13,9 @@ import { LinkPreview } from "./LinkContent";
 import type { MusicTrackDTO } from "@commune/shared";
 import EmojiInputButton from "./EmojiInputButton";
 import TextareaResizeHandle from "./TextareaResizeHandle";
+import { usesMobileKeyboard } from "../lib/mobileKeyboard";
+import { clipboardImageFiles } from "../lib/images";
+import { useGrowingTextarea } from "../hooks/useGrowingTextarea";
 
 export default function Composer({ communitySlug }: { communitySlug?: string }) {
   const { user } = useAuth();
@@ -26,6 +29,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
   const [adult, setAdult] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  useGrowingTextarea(textRef, content);
   const create = useCreatePost();
   const drop = useImageDrop(imageDraft.add, create.isPending);
   const pickImage = (e: ChangeEvent<HTMLInputElement>) => {
@@ -33,8 +37,7 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
     e.target.value = "";
     if (files.length) imageDraft.add(files);
   };
-  const imageFiles = (files: FileList | null | undefined) => Array.from(files ?? []).filter((file) => file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(file.name));
-  const onPaste = (e: ClipboardEvent) => { const files = imageFiles(e.clipboardData.files); if (files.length) { e.preventDefault(); imageDraft.add(files); } };
+  const onPaste = (e: ClipboardEvent) => { const files = clipboardImageFiles(e.clipboardData); if (files.length) { e.preventDefault(); imageDraft.add(files); } };
 
   const canPost = (content.trim().length > 0 || imageDraft.images.length > 0 || music.length > 0) && !imageDraft.busy && imageDraft.ready;
 
@@ -78,15 +81,14 @@ export default function Composer({ communitySlug }: { communitySlug?: string }) 
           ref={textRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder={
-            communitySlug ? `Запись в c/${communitySlug}` : "Что нового? Поделитесь со всеми!"
-          }
+          placeholder="Напишите что - нибудь..."
           maxLength={maxLength}
           rows={2}
           aria-label="Написать запись"
+          enterKeyHint="enter"
           onPaste={onPaste}
           onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing) return;
+            if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing || usesMobileKeyboard()) return;
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
           }}

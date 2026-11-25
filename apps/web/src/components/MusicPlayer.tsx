@@ -65,7 +65,8 @@ export default function MusicPlayer() {
     onSuccess: ({ url }) => window.location.assign(url),
   });
 
-  const { playerRef, style, handleEvents, prepareModeSwitch } = useMusicPlayerPosition(compact, Boolean(track));
+  const hasTrack = Boolean(track);
+  const { playerRef, style, handleEvents, prepareModeSwitch } = useMusicPlayerPosition(compact, hasTrack);
 
   const previousVolume = useRef(volume > 0 ? volume : 0.5);
   const volumeControl = useRef<HTMLInputElement>(null);
@@ -93,7 +94,7 @@ export default function MusicPlayer() {
     const observer = new ResizeObserver(resize);
     observer.observe(player);
     return () => { observer.disconnect(); host.style.removeProperty("--aero-player-height"); };
-  }, [playerRef, Boolean(track)]);
+  }, [playerRef, hasTrack]);
   const titleRef = useRef<HTMLDivElement>(null);
   const titleTextRef = useRef<HTMLSpanElement>(null);
   const mobileTitleRef = useRef<HTMLDivElement>(null);

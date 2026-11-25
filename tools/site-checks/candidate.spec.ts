@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_COMMUNITY_PERMISSIONS, rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
-import type { AccountUser, ClientNetworkEvent, MetricsReport, NetworkReport, PostDTO } from "@commune/shared";
+import type { AccountUser, ClientNetworkEvent, CommentDTO, CreateCommentInput, MetricsReport, NetworkReport, PostDTO } from "@commune/shared";
 
 const createdAt = "2026-11-17T00:00:00Z";
 const viewer: AccountUser = {
@@ -86,6 +86,210 @@ async function installFixtures(
   });
   return () => refreshes;
 }
+
+async function moveCaretToEnd(field: Locator) {
+  await field.evaluate((element: HTMLTextAreaElement) => {
+    element.setSelectionRange(element.value.length, element.value.length);
+  });
+}
+
+for (const platform of ["desktop", "Android", "iPhone", "iPadOS"] as const) {
+  test(`edit and submit posts, comments and messages with the ${platform} keyboard`, async ({ page }) => {
+    const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+    if (platform !== "desktop") {
+      await page.addInitScript((platform) => {
+        if (platform === "Android") {
+          Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (Linux; Android 15) Mobile" });
+        } else if (platform === "iPhone") {
+          Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile" });
+        } else {
+          Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" });
+          Object.defineProperty(navigator, "platform", { value: "MacIntel" });
+          Object.defineProperty(navigator, "maxTouchPoints", { value: 5 });
+        }
+      }, platform);
+    }
+    await installFixtures(page, origin);
+    const published: string[] = [];
+    await page.route(/\/api\/posts(?:\?.*)?$/, (route) => {
+      if (route.request().method() === "GET") return route.fallback();
+      const { content } = route.request().postDataJSON();
+      published.push(content);
+      return route.fulfill({ status: 201, json: { ...posts[0], content } });
+    });
+    const comments: CommentDTO[] = [];
+    const commentWrites: string[] = [];
+    await page.route("**/api/posts/fixture-0/comments", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: comments });
+      const { content, parentId }: CreateCommentInput = route.request().postDataJSON();
+      commentWrites.push(content);
+      const comment: CommentDTO = {
+        id: `comment-${comments.length}`, postId: "fixture-0", author: viewer, createdAt,
+        content, parentId: parentId ?? null, likeCount: 0, likedByMe: false, replyCount: 0,
+      };
+      comments.push(comment);
+      return route.fulfill({ status: 201, json: comment });
+    });
+    const sent: string[] = [];
+    const conversation = { id: "thread", other: posts[0]!.author, lastMessage: null, lastMessageAt: createdAt, unread: 0, seenByOther: true };
+    await page.route("**/api/messages", (route) => route.fulfill({ json: [conversation] }));
+    await page.route("**/api/messages/thread", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { conversation, items: [], nextCursor: null } });
+      const { text, clientMessageId } = route.request().postDataJSON();
+      sent.push(text);
+      return route.fulfill({ status: 201, json: { id: "message", conversationId: "thread", senderId: viewer.id, text, clientMessageId, createdAt } });
+    });
+
+    async function checkDraft(field: Locator, submit: Locator, writes: string[], prefix = "") {
+      const previousWrites = writes.length;
+      await field.click();
+      await expect(field).toBeFocused();
+      if (prefix) await moveCaretToEnd(field);
+      await field.pressSequentially("first line");
+      const firstLine = `${prefix}first line`;
+      await expect(field).toHaveValue(firstLine);
+      await field.press(platform === "desktop" ? "Shift+Enter" : "Enter");
+      await expect(field).toHaveValue(`${firstLine}\n`);
+      await field.pressSequentially("second line");
+      const multiline = `${firstLine}\nsecond line`;
+      await expect(field).toHaveValue(multiline);
+      expect(writes).toHaveLength(previousWrites);
+      if (platform === "desktop") await field.press("Enter");
+      else await submit.click();
+      await expect(field).toHaveValue("");
+      expect(writes.slice(previousWrites)).toEqual([multiline]);
+    }
+
+    await page.goto(origin);
+    const card = page.locator(".feed-post").first();
+    await expect(card).toBeVisible();
+    await checkDraft(page.getByRole("textbox", { name: "Написать запись" }), page.getByRole("button", { name: "Опубликовать" }), published);
+    await card.getByRole("button", { name: "0 комментариев" }).click();
+    const comment = card.getByRole("textbox", { name: "Написать комментарий" });
+    const sendComment = card.getByRole("button", { name: "Отправить", exact: true });
+    await expect(comment).toHaveAttribute("enterkeyhint", platform === "desktop" ? "send" : "enter");
+    await checkDraft(comment, sendComment, commentWrites);
+    await card.getByRole("button", { name: "Ответить", exact: true }).click();
+    const replyField = card.getByRole("textbox", { name: /^Написать (ответ|комментарий)$/ });
+    await expect(replyField).toHaveAccessibleName("Написать ответ");
+    await checkDraft(replyField, sendComment, commentWrites, `${viewer.username}, `);
+    await expect(replyField).toHaveAccessibleName("Написать комментарий");
+    expect(comments[1]?.parentId).toBe(comments[0]?.id);
+    await page.goto(`${origin}/messages/thread`);
+    await checkDraft(page.getByRole("textbox", { name: "Сообщение" }), page.getByRole("button", { name: "Отправить", exact: true }), sent);
+  });
+}
+
+test("publish a multiline comment and retry a pasted photo in a multiline reply", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const comments: CommentDTO[] = [];
+  const published: CreateCommentInput[] = [];
+  await page.route("**/api/posts/fixture-0/comments", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: comments });
+    const input: CreateCommentInput = route.request().postDataJSON();
+    published.push(input);
+    const comment: CommentDTO = {
+      id: `comment-${comments.length}`, postId: "fixture-0", author: viewer, createdAt,
+      content: input.content, imageUrls: input.imageUrls, parentId: input.parentId ?? null,
+      likeCount: 0, likedByMe: false, replyCount: 0,
+    };
+    comments.push(comment);
+    return route.fulfill({ status: 201, json: comment });
+  });
+  const photo = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  const url = `/uploads/${"a".repeat(32)}.gif`;
+  let attempts = 0;
+  await page.route("**/api/uploads", (route) => ++attempts === 1
+    ? route.fulfill({ status: 503, json: { error: "Service unavailable" } })
+    : route.fulfill({ status: 201, json: { url } }));
+  await page.route(`**${url}*`, (route) => route.fulfill({ contentType: "image/gif", body: Buffer.from(photo, "base64") }));
+
+  await page.goto(origin);
+  const card = page.locator(".feed-post").first();
+  await card.getByRole("button", { name: "0 комментариев" }).click();
+  const draft = card.getByRole("textbox", { name: "Написать комментарий" });
+  await draft.fill("Комментарий");
+  await moveCaretToEnd(draft);
+  await draft.press("Shift+Enter");
+  await draft.pressSequentially("second line");
+  await expect(draft).toHaveValue("Комментарий\nsecond line");
+  expect(published).toHaveLength(0);
+  await draft.press("Enter");
+  const comment = card.locator(".inline-comment p");
+  await expect(comment).toHaveJSProperty("textContent", "Комментарий\nsecond line");
+  await expect(comment).toHaveCSS("white-space", "pre-wrap");
+
+  await page.goto(`${origin}/posts/fixture-0`);
+  await page.getByRole("button", { name: "Ответить", exact: true }).click();
+  const reply = page.getByRole("textbox", { name: "Написать ответ" });
+  await expect(reply).toBeFocused();
+  await reply.fill("Ответ");
+  await moveCaretToEnd(reply);
+  await reply.press("Shift+Enter");
+  await reply.pressSequentially("with photo");
+  await reply.evaluate((field, photo) => {
+    const data = new DataTransfer();
+    const bytes = Uint8Array.from(atob(photo), (character) => character.charCodeAt(0));
+    data.items.add(new File([bytes], "photo.gif", { type: "image/gif" }));
+    field.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, photo);
+  const preview = page.getByRole("img", { name: "Предпросмотр вложения" });
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveJSProperty("naturalWidth", 1);
+  await expect(page.getByRole("alert")).toContainText("Не удалось выполнить запрос (код 503).");
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await expect(send).toBeDisabled();
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(send).toBeEnabled();
+  await expect(reply).toHaveValue("Ответ\nwith photo");
+  await send.click();
+
+  const replyRow = page.locator(".inline-comment--reply");
+  await expect(replyRow.locator("p").first()).toHaveJSProperty("textContent", "Ответ\nwith photo");
+  await expect(replyRow.getByRole("img", { name: /Изображение комментария/ })).toBeVisible();
+  await expect(preview).toHaveCount(0);
+  expect(attempts).toBe(2);
+  expect(published).toEqual([
+    expect.objectContaining({ content: "Комментарий\nsecond line" }),
+    expect.objectContaining({ content: "Ответ\nwith photo", parentId: comments[0]!.id, imageUrls: [url] }),
+  ]);
+});
+
+test("grow post and comment drafts and restore their initial height", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.goto(origin);
+  const card = page.locator(".feed-post").first();
+  await expect(card).toBeVisible();
+  const post = page.getByRole("textbox", { name: "Написать запись" });
+  const height = async (field: Locator) => (await field.boundingBox())!.height;
+  const postHeight = await height(post);
+  const text = Array.from({ length: 8 }, (_, index) => `Line ${index + 1}`).join("\n");
+  await post.click();
+  await post.fill(text);
+  await expect.poll(() => height(post)).toBeGreaterThan(postHeight);
+  await post.fill("");
+  await expect.poll(() => height(post)).toBe(postHeight);
+
+  await card.getByRole("button", { name: "0 комментариев" }).click();
+  const comment = card.getByRole("textbox", { name: "Написать комментарий" });
+  const send = card.getByRole("button", { name: "Отправить", exact: true });
+  await expect(send).toHaveCSS("height", "44px");
+  const commentHeight = await height(send);
+  await expect.poll(() => height(comment)).toBe(commentHeight);
+  await expect(comment).toHaveCSS("resize", "none");
+  await expect(send.locator("svg path")).toHaveAttribute("d", "M2.01 21 23 12 2.01 3 2 10l15 2-15 2z");
+  await comment.click();
+  await comment.pressSequentially("Line 1");
+  await comment.press("Shift+Enter");
+  await expect.poll(() => height(comment)).toBeGreaterThan(commentHeight);
+  await comment.fill(text.repeat(5));
+  await expect.poll(() => comment.evaluate((field) => field.scrollHeight > field.clientHeight)).toBe(true);
+  await comment.fill("");
+  await expect.poll(() => height(comment)).toBe(commentHeight);
+  await expect(send).toBeDisabled();
+});
 
 test("keep long group names within search results, group headers and reposts", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -357,8 +561,11 @@ test("resize a post draft from its bottom corner on a touch device", async ({ pa
   await page.goto(origin);
   const field = page.getByRole("textbox", { name: "Написать запись" });
   const handle = page.getByRole("button", { name: "Изменить высоту поля записи" });
+  await expect(page.locator(".feed-post").first()).toBeVisible();
   await expect(handle).toBeVisible();
-  await field.fill("Черновик записи");
+  await field.click();
+  await field.pressSequentially("Post draft");
+  await expect(field).toHaveValue("Post draft");
   await handle.focus();
   const start = (await field.boundingBox())!.height;
   await handle.press("ArrowDown");
@@ -371,7 +578,11 @@ test("resize a post draft from its bottom corner on a touch device", async ({ pa
   await page.mouse.move(x, y + 48, { steps: 4 });
   await page.mouse.up();
   await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(start + 68, 1);
-  await expect(field).toHaveValue("Черновик записи");
+  await expect(field).toHaveValue("Post draft");
+  await field.fill("Line\n".repeat(12));
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeGreaterThan(start + 68);
+  await field.fill("");
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(start + 68, 1);
 });
 
 test("notification actor and event have independent links and type icons", async ({ page, browserName }) => {
