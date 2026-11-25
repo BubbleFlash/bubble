@@ -1,79 +1,17 @@
-# Deployment
+# Развёртывание Bubble
 
-Commune deploys as **two Vercel projects** from one repository, plus MongoDB Atlas and a few optional services.
+Эксплуатационные операции выполняет человек. Топология ниже следует из конфигурации репозитория. Запущенные контейнеры, внешние правила и состояние интеграций сверяются отдельно.
 
-```
-Browser → web project (apps/web) ──/api/*, /uploads/* rewrite──► API project (apps/api) → MongoDB Atlas
-```
+## Состав окружения
 
-## 1. MongoDB Atlas
+- [docker-compose.prod.yml](../docker-compose.prod.yml) запускает MongoDB с постоянным томом, API, realtime и web Nginx. API и realtime взаимодействуют внутри docker-сети. Веб-порт опубликован на loopback, публичный вход обеспечивает внешний HTTPS-прокси.
+- [nginx/default.conf](../nginx/default.conf) обслуживает SPA, передаёт `/api/` и `/uploads/` в API, `/socket.io/` в realtime с поддержкой upgrade. Контракт клиентской сборки — same-origin (`lib/api.ts`, `lib/realtime.ts`); локальная dev-сборка может использовать отдельные `VITE_*_URL`.
+- Тестовый workflow дополняет базовый Compose файлом [docker-compose.test-gate.yml](../docker-compose.test-gate.yml) и конфигурацией [nginx/test-gate.conf](../nginx/test-gate.conf). Политика доступа и приёмка — в [TEST_ACCESS.md](TEST_ACCESS.md).
+- API использует S3-совместимое хранилище по конфигурации `S3_*`. Проверяй внешний endpoint, TLS, CORS и подписанные ссылки по [UPLOADS.md](UPLOADS.md). Внешние параметры proxy, cookie и upstream сверяй с [контекстом безопасности](../BUBBLE_CONTEXT.md#4-api-mongodb-и-безопасность).
+- `apps/*/vercel.json`, API Vercel adapter и `render.yaml` остаются в дереве как унаследованные конфигурации. Действующие workflow в checkout используют Docker-образы и Compose.
 
-1. Create a free cluster and a database user.
-2. Network access: allow `0.0.0.0/0` (Vercel uses changing IPs).
-3. Copy the connection string; it becomes `MONGODB_URI`.
+## Поставка и проверка
 
-## 2. API project
+Workflow публикуют образы в GHCR по SHA и доставляют их по SSH. Образы web, API и realtime должны соответствовать одному кандидату. Файл env хранится на сервере; исходники переменных и полномочия задаёт владелец. Для конкретной интеграции сравнивай `apps/api/src/config/env.ts`, `.env.example`, Compose и фактический список переменных окружения без раскрытия значений. Само наличие ключа в схеме API не гарантирует его передачу из Compose.
 
-Import the repo in Vercel and set:
-
-| Setting | Value |
-| --- | --- |
-| Root Directory | `apps/api` |
-| Framework Preset | Other |
-| Build Command | `npm run build:vercel` |
-| Output Directory | `public` |
-
-Settings live in `apps/api/vercel.json` (function `api/index.js`, `includeFiles: dist/**`, `maxDuration: 30`, rewrite `/(.*)` to `/api`).
-
-Environment variables:
-
-| Name | Value |
-| --- | --- |
-| `MONGODB_URI` | Atlas connection string |
-| `JWT_ACCESS_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
-| `CLIENT_ORIGIN` | Your web URL, no trailing slash |
-| `NODE_ENV` | `production` |
-| `TRUST_PROXY` | `2` |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Needed for image uploads |
-
-Optional: `RESEND_API_KEY`, `EMAIL_FROM`, `LEMONSQUEEZY_*`, `PLATFORM_FEE_PERCENT`, `PLUS_FEE_PERCENT`, `PLUS_PRICE_LABEL`, `GOOGLE_CLIENT_ID`, `CONTACT_EMAIL`, `REQUIRE_VERIFIED_EMAIL`.
-
-## 3. Web project
-
-| Setting | Value |
-| --- | --- |
-| Root Directory | `apps/web` |
-| Framework Preset | Vite |
-| Install Command | `cd ../.. && npm install --include=dev` |
-
-`apps/web/vercel.json` rewrites `/api/:path*` and `/uploads/:path*` to the API project URL. **Edit the destination** to your own API URL if you fork.
-
-Do **not** set `VITE_API_URL` on the web project. Optional: `VITE_GOOGLE_CLIENT_ID`, `VITE_ADSENSE_CLIENT`, `VITE_ADSENSE_FEED_SLOT`. These are baked in at build time, so redeploy after changing them.
-
-## 4. Optional services
-
-- **Cloudinary**: create an account and copy cloud name, key and secret. Images upload straight from the browser using a signed ticket from `POST /api/uploads/sign`. See [UPLOADS.md](UPLOADS.md).
-- **Resend**: verify a domain, set `RESEND_API_KEY` and `EMAIL_FROM`.
-- **Lemon Squeezy**: the existing billing integration handles Plus subscriptions and legacy post orders. See [PLUS.md](PLUS.md) for provider configuration.
-- **Google sign-in**: create a Web OAuth client, add your web origin as an authorised JavaScript origin, set `GOOGLE_CLIENT_ID` (API) and `VITE_GOOGLE_CLIENT_ID` (web).
-- **AdSense**: needs an approved site; set the two `VITE_ADSENSE_*` values.
-
-## 5. First admin
-
-Run locally with `MONGODB_URI` pointed at Atlas:
-
-```bash
-npm run make-admin -w @commune/api -- you@example.com
-```
-
-## Troubleshooting
-
-| Symptom | Likely cause |
-| --- | --- |
-| Login works then logs out on refresh | `CLIENT_ORIGIN` wrong or has a trailing slash; web not using the `/api` rewrite |
-| 500 on every API call | Missing `MONGODB_URI` or `JWT_ACCESS_SECRET`; Atlas network access blocks Vercel |
-| Rate limit errors for everyone | `TRUST_PROXY` not set to `2` |
-| Image upload fails | `CLOUDINARY_*` not set on the **API** project; or file over 4.5 MB through the fallback path |
-| Build fails on shared package | Web install command must run from the repo root |
-| Env change has no effect | Redeploy; `VITE_*` need a web rebuild |
-| Payments do nothing | Webhook URL or secret mismatch in Lemon Squeezy |
+Проверь `/api/health`, `/api/health/ready`, доступность SPA и Socket.IO с внешнего маршрута. Посмотри логи API и прокси при ошибке. Регламент допуска и приёмки описан в [RELEASING.md](RELEASING.md).

@@ -2,15 +2,17 @@
 
 Images are prepared in the browser, uploaded through `POST /api/uploads`, and stored in S3 under random keys. The database keeps `/uploads/<random>.<ext>` references. The legacy direct-upload ticket code is disabled; Cloudinary is not used by this path.
 
+API проверяет сигнатуру файла и принимает изображение до 10 МиБ. В репозиторных конфигурациях Nginx лимит 11 МиБ оставляет запас для multipart. Внешний прокси имеет собственную конфигурацию.
+
 ## Preparing new images (#44)
 
 `apps/web/src/lib/images.ts` limits posts to 1600 px, avatars to a centred 512 px square, and wallpapers to 2560 px. Preferred transfer budgets are 450 KiB, 96 KiB and 700 KiB respectively. The encoder first tries WebP at quality .82, then .72 at the same resolution before reducing dimensions. The preferred budget is not a hard rejection limit; the final attempt can use the existing 2.5 MiB ceiling. Browsers without a WebP encoder use JPEG on white. WebP preserves transparent pixels. GIF bytes are preserved to retain animation.
 
-Only originals below 96 KiB can skip encoding. This removes the old 600 KiB bypass for post photos. Existing stored files are not recompressed or migrated.
+GIF files within the limit keep their original bytes. For other formats, the original can skip encoding if it needs no resizing or square crop and fits both the 96 KiB cap and its target budget. Existing stored files are not recompressed or migrated.
 
 ## Reusing existing downloads (#58)
 
-`GET /uploads/:file` checks moderation before serving or validating an image. Proxy responses use `private, no-cache` and the S3 ETag. A browser can retain bytes but must revalidate them before reuse. Its `If-None-Match` is forwarded to S3: unchanged objects return 304 without a second download through the API. Moderated and missing files return a noncached 404, including when a browser sends an old validator.
+`GET /uploads/:file` checks moderation before serving or validating an image. Proxy responses use `private, no-cache` and the S3 ETag. A browser can retain bytes but must revalidate them before reuse. `If-None-Match` goes to S3. An unchanged object can return 304, and a provider that rejects the conditional request with 400 gets retried without it. Blocked images and missing objects return 404. Consult the [access boundaries](../BUBBLE_CONTEXT.md#изображения-и-прочие-файлы) when changing this route.
 
 ## Optional direct image delivery
 
