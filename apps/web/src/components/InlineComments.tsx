@@ -13,6 +13,7 @@ import { useImageDraft } from "../hooks/useImageDraft";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import MusicAttachments from "./MusicAttachments";
 import PostImages from "./PostImages";
+import { clipboardImageFiles } from "../lib/images";
 
 function orderComments(items: CommentDTO[]) {
   const byId = new Map(items.map((comment) => [comment.id, comment]));
@@ -46,7 +47,7 @@ export default function InlineComments({ postId, focusedId, open = true }: { pos
   const [pickerOpen, setPickerOpen] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const [replying, setReplying] = useState<CommentDTO>();
-  const field = useRef<HTMLInputElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
   const section = useRef<HTMLElement>(null);
   const prefix = useId();
   const { rows, byId } = useMemo(() => orderComments([...(comments.data?.pages ?? [])].reverse().flat()), [comments.data]);
@@ -96,7 +97,12 @@ export default function InlineComments({ postId, focusedId, open = true }: { pos
         {images.error && <p className="error" role="alert">{images.error}</p>}
         {tracks.map((track) => <div className="row" key={track.id}>{track.artist} — {track.title}<button type="button" onClick={() => setTracks((items) => items.filter((item) => item.id !== track.id))}>Убрать</button></div>)}
         <input ref={file} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(event) => { const selected = Array.from(event.target.files ?? []); event.target.value = ""; if (selected.length) images.add(selected); }} />
-        <CommentInput ref={field} value={content} onChange={setContent} pending={add.isPending || images.busy} canSubmit={Boolean(content.trim() || images.images.length || tracks.length) && images.ready} replying={Boolean(replying)} onImage={() => file.current?.click()} onMusic={() => setPickerOpen(true)} />
+        <CommentInput ref={field} value={content} onChange={setContent} pending={add.isPending || images.busy} canSubmit={Boolean(content.trim() || images.images.length || tracks.length) && images.ready} replying={Boolean(replying)} onImage={() => file.current?.click()} onMusic={() => setPickerOpen(true)} onPaste={(event) => {
+          const files = clipboardImageFiles(event.clipboardData);
+          if (!files.length) return;
+          if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+          if (!add.isPending && !images.busy) images.add(files);
+        }} />
         {add.isError && <p className="error" role="alert">{add.error.message}</p>}
       </form>
       {pickerOpen && <MusicAttachmentPicker selected={tracks} onChange={setTracks} maxSelection={2} onClose={() => setPickerOpen(false)} />}

@@ -8,14 +8,14 @@ type Latest = { post: { id: string; content: string; truncated: boolean; created
 export default function DevelopmentWidget() {
   const location = useLocation();
   const previousLocation = useRef(location.key);
-  const latest = useQuery({ queryKey: ["development-widget"], queryFn: () => api<Latest>("/development-widget"), staleTime: 0, refetchInterval: 60_000 });
+  const { data, isError, refetch } = useQuery({ queryKey: ["development-widget"], queryFn: () => api<Latest>("/development-widget"), staleTime: 0, refetchInterval: 60_000 });
   useEffect(() => {
     if (previousLocation.current !== location.key) {
       previousLocation.current = location.key;
-      void latest.refetch();
+      void refetch();
     }
-  }, [location.key, latest.refetch]);
-  const post = latest.isError ? null : latest.data?.post;
+  }, [location.key, refetch]);
+  const post = isError ? null : data?.post;
   return <section className="aero-widget"><strong>Дневник разработки</strong>
     {post ? <div className="development-widget__body">
       <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleDateString("ru-RU")}</time>

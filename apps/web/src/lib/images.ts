@@ -9,6 +9,12 @@ function typeOf(file: File): string {
   return ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext ? `image/${ext}` : "";
 }
 
+export function clipboardImageFiles(clipboard: DataTransfer): File[] {
+  return Array.from(clipboard.files).filter((file) =>
+    file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(file.name),
+  );
+}
+
 /** Quick check so people get instant feedback. The server validates again. */
 export function validateImage(file: File): string | null {
   const type = typeOf(file);
