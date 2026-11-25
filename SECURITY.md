@@ -1,22 +1,7 @@
-# Security policy
+# Сообщение об уязвимости Bubble
 
-## Reporting a vulnerability
+Передай описание владельцам репозитория по закрытому каналу. Если в текущем репозитории включён GitHub Private Vulnerability Reporting, используй **Security → Report a vulnerability**. Публичный issue подходит для обычной ошибки, а отчёт об уязвимости должен оставаться закрытым. Для отчёта укажи затронутый компонент, версию, условия и наблюдаемый эффект. Секреты, учётные данные и реальные пользовательские данные исключи.
 
-Please **do not open a public issue** for security problems.
+В область проекта входят веб-приложение, API, realtime и их конфигурация в репозитории. Вопросы инфраструктуры или интеграций передавай владельцу соответствующего окружения.
 
-Report privately through GitHub: **Security → Report a vulnerability** on this repository
-(<https://github.com/Haseeb-MernStack/commune/security/advisories/new>). Include what you found,
-how to reproduce it and the impact. You will get a first answer within a few days. Please give us
-reasonable time to fix the problem before disclosing it.
-
-## Scope
-
-In scope: the API, the web app and this repository's configuration. Out of scope: denial of
-service by volume, social engineering, and vulnerabilities in third-party services (report those
-to the provider).
-
-## Supported versions
-
-Only the latest `main` branch is supported.
-
-How the project is hardened is described in [docs/SECURITY.md](docs/SECURITY.md).
+Технические правила — в [разделе безопасности BUBBLE_CONTEXT.md](BUBBLE_CONTEXT.md#4-api-mongodb-и-безопасность).

@@ -1,57 +1,20 @@
-# Monitoring
+# Мониторинг Bubble
 
-Three layers, all built in. None needs a paid service.
+- `GET /api/health` проверяет доступность процесса API. `GET /api/health/ready` дополнительно проверяет MongoDB и возвращает 503 при деградации. У realtime собственный `/health`.
+- API и клиент группируют ошибки по отпечатку. См. `apps/api/src/services/errorTracker.ts`, `apps/web/src/lib/report.ts`, `monitorController.ts` и `AdminTelemetry.tsx`. Ошибки из браузера приходят через `/api/client-errors`, диагностические сетевые события — через `/api/client-network`. При наличии настроенной доставки первичные оповещения обслуживают Resend и `ALERT_EMAIL` с резервом `CONTACT_EMAIL`.
+- При инциденте сопоставляй браузерный отчёт, журналы внешнего прокси и API. Для регионального сравнения используй [проверку доступности](PERFORMANCE.md#проверка-доступности-по-конкретному-сетевому-маршруту). Правила восстановления старой вкладки — в [контексте PWA](../BUBBLE_CONTEXT.md#вкладки-после-сборки-и-service-worker).
 
-## 1. Health checks
+## Метрики и сетевые события в админке
 
-| URL | Meaning |
-| --- | --- |
-| `/api/health` | The API process is up (no database check) |
-| `/api/health/ready` | The database answers. `200 {"status":"ok"}` or `503 {"status":"degraded"}` |
 
-Neither reveals versions, settings or paths. Point an uptime monitor at the **ready** URL:
-`https://commune-mu.vercel.app/api/health/ready`.
+Откройте «Админка» → «Мониторинг». CSV на вкладке «Метрики API» включает сводку и разбивку по маршрутам, на вкладке «Сеть и 429» — все группы выбранного периода и фильтра. Время в CSV указано в UTC. «Ошибки приложения» экспортирует сводку текущих активных групп, текст и трассировки остаются в админке. Структурированная телеметрия хранит шаблоны маршрутов и значения из разрешённых полей, без IP, токенов, тел запросов и параметров URL.
 
-Free options: UptimeRobot, Better Stack, or Vercel's own alerts. Set it to check every 5 minutes
-and email you on failure.
+CSV ошибок содержит категорию, статус внешнего сервиса и Request ID последнего события, когда они известны. Для записей, созданных до появления этих полей, категория может быть `unknown`. Request ID помогает найти соответствующую запись в журнале API.
 
-## 2. Error tracking
+API собирает завершённые запросы без выборки, за исключением служебных маршрутов проверки здоровья, межсервисных запросов и самого мониторинга. Счётчики сбрасываются в MongoDB пачками каждые 10 секунд. Сетевые события также включают прерванные ответы. Интервалы хранятся 8 дней. Для p95/p99 в отчёте используются верхние границы интервалов гистограммы. Потеря процесса или MongoDB до сброса может оставить пропуски, например при остановке процесса. В админке данные обновляются раз в минуту или по кнопке.
 
-- **API:** every unexpected 500 is recorded (message, short stack, route). The response contains a
-  `requestId`, also sent as the `X-Request-Id` header and written to the server log, so a user's
-  report can be matched to the exact log line.
-- **Browser:** uncaught errors, unhandled promise rejections and React render crashes are sent to
-  `POST /api/client-errors`. Noise from the visitor's network, browser extensions and
-  `ResizeObserver` is ignored; at most 5 different errors are sent per visit.
-- Errors are grouped by fingerprint (the same bug for different ids is one line with a counter).
-  Tokens, emails and query strings are removed before storing. Rows are deleted 30 days after
-  they last happened, and the table is capped at 2000 kinds of error.
+Production-сборка веб-приложения отправляет ограниченную очередь диагностических событий. При восстановлении сети открытая вкладка повторяет отправку. Если сайт не загрузился или вкладка закрылась до отправки, данные нужны из журналов прокси и внешних проверок доступности. Один сбой может появиться у API и в браузере, поэтому их счётчики не складывают. `CF-Ray` помогает найти транзакцию в Cloudflare и сам по себе не определяет, кто вернул `429`. При отсутствии имени лимитера проверяйте логи Cloudflare/Nginx и API по времени и идентификаторам.
 
-View them in the app: **Admin → Errors**. Press **Mark as fixed**; if the same error appears
-again it is reopened.
+Для локального теста с отдельной MongoDB передайте её loopback-порт в `BUBBLE_MONITOR_TEST_MONGO_PORT` и запустите `npm run test -w @commune/api -- src/tests/monitor.integration.test.ts`. `npm run check:site` проверяет вкладки, фильтры, скачивание CSV и отправку браузерного события при восстановлении сеанса.
 
-## 3. Alerts
-
-The first time a **new** kind of error appears, an email goes to `ALERT_EMAIL` (or
-`CONTACT_EMAIL` when empty). Needs `RESEND_API_KEY`. At most 5 alert emails per hour per server
-instance, so an outage cannot flood your inbox.
-
-## Stale tabs after a deploy
-
-When you deploy, a tab that was already open can ask for page files that no longer exist. The app
-detects this and reloads once automatically instead of showing a blank page.
-
-## Also useful (outside the code)
-
-- **Vercel → Logs** for the API project: search for a `requestId` from a user report.
-- **Vercel → Settings → Notifications:** turn on failed-deployment emails.
-- **MongoDB Atlas → Alerts:** turn on connection and storage alerts.
-- **Resend / Lemon Squeezy / Cloudinary:** each has its own dashboard of failed deliveries,
-  payments and uploads.
-
-## Limits
-
-This is a lightweight tracker: no source maps (production builds ship none), no performance
-traces, no user sessions. If the site grows, add Sentry later; the report call sites
-(`apps/web/src/lib/report.ts` and `apps/api/src/services/errorTracker.ts`) are the two places
-to change.
+Для проверки одновременного открытия сайта из одного NAT передайте loopback-порт отдельной MongoDB в `BUBBLE_RATE_LIMIT_TEST_MONGO_PORT` и запустите `npm run test -w @commune/api -- src/tests/rateLimit.test.ts`. Для 20 и 50 аккаунтов тест исчерпывает общий бюджет IP, затем восстанавливает сеансы и запрашивает ленту и фоновые данные. Отдельно он проверяет ответ `429` при исчерпании бюджета самого восстановления. `npm run check:site` проверяет `Retry-After` между вкладками, восстановление после временных ошибок, отказ модуля, сохранение плеера и работу service worker с локальным Socket.IO.

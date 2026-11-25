@@ -1,44 +1,25 @@
-# Development setup
+# Локальная разработка
 
-## Quick start on your computer
+Работай из корня репозитория с `package.json`. Для воспроизводимости используй Node.js 20, как в workflow, npm и lockfile. В ветке Node 20 нужен выпуск 20.19.0 или новее, чтобы запустить ESLint из lockfile. В Windows PowerShell можно использовать `npm.cmd`, если запуск `npm.ps1` запрещён настройкой оболочки.
 
-See the [README](../README.md#getting-started). In short: `docker compose up -d mongo`, copy `.env.example` to
-`.env`, `npm install`, `npm run dev`.
+## Быстрый запуск
 
-## Dev container / GitHub Codespaces
+1. Проверь порты 5173 (web), 4000 (API), 4100 (realtime), 27017 (MongoDB). Для работы с данными используй свою локальную БД. Если её ещё нет, подними MongoDB командой `docker compose up -d mongo`.
+2. При отсутствии локального `.env` скопируй `.env.example` в `.env`. Убедись, что `MONGODB_URI`
+   указывает на локальную БД. Для полного запуска с realtime задай `CLIENT_ORIGIN=http://localhost:5173`,
+   `API_URL=http://localhost:4000`, `REALTIME_URL=http://localhost:4100` и общий для двух серверных
+   процессов `REALTIME_SECRET` длиной от 32 символов. API и realtime используют один локальный
+   `JWT_ACCESS_SECRET`. Для Vite передай `VITE_REALTIME_URL=http://localhost:4100` через переменную
+   процесса или `apps/web/.env.local`. Иначе браузер не включает realtime в dev. Для API dev-клиент
+   по умолчанию использует `http://localhost:4000/api`, переопределение — `VITE_API_URL`.
+3. Выполни `npm ci`, затем `npm run dev`. Это запускает web, API и realtime. Открой `http://localhost:5173`.
+   При выборе `127.0.0.1` вместо `localhost` согласованно измени URL и origin, чтобы сохранить cookie и CORS.
+   Для проверки одного приложения можно использовать `npm run dev -w @commune/<workspace>`.
+4. Для маршрутов с объектным хранилищем подними `docker compose up -d minio`, создай локальный бакет и проверь параметры `S3_*` по [.env.example](../.env.example) и [UPLOADS.md](UPLOADS.md). Для входа по Google, исходящей почты и платежей нужны параметры соответствующей интеграции. Для повседневной разработки используй тестовые проекты и данные.
 
-`.devcontainer/` gives every contributor the same Node 20 + MongoDB setup with the editor extensions already
-installed.
+API и realtime читают корневой `.env` при запуске через workspace (`apps/api/src/config/env.ts`, `apps/realtime/src/index.ts`). Переменные процесса имеют приоритет. Для Vite параметры `VITE_*` передавай через окружение процесса или env-файлы workspace `apps/web`, если нужны значения, отличные от локальных defaults. Меняй настройки отдельного процесса или его локального файла только при понимании приоритета. `.devcontainer/` даёт альтернативу с Mongo и пробросом портов. При удалённой работе проверь фактический origin и доступность API/realtime из браузера.
 
-- **VS Code on your computer:** install the *Dev Containers* extension, open the folder and choose
-  *Reopen in Container*.
-- **GitHub Codespaces:** on the repository page choose **Code → Codespaces → Create codespace on main**.
+## Почта и проверки
 
-After it starts, run `npm run dev`. The web app is on port 5173 and the API on 4000.
-
-Known limit: in a Codespace opened **in the browser**, the web app is served from an `app.github.dev` address, while
-the API address and the allowed origin default to `localhost`. Open the Codespace from VS Code on your computer (it
-forwards the ports to your own `localhost`), or set `VITE_API_URL` and `CLIENT_ORIGIN` to the forwarded addresses.
-
-## Предпросмотр писем Bubble
-
-Из корня репозитория выполните `npm run preview:mail -w @commune/api` и откройте `dist/mail-preview/index.html` в браузере. В каталоге девять вариантов с HTML и текстовой версией. Команда использует шаблоны API и вымышленные данные, поэтому ей не нужны MongoDB, Resend или действительные ссылки.
-
-Для проверки доставки на тестовом окружении укажите `RESEND_API_KEY` и `EMAIL_FROM` с подтверждённым в Resend адресом Bubble. Ссылки в реальных письмах берутся из `CLIENT_ORIGIN`. На локальном API без ключа письма выводятся в журнал. Адреса для служебных писем задаются через `CONTACT_EMAIL` и `ALERT_EMAIL`.
-
-Для проверки смены данных и удаления задайте `BUBBLE_ACCOUNT_TEST_MONGO_PORT` с портом локальной базы и выполните `npm run test -w @commune/api -- src/tests/accountLifecycle.integration.test.ts`.
-
-## Browser (end-to-end) tests
-
-Playwright drives a real browser against a real API and a separate `commune_e2e` database.
-
-```bash
-docker compose up -d mongo      # the tests need MongoDB
-npx playwright install chromium # once
-npm run e2e                     # or: npx playwright test
-npx playwright test --ui        # watch it step by step
-```
-
-The tests live in `e2e/`. Keep them few and stable: one test that proves a visitor can join, post, sign out and sign
-back in catches more breakage than twenty small ones. In CI they run in the **E2E** workflow and attach a report
-(screenshots and a trace) when something fails.
+- `npm run preview:mail -w @commune/api` создаёт HTML и текстовый предпросмотр в `dist/mail-preview/` с вымышленными данными. Без ключа Resend локальный API выводит письмо в журнал. Проверяй подтверждение адреса по ссылке из локального журнала и не включай её в отчёт. Ссылки строятся из `CLIENT_ORIGIN`.
+- Запуски, MongoDB-переменные и ограничения покрытий перечислены в [TESTING.md](TESTING.md). Настройки диагностики и изолированных нагрузочных прогонов — в [PERFORMANCE.md](PERFORMANCE.md).

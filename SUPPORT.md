@@ -1,12 +1,6 @@
-# Getting help
+# Поддержка Bubble
 
-| I want to... | Go here |
-| --- | --- |
-| Set up or run Commune | [README](README.md) and the [docs](docs/) |
-| Deploy it | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
-| Ask a question or share an idea | [Discussions](https://github.com/Haseeb-MernStack/commune/discussions) |
-| Report a bug or request a feature | [Issues](https://github.com/Haseeb-MernStack/commune/issues/new/choose) |
-| Report a security problem | [Private reporting](https://github.com/Haseeb-MernStack/commune/security/advisories/new), see [SECURITY.md](SECURITY.md) |
-
-Before opening an issue, search the existing ones. A good report says what you did, what you expected,
-what happened, and which browser or device you used. Never post passwords, tokens or `.env` contents.
+- Запуск проекта — [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+- Вопросы по коду — [BUBBLE_CONTEXT.md](BUBBLE_CONTEXT.md) и [AGENTS.md](AGENTS.md).
+- Обычная ошибка — issue в текущем репозитории Bubble. Укажи ожидаемое и наблюдаемое поведение, версию или SHA, браузер, устройство и условия воспроизведения. Исключи секреты и данные пользователей.
+- Уязвимость — [политика приватного сообщения](SECURITY.md).
