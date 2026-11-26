@@ -254,8 +254,10 @@ export const updateAppearanceSchema = z.object({
   appearance: siteAppearanceSchema.partial().optional(),
   avatarFrame: avatarFrameSchema.nullable().optional(),
   profileAppearanceVisibility: friendsVisibilitySchema.optional(),
-}).strict().refine(({ appearance, avatarFrame, profileAppearanceVisibility }) =>
-  avatarFrame !== undefined || profileAppearanceVisibility !== undefined || (appearance && Object.keys(appearance).length > 0),
+  hideProfileFonts: z.boolean().optional(),
+}).strict().refine(({ appearance, avatarFrame, profileAppearanceVisibility, hideProfileFonts }) =>
+  avatarFrame !== undefined || profileAppearanceVisibility !== undefined || hideProfileFonts !== undefined ||
+  (appearance && Object.keys(appearance).length > 0),
 );
 export type UpdateAppearanceInput = z.infer<typeof updateAppearanceSchema>;
 
@@ -443,6 +445,7 @@ export interface PublicUser {
 export interface AccountUser extends PublicUser {
   email?: string;
   profileAppearanceVisibility?: FriendsVisibility;
+  hideProfileFonts?: boolean;
   appearance?: Partial<SiteAppearance>;
 }
 

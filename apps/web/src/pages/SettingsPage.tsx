@@ -158,6 +158,7 @@ function AppearanceSettings({ user, onWallpaperPreview, onOpacityPreview }: { us
   const reaction = useWallpaperReaction(user.id);
   const favorites = useWallpapers(user.id, "favorites");
   const [changes, setChanges] = useState<Partial<SiteAppearance>>({});
+  const [hideProfileFontsDraft, setHideProfileFontsDraft] = useState<boolean>();
   const [fontFile, setFontFile] = useState<File | null>(null);
   const [fontError, setFontError] = useState<string>();
   const [fontFace, setFontFace] = useState<FontFace>();
@@ -174,7 +175,7 @@ function AppearanceSettings({ user, onWallpaperPreview, onOpacityPreview }: { us
   useEffect(() => () => onOpacityPreview?.(), [onOpacityPreview]);
   const frame = frameDraft === undefined ? (user.avatarFrame ?? null) : frameDraft;
   const dirty = Boolean(
-    fontFile || file || frameDraft !== undefined || Object.keys(changes).length,
+    fontFile || file || frameDraft !== undefined || hideProfileFontsDraft !== undefined || Object.keys(changes).length,
   );
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -214,6 +215,7 @@ function AppearanceSettings({ user, onWallpaperPreview, onOpacityPreview }: { us
       const body: UpdateAppearanceInput = {
         appearance: Object.keys(updated).length ? updated : undefined,
         avatarFrame: frameDraft,
+        hideProfileFonts: hideProfileFontsDraft,
       };
       return api<UpdateAppearanceInput>("/users/me/appearance", { method: "PATCH", body });
     },
@@ -221,6 +223,7 @@ function AppearanceSettings({ user, onWallpaperPreview, onOpacityPreview }: { us
       applyAppearance(user.id, saved);
       onWallpaperPreview?.();
       setChanges({});
+      setHideProfileFontsDraft(undefined);
       setFrameDraft(undefined);
       setFile(null);
       setUploaded(undefined);
@@ -447,6 +450,11 @@ function AppearanceSettings({ user, onWallpaperPreview, onOpacityPreview }: { us
             error={fontError}
             onChange={selectFont}
             onFile={chooseFont}
+            hideProfileFonts={hideProfileFontsDraft ?? user.hideProfileFonts ?? false}
+            onHideProfileFontsChange={(checked) => {
+              setHideProfileFontsDraft(checked === (user.hideProfileFonts ?? false) ? undefined : checked);
+              save.reset();
+            }}
           />
           <section className="card appearance-section" aria-labelledby="palette-title">
             <h2 id="palette-title">Цвета сайта</h2>

@@ -110,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...active,
       appearance: { ...active.appearance, ...changes.appearance },
       profileAppearanceVisibility: changes.profileAppearanceVisibility ?? active.profileAppearanceVisibility,
+      hideProfileFonts: changes.hideProfileFonts ?? active.hideProfileFonts,
       avatarFrame: changes.avatarFrame === undefined ? active.avatarFrame : changes.avatarFrame ?? undefined,
     });
   }, [setUser]);

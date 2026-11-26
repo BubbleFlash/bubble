@@ -400,6 +400,7 @@
 .appearance-font-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .appearance-font-controls label { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; max-width: 100%; }
 .appearance-font-controls input, .appearance-font-controls select { min-width: 0; width: 100%; }
+.appearance-profile-fonts { display: flex; align-items: center; gap: 8px; }
 .appearance-font-preview {
   display: grid;
   gap: 4px;

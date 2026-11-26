@@ -96,6 +96,7 @@ describe("account appearance", () => {
     { appearance: { primaryColor: "red" } },
     { appearance: { backgroundUrl: "https://example.test/image.png" } },
     { avatarFrame: { ...frame, intensity: 6 } },
+    { hideProfileFonts: "false" },
   ])("rejects invalid appearance input", async (body) => {
     const res = await request(app).patch("/api/users/me/appearance").set(auth).send(body);
     expect(res.status).toBe(400);
@@ -141,6 +142,26 @@ describe("account appearance", () => {
     expect(toAccountUser(user).appearance?.font).toBe("georgia");
     expect(toProfileDTO(user, { followerCount: 0, followingCount: 0 }, false, false))
       .not.toHaveProperty("appearance");
+  });
+
+  it.each([true, false])("saves the private profile font preference (%s)", async (hideProfileFonts) => {
+    const update = vi.spyOn(User, "findByIdAndUpdate").mockImplementationOnce((() => ({
+      select: () => ({ lean: async () => ({ _id: id }) }),
+    })) as never);
+    try {
+      const res = await request(app).patch("/api/users/me/appearance").set(auth).send({ hideProfileFonts });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ hideProfileFonts });
+      expect(update).toHaveBeenCalledWith(id.toString(), { $set: { hideProfileFonts } },
+        { returnDocument: "before", runValidators: true });
+
+      const user = { _id: id, username: "alice", createdAt: new Date(), hideProfileFonts };
+      expect(toAccountUser(user).hideProfileFonts).toBe(hideProfileFonts);
+      expect(toProfileDTO(user, { followerCount: 0, followingCount: 0 }, false, false))
+        .not.toHaveProperty("hideProfileFonts");
+    } finally {
+      update.mockRestore();
+    }
   });
 
   it.each([

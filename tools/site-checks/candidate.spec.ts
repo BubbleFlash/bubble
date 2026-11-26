@@ -93,6 +93,51 @@ async function moveCaretToEnd(field: Locator) {
   });
 }
 
+test("save and apply the viewer's profile font preference", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  let hideProfileFonts: boolean | undefined;
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { font: "consolas" }, hideProfileFonts },
+  } }));
+  await page.route("**/api/users/me/appearance", (route) => {
+    ({ hideProfileFonts } = route.request().postDataJSON());
+    return route.fulfill({ json: { hideProfileFonts } });
+  });
+  await page.route("**/api/users/author", (route) => route.fulfill({ json: {
+    ...posts[0]!.author, createdAt, followerCount: 0, followingCount: 0,
+    profileAppearance: { font: "georgia", primaryColor: "#71368a" },
+  } }));
+
+  const shell = page.locator(".aero-home");
+  const profile = `${origin}/u/author`;
+  const settings = `${origin}/settings`;
+  const checkbox = page.getByRole("checkbox", { name: "Отключать авторские шрифты в чужих профилях" });
+  const save = page.getByRole("button", { name: "Сохранить настройки" });
+  await page.goto(profile);
+  await expect(shell).toHaveCSS("--aero-site-font", /Georgia/);
+
+  await page.goto(settings);
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await save.click();
+  await expect.poll(() => hideProfileFonts).toBe(true);
+  await expect(save).toBeDisabled();
+
+  await page.goto(profile);
+  await expect(shell).toHaveCSS("--aero-chosen-primary", "#71368a");
+  await expect(shell).toHaveCSS("--aero-site-font", /Consolas/);
+  await page.goto(settings);
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+  await save.click();
+  await expect.poll(() => hideProfileFonts).toBe(false);
+  await expect(save).toBeDisabled();
+
+  await page.goto(profile);
+  await expect(shell).toHaveCSS("--aero-site-font", /Georgia/);
+});
+
 for (const platform of ["desktop", "Android", "iPhone", "iPadOS"] as const) {
   test(`edit and submit posts, comments and messages with the ${platform} keyboard`, async ({ page }) => {
     const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -852,6 +897,36 @@ async function installMusicFixture(page: Page, origin: string) {
     });
   });
 }
+
+test("outline the floating music title without filling the glass", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { primaryColor: "#000000", windowOpacity: 60 } },
+  } }));
+  await page.goto(origin);
+  await page.locator("article.feed-post").first().getByRole("button", { name: /^Воспроизвести Тестовый трек/ }).click();
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  const title = player.locator(".music-player__title");
+  const expand = player.getByRole("button", { name: "Развернуть плеер" });
+  if (page.viewportSize()!.width <= 1100) await expand.click();
+
+  const checkTitle = async () => {
+    await expect(title).toBeVisible();
+    const bar = player.locator(".music-player__extras");
+    const text = title.locator("span");
+    await expect(bar).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(bar).toHaveCSS("background-image", "none");
+    await expect(text).toHaveCSS("-webkit-text-stroke-width", "1.2px");
+    await expect(text).not.toHaveCSS("text-shadow", "none");
+  };
+  await checkTitle();
+  if (page.viewportSize()!.width > 1100) {
+    await player.getByRole("button", { name: "Свернуть плеер" }).click();
+    await checkTitle();
+  }
+});
 
 test("keep the accented mini-player attached to the mobile navigation", async ({ page }) => {
   const viewport = page.viewportSize()!;

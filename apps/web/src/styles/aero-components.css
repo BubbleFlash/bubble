@@ -409,6 +409,14 @@
 .music-player__extras { align-items: center; justify-content: space-between; height: 27px; padding-left: 10px; gap: 8px; }
 .aero-home .music-player::before { top: 27px; }
 .music-player__title { flex: 1; min-width: 0; font-size: 13px; line-height: 18px; color: var(--aero-color-text); }
+.music-player__title span {
+  -webkit-text-stroke: 1.2px rgb(238 249 255 / 88%);
+  paint-order: stroke fill;
+  text-shadow: 0 0 3px rgb(218 242 255 / 80%);
+}
+@media (forced-colors: active) {
+  .music-player__title span { -webkit-text-stroke-width: 0; }
+}
 .aero-home .music-player__window-controls { flex: none; }
 .music-player--compact { grid-template-areas: "frame" "controls"; }
 @media (min-width: 601px) {
