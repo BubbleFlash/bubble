@@ -153,7 +153,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
         </p>}
         <div className="post-actions">
           <button
-            className={`btn btn-ghost ${like.reaction.likedByMe ? "liked" : ""}`}
+            className={`btn btn-ghost post-like${like.reaction.likedByMe ? " liked" : ""}`}
             onClick={like.toggle}
             disabled={post.likePostId === null}
             aria-label={post.likePostId === null ? "Исходная публикация недоступна" : `Нравится · ${like.reaction.likeCount}`}

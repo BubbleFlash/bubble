@@ -668,6 +668,10 @@ html[data-aero-no-scroll]:has(.aero-home)::-webkit-scrollbar-thumb {
   .aero-home .feed-tabs { overflow: visible; }
   .aero-home .feed-tabs .tab, .aero-home .feed-tabs .tab.active { display: flex; align-items: center; justify-content: center; min-height: 40px; height: auto; line-height: 1.25; padding: 6px; border-bottom: 1px solid var(--aero-color-border); white-space: normal; }
 }
+@media (min-width: 1101px) {
+  /* Keep card heights stable as desktop browsers reveal the next section of a long feed. */
+  .aero-home .feed-post { content-visibility: visible; }
+}
 /* Firefox: avoid sampling scrolling content behind fixed and sticky layers. */
 @supports (-moz-appearance: none) {
   /* Match the manually verified diagnostic override, including hover/focus and pseudo layers.

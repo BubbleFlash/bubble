@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { LinkedText, LinkPreview, splitLinks } from "./LinkContent";
+import { useNearViewport } from "../hooks/useNearViewport";
 
 const MAX_PREVIEW = 700;
 
@@ -7,9 +8,10 @@ export default function PostText({ text, expandable = true }: { text: string; ex
   const [expanded, setExpanded] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const body = useRef<HTMLParagraphElement>(null);
+  const { ref: textRegion, near } = useNearViewport<HTMLDivElement>("600px 0px", false);
   useLayoutEffect(() => {
     const element = body.current;
-    if (!element || !expandable || expanded || !element.parentElement) return;
+    if (!near || !element || !expandable || expanded || !element.parentElement) return;
     const parent = element.parentElement;
     const characters = Array.from(text);
     const parts = splitLinks(text);
@@ -23,9 +25,17 @@ export default function PostText({ text, expandable = true }: { text: string; ex
       }
       return result.trimEnd();
     };
+    let observedWidth = 0;
     const update = () => {
-      const width = element.getBoundingClientRect().width;
+      const { width, height } = element.getBoundingClientRect();
       if (!width) return;
+      observedWidth = width;
+      const renderedLineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+      if (characters.length <= MAX_PREVIEW && !element.querySelector(".post-read-more")
+        && Number.isFinite(renderedLineHeight) && height <= renderedLineHeight * 10 + 1) {
+        setPreview(null);
+        return;
+      }
       const probe = element.cloneNode(false) as HTMLParagraphElement;
       Object.assign(probe.style, { position: "absolute", visibility: "hidden", pointerEvents: "none", width: `${width}px`, height: "auto", margin: "0", inset: "0 auto auto -10000px" });
       parent.appendChild(probe);
@@ -53,16 +63,19 @@ export default function PostText({ text, expandable = true }: { text: string; ex
       } finally { probe.remove(); }
     };
     update();
-    const observer = new ResizeObserver(update);
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || entry.contentRect.width === observedWidth) return;
+      update();
+    });
     observer.observe(element);
     document.fonts.addEventListener("loadingdone", update);
     return () => { observer.disconnect(); document.fonts.removeEventListener("loadingdone", update); };
-  }, [text, expandable, expanded]);
+  }, [text, expandable, expanded, near]);
   const shortened = expandable && !expanded && preview !== null;
   const visible = shortened ? preview : text;
   const showToggle = expandable && (expanded || shortened);
   return <>
-    <div className="post-text__body">
+    <div ref={textRegion} className="post-text__body">
       <p ref={body} className="post-body"><LinkedText text={visible} />{shortened && "…"}{showToggle && <> <button type="button" className="link-btn post-read-more" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "Свернуть" : "Читать далее…"}</button></>}</p>
     </div>
     <LinkPreview text={visible} />
