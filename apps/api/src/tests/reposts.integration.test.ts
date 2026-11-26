@@ -154,20 +154,26 @@ integration("reposts on isolated MongoDB", () => {
     expect((await get("vera", `/posts/${personal}`)).body).toMatchObject({ hideAuthor: false, adult: true, author: { id: String(ids.get("alice")) } });
   });
 
-  it("uses community subscriptions independently of author follows and excludes reposts from all posts", async () => {
+  it("keeps subscriptions independent and includes only captioned reposts in all posts", async () => {
     const group = await Community.create({ slug: "feed_subscriptions", name: "Группа", creator: ids.get("boris") });
     const personal = await newPost("boris", "Личная запись для ленты");
     const groupPost = await Post.create({ author: ids.get("boris"), community: group._id, content: "Запись группы" });
     const follow = await Follow.create({ follower: ids.get("alice"), following: ids.get("boris") });
     const shared = await repost("alice", personal);
     expect(shared.status).toBe(201);
+    const captioned = await repost("alice", personal, { content: "Мой ответ" });
+    const blank = await repost("alice", personal, { content: "  \n " });
+    expect(captioned.status).toBe(201);
+    expect(blank.status).toBe(201);
     const feedIds = async (person: Person, feed: "following" | "all") => {
       const result = await get(person, `/posts?feed=${feed}&limit=50`);
       expect(result.status).toBe(200);
       return result.body.items.map((item: { id: string }) => item.id);
     };
-    expect(await feedIds("alice", "all")).toContain(groupPost.id);
-    expect(await feedIds("alice", "all")).not.toContain(shared.body.id);
+    const all = await feedIds("alice", "all");
+    expect(all).toEqual(expect.arrayContaining([groupPost.id, captioned.body.id]));
+    expect(all).not.toContain(shared.body.id);
+    expect(all).not.toContain(blank.body.id);
     expect(await feedIds("alice", "following")).toEqual(expect.arrayContaining([personal, shared.body.id]));
     expect(await feedIds("alice", "following")).not.toContain(groupPost.id);
     expect(await feedIds("boris", "following")).toContain(groupPost.id);

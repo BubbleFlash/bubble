@@ -146,7 +146,7 @@ export async function listPosts(req: Request, res: Response) {
       { community: { $in: communities.map((community) => community._id) } },
     ] });
   } else {
-    baseFilter.repost = null;
+    (baseFilter.$and as object[]).push({ $or: [{ repost: null }, { content: /\S/ }] });
   }
   const globalPin = feed === "all" ? await FeedSettings.findById("main-feed").lean() : null;
   await sendPostPage(req, res, baseFilter, feed === "all" ? { id: globalPin?.pinnedPost, canPin: req.userRole === "admin", global: true } : undefined);

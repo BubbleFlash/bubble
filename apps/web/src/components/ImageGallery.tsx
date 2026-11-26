@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, TouchEvent } from "react";
 import AssetImage from "./AssetImage";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
+import { useNearViewport } from "../hooks/useNearViewport";
 
 function GalleryImage({ src, alt, eager = false }: { src: string; alt: string; eager?: boolean }) {
   const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
-  return <span className="gallery-image">
+  return <span className={`gallery-image${state === "loaded" ? "" : " gallery-image--waiting"}`}>
     {state === "loading" && <span className="gallery-image__loading" role="status" aria-label="Загрузка изображения" />}
     {state === "error" && <span className="gallery-image__error">Не удалось загрузить изображение</span>}
     <AssetImage src={src} alt={alt} draggable={false} loading={eager ? "eager" : "lazy"} decoding="async"
@@ -16,6 +17,7 @@ function GalleryImage({ src, alt, eager = false }: { src: string; alt: string; e
 export default function ImageGallery({ images, alt, mobileCarouselFrom = 3 }: { images: string[]; alt: string; mobileCarouselFrom?: number }) {
   const [index, setIndex] = useState<number | null>(null);
   const [slide, setSlide] = useState(0);
+  const { ref: gallery, near } = useNearViewport<HTMLDivElement>("240px 0px");
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 600px)").matches);
   const [showArrows, setShowArrows] = useState(true);
   const [fullSize, setFullSize] = useState(false);
@@ -48,6 +50,16 @@ export default function ImageGallery({ images, alt, mobileCarouselFrom = 3 }: { 
   if (!images.length) return null;
   const move = (offset: number) => setIndex((current) => current === null ? null : (current + offset + images.length) % images.length);
   const activeSlide = slide % images.length;
+  const carousel = images.length >= (mobile ? mobileCarouselFrom : 5);
+  const slides = images.map((url, i) => {
+    const distance = Math.abs(i - activeSlide);
+    if (carousel && i !== activeSlide && (!near || Math.min(distance, images.length - distance) > 1)) return null;
+    return <button type="button" className="image-gallery__item" key={`${url}-${i}`}
+      hidden={carousel && i !== activeSlide} onClick={() => setIndex(i)}
+      aria-label={`Открыть изображение ${i + 1} из ${images.length}`}>
+      {near ? <GalleryImage src={url} alt={alt} eager /> : <span className="gallery-image gallery-image--waiting" />}
+    </button>;
+  });
   const moveSlide = (offset: number) => setSlide((activeSlide + offset + images.length) % images.length);
   const startSwipe = (event: TouchEvent) => {
     if (event.touches.length !== 1) { touch.current = null; return; }
@@ -96,13 +108,13 @@ export default function ImageGallery({ images, alt, mobileCarouselFrom = 3 }: { 
     if (Math.abs(dx) >= 45 && Math.abs(dx) > Math.abs(dy) * 1.2) action(dx < 0 ? 1 : -1);
   };
   return <>
-    {images.length >= (mobile ? mobileCarouselFrom : 5) ? <div className="image-gallery image-gallery--carousel" onPointerDown={mouseDown} onPointerMove={mouseMove} onPointerUp={(event) => mouseUp(event, moveSlide)} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={startSwipe} onTouchEnd={(event) => endSwipe(event, moveSlide)} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
-      {images.map((url, i) => <button type="button" className="image-gallery__item" key={`${url}-${i}`} hidden={i !== activeSlide} onClick={() => setIndex(i)} aria-label={`Открыть изображение ${i + 1} из ${images.length}`}><GalleryImage src={url} alt={alt} eager /></button>)}
+    {carousel ? <div ref={gallery} className="image-gallery image-gallery--carousel" onPointerDown={mouseDown} onPointerMove={mouseMove} onPointerUp={(event) => mouseUp(event, moveSlide)} onPointerCancel={() => { mouseDrag.current = null; }} onDragStart={(event) => event.preventDefault()} onTouchStart={startSwipe} onTouchEnd={(event) => endSwipe(event, moveSlide)} onTouchCancel={() => { touch.current = null; }} onClickCapture={preventSwipeClick}>
+      {slides}
       <span className="image-gallery__count" aria-live="polite">{activeSlide + 1} / {images.length}</span>
       <button type="button" className="image-gallery__zone image-gallery__zone--previous" aria-label="Предыдущее фото" onClick={() => moveSlide(-1)}><span className="image-gallery__arrow" aria-hidden="true">‹</span></button>
       <button type="button" className="image-gallery__zone image-gallery__zone--next" aria-label="Следующее фото" onClick={() => moveSlide(1)}><span className="image-gallery__arrow" aria-hidden="true">›</span></button>
-    </div> : <div className={`image-gallery image-gallery--${images.length}`}>
-      {images.map((url, i) => <button type="button" className="image-gallery__item" key={`${url}-${i}`} onClick={() => setIndex(i)} aria-label={`Открыть изображение ${i + 1} из ${images.length}`}><GalleryImage src={url} alt={alt} eager /></button>)}
+    </div> : <div ref={gallery} className={`image-gallery image-gallery--${images.length}`}>
+      {slides}
     </div>}
     <dialog ref={dialog} {...backdrop} className={`image-viewer${showArrows ? "" : " image-viewer--idle"}`} aria-label="Просмотр изображения" onClose={() => { clearTimeout(hideTimer.current); setIndex(null); setFullSize(false); }} onPointerMove={(event) => showTemporarily(event.pointerType === "touch")} onKeyDown={(event) => {
       showTemporarily(false);

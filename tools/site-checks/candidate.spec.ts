@@ -93,6 +93,72 @@ async function moveCaretToEnd(field: Locator) {
   });
 }
 
+test("post like follows rapid taps, reconciles failed writes and keeps the feed in place", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const received: string[] = [];
+  const release: Array<(status: number) => void> = [];
+  await page.route("**/api/posts/fixture-0/like", async route => {
+    const method = route.request().method();
+    received.push(method);
+    const status = await new Promise<number>(resolve => release.push(resolve));
+    await route.fulfill({ status, json: status === 200
+      ? { ...posts[0], likeCount: Number(method === "PUT"), likedByMe: method === "PUT" }
+      : { error: "Отказ" } });
+  });
+  await page.goto(origin);
+  const card = page.locator('[data-post-id="fixture-0"]');
+  const heart = card.locator(".post-actions button[aria-pressed]").first();
+  await heart.click();
+  await expect(heart).toHaveAttribute("aria-label", "Нравится · 1");
+  await expect.poll(() => received.length).toBe(1);
+  await heart.click();
+  await expect(heart).toHaveAttribute("aria-pressed", "false");
+  expect(received).toEqual(["PUT"]);
+  release[0]!(200);
+  await expect.poll(() => received.length).toBe(2);
+  await expect(heart).toHaveAttribute("aria-label", "Нравится · 0");
+  release[1]!(403);
+  await expect(card.getByRole("alert")).toBeVisible();
+  await expect(heart).toHaveAttribute("aria-label", "Нравится · 1");
+  await expect(heart).toHaveAttribute("aria-pressed", "true");
+  expect(received).toEqual(["PUT", "DELETE"]);
+});
+
+test("feed gallery sizes the active photo and prepares its neighboring slides", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const photos = Array.from({ length: 5 }, (_, index) => `/fixture-gallery/${index}.svg`);
+  const requested: string[] = [];
+  await page.route("**/fixture-gallery/*.svg", route => {
+    const path = new URL(route.request().url()).pathname;
+    requested.push(path);
+    const height = path === photos[1] ? 480 : 180;
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="${height}"><rect width="100%" height="100%" fill="teal"/></svg>`,
+    });
+  });
+  await page.route("**/api/posts?*", route => route.fulfill({
+    json: { items: [{ ...posts[0], imageUrls: photos }], nextCursor: null },
+  }));
+  await page.goto(origin);
+  const gallery = page.locator('[data-post-id="fixture-0"] .image-gallery--carousel');
+  const active = gallery.locator(".image-gallery__item:not([hidden]) img");
+  await expect.poll(() => active.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(480);
+  const size = await active.boundingBox();
+  expect(size!.height / size!.width).toBeCloseTo(180 / 480, 2);
+  await expect.poll(() => new Set(requested).size).toBe(3);
+  expect(new Set(requested)).toEqual(new Set([photos[0], photos[1], photos[4]]));
+  await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  await expect.poll(() => active.evaluate((image: HTMLImageElement) => image.naturalHeight)).toBe(480);
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("2 / 5");
+  await gallery.getByRole("button", { name: "Открыть изображение 2 из 5" }).click();
+  await expect(page.getByRole("dialog", { name: "Просмотр изображения" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Просмотр изображения" })).toBeHidden();
+});
+
 for (const platform of ["desktop", "Android", "iPhone", "iPadOS"] as const) {
   test(`edit and submit posts, comments and messages with the ${platform} keyboard`, async ({ page }) => {
     const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;

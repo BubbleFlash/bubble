@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Start optional requests near the viewport, then keep the content and its state. */
-export function useNearViewport<T extends HTMLElement>() {
+export function useNearViewport<T extends HTMLElement>(rootMargin = "600px 0px") {
   const ref = useRef<T>(null);
   const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
   useEffect(() => {
@@ -12,7 +12,7 @@ export function useNearViewport<T extends HTMLElement>() {
         setNear(true);
         observer.disconnect();
       },
-      { rootMargin: "600px 0px" },
+      { rootMargin },
     );
     observer.observe(ref.current);
     return () => observer.disconnect();
