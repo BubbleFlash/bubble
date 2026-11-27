@@ -667,8 +667,8 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
   const started = performance.now();
   await page.goto(origin, { waitUntil: "domcontentloaded" });
   const cards = page.locator("article.feed-post");
-  await expect(cards).toHaveCount(posts.length);
-  const first = cards.first();
+  await expect(page.locator(".feed-window")).toHaveAttribute("data-feed-count", String(posts.length));
+  const first = cards.and(page.locator('[data-post-id="fixture-0"]'));
   await expect(first).toBeVisible();
   const avatar = first.locator(".avatar-presence");
   const indicator = avatar.getByRole("img", { name: "Онлайн" });
@@ -767,7 +767,8 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
     json: { items: longFeed, nextCursor: null },
   }));
   await page.goto(origin);
-  await expect(page.locator("article.feed-post")).toHaveCount(longFeed.length);
+  await expect(page.locator(".feed-window")).toHaveAttribute("data-feed-count", String(longFeed.length));
+  await expect.poll(() => page.locator("article.feed-post").count()).toBeLessThan(30);
   const probe = await page.evaluate(async () => {
     const metrics = (window as Window & { deepFeedMetrics: { textMeasurements: number } }).deepFeedMetrics;
     const initialMeasurements = metrics.textMeasurements;
@@ -819,7 +820,8 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
   expect(probe.textMeasurements).toBeGreaterThan(0);
   expect(probe.stuck).toBe("true");
   expect(probe.aligned).toBe(true);
-  const last = page.locator("article.feed-post").last();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const last = page.locator('[data-post-id="long-fixture-239"]');
   await last.scrollIntoViewIfNeeded();
   // Drive the real pointer in both directions. The hover surface must fade while
   // the label, icon and hit target stay fully opaque.
@@ -880,7 +882,8 @@ test("type a comment at both ends of a long desktop feed", async ({ page }, info
   await page.route("**/api/posts/typing-*/comments*", route => route.fulfill({ json: [] }));
   await page.goto(origin);
   for (const index of [0, 239]) {
-    const card = page.locator(".feed-post").nth(index);
+    if (index) await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const card = page.locator(`[data-post-id="typing-${index}"]`);
     await card.getByRole("button", { name: "0 комментариев" }).click();
     const field = card.getByRole("textbox", { name: "Написать комментарий" });
     await field.click();
@@ -905,6 +908,202 @@ test("type a comment at both ends of a long desktop feed", async ({ page }, info
     expect(sample.frames).toHaveLength(text.length);
     await measurements.dispose();
   }
+});
+
+test("windowed feed keeps focus, drafts, slides and history across deep scroll", async ({ page }, info) => {
+  test.setTimeout(70_000);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.addInitScript(() => {
+    const Original = window.ResizeObserver;
+    const metrics = { targets: 0 };
+    Object.assign(window, { feedObserverMetrics: metrics });
+    window.ResizeObserver = class extends Original {
+      private tracked = new Set<Element>();
+      observe(target: Element, options?: ResizeObserverOptions) {
+        if (target.matches(".feed-window, .feed-window-row") && !this.tracked.has(target)) {
+          this.tracked.add(target);
+          metrics.targets++;
+        }
+        super.observe(target, options);
+      }
+      unobserve(target: Element) {
+        if (this.tracked.delete(target)) metrics.targets--;
+        super.unobserve(target);
+      }
+      disconnect() {
+        metrics.targets -= this.tracked.size;
+        this.tracked.clear();
+        super.disconnect();
+      }
+    };
+  });
+  const pictures = Array.from({ length: 5 }, (_, index) => `/window-photos/${index}.svg`);
+  const items = Array.from({ length: 240 }, (_, index) => ({
+    ...posts[0]!, id: `window-${index}`, musicAttachments: [],
+    content: index === 0 ? "Длинный текст\n".repeat(17) + "Последняя строка" : `Запись ${index}`,
+    imageUrls: index === 0 ? pictures : [],
+  }));
+  let commentsReads = 0;
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  await page.route("**/api/posts/window-0/comments*", route => {
+    commentsReads++;
+    return route.fulfill({ json: [] });
+  });
+  await page.route("**/api/posts/window-239", route => route.fulfill({ json: items[239] }));
+  await page.route("**/api/users/author", route => route.fulfill({ json: { ...posts[0]!.author, createdAt, bio: "" } }));
+  await page.route("**/api/users/author/posts*", route => route.fulfill({ json: { items: [], nextCursor: null } }));
+  await page.route("**/window-photos/*.svg", route => {
+    const portrait = route.request().url().endsWith("/1.svg");
+    return route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="${portrait ? 350 : 180}"><rect width="100%" height="100%" fill="teal"/></svg>` });
+  });
+  await page.goto(origin);
+  const first = page.locator('[data-post-id="window-0"]');
+  const tail = page.locator('[data-post-id="window-239"]');
+  const cards = page.locator(".feed-window article.feed-post");
+  const end = () => page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const top = () => page.evaluate(() => window.scrollTo(0, 0));
+  await first.getByRole("button", { name: "Читать далее…" }).click();
+  const gallery = first.locator(".image-gallery--carousel");
+  await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("2 / 5");
+  await first.getByRole("button", { name: "0 комментариев" }).click();
+  const field = first.getByRole("textbox", { name: "Написать комментарий" });
+  await field.fill("Черновик переживает прокрутку");
+  await expect(field).toBeFocused();
+  await end();
+  await expect(tail).toBeAttached();
+  await info.attach("tail-geometry-before", { body: JSON.stringify(await tail.evaluate(row => ({
+    top: row.getBoundingClientRect().top, bottom: row.getBoundingClientRect().bottom,
+    viewport: window.innerHeight, offset: window.scrollY, scrollHeight: document.documentElement.scrollHeight,
+  }))), contentType: "application/json" });
+  await expect(tail).toBeInViewport();
+  await expect(field).toBeFocused();
+  await expect.poll(() => cards.count()).toBeLessThan(32);
+  await field.blur();
+  await expect(first).toHaveCount(0);
+  await top();
+  await expect(first.getByText("Последняя строка", { exact: false })).toBeVisible();
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("2 / 5");
+  await expect(field).toHaveValue("Черновик переживает прокрутку");
+  expect(commentsReads).toBe(1);
+
+  await end();
+  await tail.scrollIntoViewIfNeeded();
+  const position = () => tail.evaluate(row => row.getBoundingClientRect().top);
+  const before = await position();
+  await tail.getByRole("link", { name: /^Открыть публикацию/ }).click();
+  await expect(page).toHaveURL(/\/posts\/window-239$/);
+  await expect.poll(() => page.evaluate(() =>
+    (window as Window & { feedObserverMetrics: { targets: number } }).feedObserverMetrics.targets,
+  )).toBe(0);
+  await page.getByRole("link", { name: /Вернуться к ленте/ }).click();
+  await expect(page).toHaveURL(origin + "/");
+  await expect.poll(async () => (await tail.count()) ? Math.abs(await position() - before) : 1000).toBeLessThan(28);
+  const beforeProfile = await position();
+  await tail.getByRole("link", { name: /^Открыть профиль/ }).click();
+  await expect(page).toHaveURL(/\/u\/author$/);
+  await page.goBack();
+  await expect.poll(async () => (await tail.count()) ? Math.abs(await position() - beforeProfile) : 1000).toBeLessThan(28);
+  await info.attach("windowed-feed-mounted", { body: String(await cards.count()), contentType: "text/plain" });
+});
+
+test("windowed feed covers the viewport during a fast touch scroll", async ({ page, context, browserName }, info) => {
+  test.skip(browserName !== "chromium" || !info.project.use.hasTouch);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const items = Array.from({ length: 240 }, (_, index) => ({
+    ...posts[0]!, id: `touch-${index}`, musicAttachments: [],
+    content: "Тестовая запись для быстрого свайпа. ".repeat(index % 10 + 1),
+  }));
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  await page.goto(origin);
+  await expect(page.locator(".feed-window")).toHaveAttribute("data-feed-count", "240");
+  await page.evaluate(() => window.scrollTo(0, 800));
+  const cdp = await context.newCDPSession(page);
+  try {
+    const start = await page.evaluate(() => window.scrollY);
+    const samples = page.evaluate(async () => {
+      const positions: Array<{ y: number; covered: boolean }> = [];
+      const start = performance.now();
+      while (performance.now() - start < 1100) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const viewportMiddle = innerHeight / 2;
+        const rows = [...document.querySelectorAll(".feed-window-row")];
+        positions.push({ y: scrollY, covered: rows.some(row => {
+          const box = row.getBoundingClientRect();
+          return box.top <= viewportMiddle && box.bottom >= viewportMiddle;
+        }) });
+      }
+      return positions;
+    });
+    const touch = (type: "touchStart" | "touchMove" | "touchEnd", y?: number) =>
+      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: y === undefined ? [] : [{ x: 45, y }] });
+    await touch("touchStart", 710);
+    for (const y of [660, 600, 520, 430, 330, 230, 125]) await touch("touchMove", y);
+    await touch("touchEnd");
+    const positions = await samples;
+    await info.attach("touch-coverage", { body: JSON.stringify(positions), contentType: "application/json" });
+    expect(await page.evaluate(() => scrollY) - start).toBeGreaterThan(500);
+    expect(positions.filter((point, index) => !point.covered && index > 0 && !positions[index - 1]!.covered)).toEqual([]);
+  } finally {
+    await cdp.detach();
+  }
+});
+
+test("windowed feed keeps the global audio player across row eviction", async ({ page, browserName }) => {
+  test.skip(browserName === "firefox", "The WAV fixture uses Chromium playback");
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  const items = Array.from({ length: 240 }, (_, index) => ({
+    ...posts[0]!, id: `audio-window-${index}`,
+    content: `Запись ${index}`, musicAttachments: index === 0 ? posts[0]!.musicAttachments : [],
+  }));
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  await page.goto(origin);
+  const source = page.locator('[data-post-id="audio-window-0"]');
+  const trigger = source.getByRole("button", { name: /^Воспроизвести Тестовый трек/ });
+  await trigger.click();
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  await expect(player).toBeVisible();
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  await expect(source).toHaveCount(0);
+  const expand = player.getByRole("button", { name: "Развернуть плеер" });
+  if (await expand.isVisible()) await expand.click();
+  await expect(player.getByRole("button", { name: "Пауза", exact: true })).toBeVisible();
+  await expect.poll(() => player.getByRole("slider", { name: "Позиция воспроизведения" }).inputValue().then(Number)).toBeGreaterThan(0);
+});
+
+test("windowed feed retains an engaged video iframe offscreen", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const items = Array.from({ length: 240 }, (_, index) => ({
+    ...posts[0]!, id: `video-window-${index}`, content: index ? `Запись ${index}` : "https://youtu.be/abcdefghijk",
+    musicAttachments: [],
+  }));
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  let videos = 0;
+  await page.route("https://www.youtube-nocookie.com/embed/**", route => {
+    videos++;
+    return route.fulfill({ contentType: "text/html", body: '<button type="button">Play fixture</button>' });
+  });
+  await page.goto(origin);
+  const frame = page.frameLocator('iframe[title="Видео YouTube"]');
+  await frame.getByRole("button", { name: "Play fixture" }).click();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe("IFRAME");
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  await page.locator('[data-post-id="video-window-0"] .post-like').focus();
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  await expect(page.locator('[data-post-id="video-window-239"]')).toBeInViewport();
+  await expect(frame.getByRole("button", { name: "Play fixture" })).toBeAttached();
+  expect(videos).toBe(1);
 });
 
 test("resize a post draft from its bottom corner on a touch device", async ({ page }) => {
@@ -1026,11 +1225,11 @@ test("feed navigation jumps to the top and refreshes only the first page", async
   });
   await page.goto(origin);
   const tab = page.getByRole("tab", { name: "Все записи" });
-  const cards = page.locator("article.feed-post");
+  const feedWindow = page.locator(".feed-window");
   await tab.click();
-  await expect(cards).toHaveCount(12);
+  await expect(feedWindow).toHaveAttribute("data-feed-count", "12");
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect(cards).toHaveCount(24);
+  await expect(feedWindow).toHaveAttribute("data-feed-count", "24");
 
   const feedLink = page.getByRole("link", { name: "Лента", exact: true }).filter({ visible: true });
   const requestCount = requests.length;
@@ -1040,7 +1239,7 @@ test("feed navigation jumps to the top and refreshes only the first page", async
     return window.scrollY;
   })).toBe(0);
   await expect.poll(() => requests.slice(requestCount)).toEqual(["all:first"]);
-  await expect(cards).toHaveCount(12);
+  await expect(feedWindow).toHaveAttribute("data-feed-count", "12");
   await expect(tab).toHaveAttribute("aria-selected", "true");
 
   expect(await tab.evaluate((button: HTMLButtonElement) => {

@@ -50,11 +50,11 @@ export function usePost(id: string) {
   });
 }
 
-export function useComments(id: string, linkedCommentId?: string, enabled = true) {
+export function useComments(id: string, linkedCommentId?: string, enabled = true, remountable = false) {
   return useInfiniteQuery({
     queryKey: linkedCommentId ? ["comments", id, linkedCommentId] : ["comments", id],
     enabled,
-    refetchOnMount: "always",
+    refetchOnMount: remountable ? false : "always",
     refetchOnWindowFocus: true,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }): Promise<CommentDTO[]> =>

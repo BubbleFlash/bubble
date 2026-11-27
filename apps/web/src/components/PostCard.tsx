@@ -2,7 +2,7 @@ import { displayNameOf } from "@commune/shared";
 import { pluralRu } from "../lib/plural";
 import { memo, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { PostDTO } from "@commune/shared";
@@ -24,6 +24,7 @@ import AeroTitlebar from "./AeroTitlebar";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { violationReasons } from "../lib/moderationReasons";
 import { getPageScroller } from "../lib/scrollToTop";
+import type { FeedCardState } from "../lib/feedWindow";
 
 const relativeTime = new Intl.RelativeTimeFormat("ru", { numeric: "always" });
 export function timeAgo(iso: string): string {
@@ -39,9 +40,10 @@ export function postTime(iso: string): string {
   return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
 }
 
-export default memo(function PostCard({ post, inlineComments = false, expandable = true, pinTarget, communitySource }: { post: PostDTO; inlineComments?: boolean; expandable?: boolean; pinTarget?: string; communitySource?: string }) {
+export default memo(function PostCard({ post, inlineComments = false, expandable = true, pinTarget, communitySource, retained }: { post: PostDTO; inlineComments?: boolean; expandable?: boolean; pinTarget?: string; communitySource?: string; retained?: FeedCardState }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { key: feedHistoryKey } = useLocation();
   const like = usePostLike(post);
   const del = useDeletePost();
   const moderate = useModeratePost();
@@ -62,8 +64,8 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
   const titleId = useId();
   useEffect(() => { if (moderating) dialog.current?.showModal(); }, [moderating]);
   const backdrop = useDialogBackdrop(() => { if (!moderate.isPending) setModerating(false); });
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [commentsMounted, setCommentsMounted] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(retained?.commentsOpen ?? false);
+  const [commentsMounted, setCommentsMounted] = useState(retained?.commentsMounted ?? false);
   const [reporting, setReporting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
@@ -84,7 +86,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
     mutationFn: ({ kind, name }: { kind: "users" | "communities"; name: string }) => api(`/feed-mutes/${kind}/${encodeURIComponent(name)}`, { method: "PUT" }),
     onSuccess: () => { setMenuOpen(false); void cache.invalidateQueries({ queryKey: ["feed"] }); void cache.invalidateQueries({ queryKey: ["feed-mute"] }); },
   });
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(Boolean(retained?.editor));
   const [editExpired, setEditExpired] = useState(() => Date.now() - new Date(post.createdAt).getTime() >= 5 * 60_000);
   useEffect(() => {
     const remaining = new Date(post.createdAt).getTime() + 5 * 60_000 - Date.now();
@@ -108,7 +110,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
   if (post.community) controls.push({ label: "Скрыть публикации сообщества", icon: "eye-off", disabled: mute.isPending, run: () => mute.mutate({ kind: "communities", name: post.community!.slug }) });
 
   return (
-    <article data-post-id={post.id} className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
+    <article data-post-id={post.id} data-feed-keep={moderating || reporting || undefined} className={`card post post-head${inlineComments ? " feed-post" : ""}`}>
       {post.community ? <Link to={`/c/${post.community.slug}`} className="profile-avatar-link"><Avatar username={post.community.slug} displayName={post.community.name} url={post.community.avatarUrl} /></Link> : <ProfileAvatar username={post.author.username} displayName={post.author.displayName} url={post.author.avatarUrl} frame={post.author.avatarFrame} online={post.author.online} />}
       <div className="post-controls">
         {controls.length === 1 && <button type="button" className="btn btn-ghost post-report" title={controls[0]!.label} aria-label={controls[0]!.label} disabled={controls[0]!.disabled} onClick={controls[0]!.run}><Icon name={controls[0]!.icon} size={18} /></button>}
@@ -129,7 +131,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
             <PlusBadge plus={post.author.plus} />
           </>}
           {inlineComments ? (
-            <span className="muted post-date"><Link className="feed-post-time" to={`/posts/${post.id}`} onClick={(event) => {
+            <span className="muted post-date"><Link className="feed-post-time" to={`/posts/${post.id}`} state={retained ? { feedHistoryKey } : undefined} onClick={(event) => {
               if (!communitySource || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               event.preventDefault();
               navigate(`/posts/${post.id}`, { state: { communityReturn: { path: communitySource, scrollY: getPageScroller()?.scrollTop ?? 0, mainScroll: document.getElementById("main")?.scrollTop ?? 0, postId: post.id, postTop: event.currentTarget.closest("article")?.getBoundingClientRect().top ?? 0 } } });
@@ -141,9 +143,13 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
           {post.visibility === "friends" && <span className="repost-private"><Icon name="lock" size={14} /> Только друзья</span>}
         </div>
         {post.pinned && <span className="muted"><Icon name="pin" size={14} /> Закреплено</span>}
-        {showEditor ? <CommunityPostEditor post={post} onClose={() => setEditing(false)} /> : <>
-          {post.content && <PostText text={post.content} expandable={expandable} />}
-          {(post.imageUrls?.length || post.imageUrl) && <PostImages images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} adult={post.adult} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}
+        {showEditor ? <CommunityPostEditor post={post} retained={retained?.editor} onClose={() => {
+          retained?.editor?.images?.dispose();
+          if (retained) delete retained.editor;
+          setEditing(false);
+        }} /> : <>
+          {post.content && <PostText text={post.content} expandable={expandable} retained={retained} />}
+          {(post.imageUrls?.length || post.imageUrl) && <PostImages images={post.imageUrls?.length ? post.imageUrls : [post.imageUrl!]} adult={post.adult} retained={retained} alt={`Изображение пользователя ${displayNameOf(post.author)}`} />}
           {post.musicAttachments?.length > 0 && <MusicAttachments attachments={post.musicAttachments} source={`post:${post.id}`} />}
         </>}
         {post.repost && <RepostCard preview={post.repost} source={`post-repost:${post.id}`} />}
@@ -162,12 +168,16 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
             <Icon name="heart" size={19} filled={like.reaction.likedByMe} />
             <span>{like.reaction.likeCount}</span>
           </button>
-          {inlineComments ? <button type="button" className="btn btn-ghost" aria-label={`${post.commentCount} ${pluralRu(post.commentCount, "комментарий", "комментария", "комментариев")}`} aria-expanded={commentsOpen} onClick={() => { setCommentsMounted(true); setCommentsOpen(v => !v); }}><Icon name="comment" size={19} /><span>{post.commentCount}</span></button> : <Link className="btn btn-ghost" to={`/posts/${post.id}`}>
+          {inlineComments ? <button type="button" className="btn btn-ghost" aria-label={`${post.commentCount} ${pluralRu(post.commentCount, "комментарий", "комментария", "комментариев")}`} aria-expanded={commentsOpen} onClick={() => {
+            if (retained) { retained.commentsMounted = true; retained.commentsOpen = !commentsOpen; }
+            setCommentsMounted(true);
+            setCommentsOpen(!commentsOpen);
+          }}><Icon name="comment" size={19} /><span>{post.commentCount}</span></button> : <Link className="btn btn-ghost" to={`/posts/${post.id}`}>
             <Icon name="comment" size={19} />
             <span>{post.commentCount}</span>
           </Link>}
           <RepostButton source={{ post: post.id }} count={post.repostCount ?? 0} />
-          {canEdit && !showEditor && <button type="button" className="btn btn-ghost" aria-label="Редактировать запись" title="Редактировать запись" onClick={() => setEditing(true)}><Icon name="pencil" size={18} /></button>}
+          {canEdit && !showEditor && <button type="button" className="btn btn-ghost" aria-label="Редактировать запись" title="Редактировать запись" onClick={() => { if (retained) retained.editor = {}; setEditing(true); }}><Icon name="pencil" size={18} /></button>}
         </div>
         {del.error && <p className="error" role="alert">{del.error.message}</p>}
         {pin.error && <p className="error" role="alert">{pin.error.message}</p>}
@@ -186,7 +196,7 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
         {like.error && <p className="error" role="alert">{like.error.message}</p>}
         {inlineComments && (
           <div className={`comments-disclosure${commentsOpen ? " is-open" : ""}`} aria-hidden={!commentsOpen} ref={(node) => { node?.toggleAttribute("inert", !commentsOpen); }}>
-            <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} open={commentsOpen} />}</div>
+            <div className="comments-disclosure-inner">{commentsMounted && <InlineComments postId={post.id} open={commentsOpen} retained={retained} />}</div>
           </div>
         )}
         {reporting && <ReportForm postId={post.id} onClose={() => setReporting(false)} />}

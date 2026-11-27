@@ -1,5 +1,5 @@
 import { COMMENT_MAX_LENGTH, displayNameOf, type CommentDTO, type MusicTrackDTO } from "@commune/shared";
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAddComment, useComments, useDeleteComment, useSetCommentLike } from "../hooks/usePosts";
 import { ProfileAvatar } from "./Avatar";
@@ -9,7 +9,8 @@ import { LinkedText, LinkPreview } from "./LinkContent";
 import RepostButton from "./RepostButton";
 import CommentReportDialog from "./CommentReportDialog";
 import { useAuth } from "../store/auth";
-import { useImageDraft } from "../hooks/useImageDraft";
+import { createImageDraftStore, useImageDraft } from "../hooks/useImageDraft";
+import type { FeedCardState } from "../lib/feedWindow";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import MusicAttachments from "./MusicAttachments";
 import PostImages from "./PostImages";
@@ -38,15 +39,23 @@ function orderComments(items: CommentDTO[]) {
 }
 
 /** Mounted on first expansion; retained to preserve the draft and cached discussion. */
-export default function InlineComments({ postId, focusedId, open = true }: { postId: string; focusedId?: string; open?: boolean }) {
-  const comments = useComments(postId, focusedId, open);
+export default function InlineComments({ postId, focusedId, open = true, retained }: { postId: string; focusedId?: string; open?: boolean; retained?: FeedCardState }) {
+  const comments = useComments(postId, focusedId, open, Boolean(retained));
   const add = useAddComment(postId);
-  const [content, setContent] = useState("");
-  const images = useImageDraft(false, 2);
-  const [tracks, setTracks] = useState<MusicTrackDTO[]>([]);
+  const [content, setContent] = useState(retained?.content ?? "");
+  const [imageStore] = useState(() => retained && (retained.images ?? createImageDraftStore()));
+  const images = useImageDraft(false, 2, imageStore);
+  const [tracks, setTracks] = useState<MusicTrackDTO[]>(retained?.tracks ?? []);
   const [pickerOpen, setPickerOpen] = useState(false);
   const file = useRef<HTMLInputElement>(null);
-  const [replying, setReplying] = useState<CommentDTO>();
+  const [replying, setReplying] = useState<CommentDTO | undefined>(retained?.replying);
+  useLayoutEffect(() => {
+    if (!retained) return;
+    retained.content = content;
+    retained.tracks = tracks;
+    retained.replying = replying;
+    retained.images = imageStore;
+  }, [retained, content, tracks, replying, imageStore]);
   const field = useRef<HTMLTextAreaElement>(null);
   const section = useRef<HTMLElement>(null);
   const prefix = useId();
@@ -69,7 +78,7 @@ export default function InlineComments({ postId, focusedId, open = true }: { pos
   };
 
   return (
-    <section ref={section} className="inline-comments" aria-label="Комментарии">
+    <section ref={section} className="inline-comments" aria-label="Комментарии" data-feed-keep={add.isPending || pickerOpen || undefined}>
       {(comments.isLoading || (comments.isFetching && rows.length === 0)) && <p role="status">Загрузка комментариев…</p>}
       {comments.isError && <p className="error" role="alert">{comments.error.message} <button type="button" className="link-btn" onClick={() => void comments.refetch()}>Попробовать снова</button></p>}
       {comments.isSuccess && !comments.isFetching && rows.length === 0 && <p className="muted">Комментариев пока нет.</p>}

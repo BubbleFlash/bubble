@@ -31,14 +31,15 @@ function MemberPostPage() {
   const { id = "" } = useParams();
   const [params] = useSearchParams();
   const location = useLocation();
-  const origin = (location.state as { communityReturn?: { path: string; scrollY: number; mainScroll: number; postId?: string; postTop?: number } } | null)?.communityReturn;
+  const entry = location.state as { feedHistoryKey?: string; communityReturn?: { path: string; scrollY: number; mainScroll: number; postId?: string; postTop?: number } } | null;
+  const origin = entry?.communityReturn;
   const communityReturn = origin && /^\/c\/[^/?#]+$/.test(origin.path) && Number.isFinite(origin.scrollY) && Number.isFinite(origin.mainScroll) ? origin : undefined;
   const post = usePost(id);
   useTrackView(id);
 
   return (
     <>
-      <Link to={communityReturn?.path ?? "/"} state={communityReturn ? { restoreCommunityScroll: communityReturn } : undefined} className="muted">{communityReturn ? "← Вернуться в сообщество" : "← Вернуться к ленте"}</Link>
+      <Link to={communityReturn?.path ?? "/"} state={communityReturn ? { restoreCommunityScroll: communityReturn } : typeof entry?.feedHistoryKey === "string" ? { feedHistoryKey: entry.feedHistoryKey } : undefined} className="muted">{communityReturn ? "← Вернуться в сообщество" : "← Вернуться к ленте"}</Link>
       {post.isLoading && <PostListSkeleton count={1} />}
       {post.isError && <p className="error center">Запись не найдена.</p>}
       {post.data && <>

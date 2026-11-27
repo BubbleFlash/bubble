@@ -319,7 +319,7 @@ h3,
 }
 
 /* ---------- Timeline: posts read as one continuous column ---------- */
-.container>.post {
+:is(.container, .feed-window-row) > .post {
   margin: 0;
   padding: 16px;
   gap: 12px;
@@ -952,7 +952,7 @@ h3,
 
 /* ---------- Phones: posts run edge to edge, like an app ---------- */
 @media (max-width: 600px) {
-  .container>.post {
+  :is(.container, .feed-window-row) > .post {
     margin-inline: -12px;
     border-inline-width: 0;
     border-radius: 0 !important;

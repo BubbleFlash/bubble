@@ -1,25 +1,30 @@
-import { useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { COMMUNITY_POST_LENGTH, PLUS_POST_LENGTH, type MusicTrackDTO, type PostDTO } from "@commune/shared";
 import { useUpdateCommunityPost } from "../hooks/usePosts";
-import { useImageDraft } from "../hooks/useImageDraft";
+import { createImageDraftStore, useImageDraft } from "../hooks/useImageDraft";
+import type { FeedEditorDraft } from "../lib/feedWindow";
 import { assetUrl } from "../lib/api";
 import MusicAttachmentPicker from "./MusicAttachmentPicker";
 import EmojiInputButton from "./EmojiInputButton";
 import Icon from "./Icon";
 import TextareaResizeHandle from "./TextareaResizeHandle";
 
-export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; onClose: () => void }) {
-  const [content, setContent] = useState(post.content);
-  const [adult, setAdult] = useState(Boolean(post.adult));
-  const [hideAuthor, setHideAuthor] = useState(Boolean(post.hideAuthor));
-  const [images, setImages] = useState(post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []);
-  const [music, setMusic] = useState(post.musicAttachments ?? []);
-  const [newMusic, setNewMusic] = useState<MusicTrackDTO[]>([]);
+export default function CommunityPostEditor({ post, onClose, retained }: { post: PostDTO; onClose: () => void; retained?: FeedEditorDraft }) {
+  const [content, setContent] = useState(retained?.content ?? post.content);
+  const [adult, setAdult] = useState(retained?.adult ?? Boolean(post.adult));
+  const [hideAuthor, setHideAuthor] = useState(retained?.hideAuthor ?? Boolean(post.hideAuthor));
+  const [images, setImages] = useState(retained?.photos ?? (post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []));
+  const [music, setMusic] = useState(retained?.music ?? post.musicAttachments ?? []);
+  const [newMusic, setNewMusic] = useState<MusicTrackDTO[]>(retained?.newMusic ?? []);
   const [musicOpen, setMusicOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const textId = useId();
-  const imageDraft = useImageDraft();
+  const [imageStore] = useState(() => retained && (retained.images ?? createImageDraftStore()));
+  const imageDraft = useImageDraft(false, 10, imageStore);
+  useLayoutEffect(() => {
+    if (retained) Object.assign(retained, { content, adult, hideAuthor, photos: images, music, newMusic, images: imageStore });
+  }, [retained, content, adult, hideAuthor, images, music, newMusic, imageStore]);
   const [attachmentError, setAttachmentError] = useState("");
   const update = useUpdateCommunityPost(post.id);
   const maxLength = post.community ? COMMUNITY_POST_LENGTH : PLUS_POST_LENGTH;
@@ -34,7 +39,7 @@ export default function CommunityPostEditor({ post, onClose }: { post: PostDTO; 
   const changed = contentChanged || imagesChanged || musicChanged || adult !== Boolean(post.adult) || hideAuthor !== Boolean(post.hideAuthor);
 
   return (
-    <form className="community-post-editor" onSubmit={(event) => {
+    <form className="community-post-editor" data-feed-keep={update.isPending || undefined} onSubmit={(event) => {
       event.preventDefault();
       if (!valid || !changed || update.isPending) return;
       const nextImages = [...images, ...imageDraft.images.map((image) => image.url!)];

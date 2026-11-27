@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, matchPath, useLocation } from "react-router-dom";
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createFeedSession, FeedSessionContext } from "./lib/feedWindow";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { NotificationDTO } from "@commune/shared";
 import { useAuth } from "./store/auth";
@@ -113,7 +114,7 @@ function Protected({ children }: { children: ReactNode }) {
 function Home() {
   const { user, loading } = useAuth();
   if (loading) return <PageSkeleton />;
-  return user ? <FeedPage /> : <SiteInfoPage />;
+  return user ? <FeedPage key={user.id} /> : <SiteInfoPage />;
 }
 
 function AppRoutes({ onNotificationItems, onNavigateToNotification, onWallpaperPreview, onOpacityPreview }: {
@@ -253,6 +254,20 @@ export default function App() {
   useStickyTabs();
   const { pathname } = useLocation();
   const { user } = useAuth();
+  const feedSession = useMemo(createFeedSession, [user?.id]);
+  const currentFeedSession = useRef(feedSession);
+  const feedSessionMounted = useRef(false);
+  useEffect(() => {
+    currentFeedSession.current = feedSession;
+    feedSessionMounted.current = true;
+    return () => {
+      feedSessionMounted.current = false;
+      // Development StrictMode immediately re-runs this effect for the same session.
+      queueMicrotask(() => {
+        if (!feedSessionMounted.current || currentFeedSession.current !== feedSession) feedSession.dispose();
+      });
+    };
+  }, [feedSession]);
   const onNotificationsPage = Boolean(matchPath("/notifications", pathname));
   const notificationVisit = useRef<string>();
   const { remember, finish } = useNotificationReadSession();
@@ -450,7 +465,9 @@ export default function App() {
           {user && !projectLanding && <LeftNav />}
           <main id="main" tabIndex={-1} className="container">
             {user && !projectLanding && <ModerationNotices key={user.id} />}
-            <AppRoutes onWallpaperPreview={setWallpaperPreview} onOpacityPreview={setOpacityPreview} onNotificationItems={remember} onNavigateToNotification={() => finish([])} />
+            <FeedSessionContext.Provider value={feedSession}>
+              <AppRoutes onWallpaperPreview={setWallpaperPreview} onOpacityPreview={setOpacityPreview} onNotificationItems={remember} onNavigateToNotification={() => finish([])} />
+            </FeedSessionContext.Provider>
           </main>
           {!wide && !guestLanding && <RightRail />}
         </div>

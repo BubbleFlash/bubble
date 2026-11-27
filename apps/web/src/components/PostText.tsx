@@ -1,11 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { LinkedText, LinkPreview, splitLinks } from "./LinkContent";
 import { useNearViewport } from "../hooks/useNearViewport";
+import type { FeedCardState } from "../lib/feedWindow";
 
 const MAX_PREVIEW = 700;
 
-export default function PostText({ text, expandable = true }: { text: string; expandable?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
+export default function PostText({ text, expandable = true, retained }: { text: string; expandable?: boolean; retained?: FeedCardState }) {
+  const [expanded, setExpanded] = useState(retained?.expanded ?? false);
   const [preview, setPreview] = useState<string | null>(null);
   const body = useRef<HTMLParagraphElement>(null);
   const { ref: textRegion, near } = useNearViewport<HTMLDivElement>("600px 0px", false);
@@ -76,7 +77,7 @@ export default function PostText({ text, expandable = true }: { text: string; ex
   const showToggle = expandable && (expanded || shortened);
   return <>
     <div ref={textRegion} className="post-text__body">
-      <p ref={body} className="post-body"><LinkedText text={visible} />{shortened && "…"}{showToggle && <> <button type="button" className="link-btn post-read-more" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "Свернуть" : "Читать далее…"}</button></>}</p>
+      <p ref={body} className="post-body"><LinkedText text={visible} />{shortened && "…"}{showToggle && <> <button type="button" className="link-btn post-read-more" aria-expanded={expanded} onClick={() => { if (retained) retained.expanded = !expanded; setExpanded(!expanded); }}>{expanded ? "Свернуть" : "Читать далее…"}</button></>}</p>
     </div>
     <LinkPreview text={visible} />
   </>;

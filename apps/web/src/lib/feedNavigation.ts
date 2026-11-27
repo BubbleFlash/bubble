@@ -6,6 +6,7 @@ import { scrollToTop } from "./scrollToTop";
 
 const feedTypes = ["following", "all"] as const;
 type FeedPages = InfiniteData<Page<PostDTO>, string | undefined>;
+export const FEED_SCROLL_RESET = "bubble:feed-scroll-reset";
 
 export async function refreshFeed(client: QueryClient, feed: FeedType) {
   const queryKey = ["feed", feed];
@@ -40,6 +41,7 @@ export function openFeed(event: MouseEvent<HTMLAnchorElement>, client: QueryClie
   }
 
   event.preventDefault();
+  window.dispatchEvent(new Event(FEED_SCROLL_RESET));
   const active = feedTypes.find((feed) =>
     client.getQueryCache().find({ queryKey: ["feed", feed], exact: true })?.isActive(),
   );

@@ -62,13 +62,16 @@
 .aero-home .side-link { border: 1px solid transparent; border-radius: 6px; font-size: 14px; gap: 10px; padding: 7px; color: var(--text); }
 .aero-home .side-link.active, .aero-home .side-link:hover { background: var(--aero-gradient-tab-active); border-color: var(--aero-color-border-strong); box-shadow: inset 0 1px white; }
 .aero-home .container { gap: 8px; padding: 12px; }
-.aero-home :is(.composer, .container > .post, .aero-widget) {
+.aero-home :is(.composer, .container > .post, .feed-window-row > .post, .aero-widget) {
   background: var(--aero-gradient-card), var(--aero-color-surface-solid);
   border: 1px solid var(--aero-color-border);
   border-radius: var(--aero-radius-panel);
   box-shadow: inset 0 1px white, 0 2px 5px var(--aero-color-shadow);
 }
-.aero-home .container > .post { margin: 0; padding: 12px; }
+.aero-home :is(.container, .feed-window-row) > .post { margin: 0; padding: 12px; }
+.feed-window { min-width: 0; margin-block-end: -8px; overflow-anchor: none; }
+.feed-window-row { display: flow-root; padding-block-end: 8px; }
+.aero-home .feed-window-row > .feed-post { content-visibility: visible; }
 .aero-home .composer { padding: 12px; }
 .aero-home .composer .composer-footer .composer-controls { flex-wrap: wrap; gap: 4px; }
 .aero-home .composer .composer-footer .composer-controls .post-visibility { gap: 4px; }
@@ -453,7 +456,7 @@
   .aero-home .aero-window:has(.bottom-nav) .pwa-bars { bottom: var(--aero-bottom-space); }
 }
 @media (max-width: 600px) {
-  .aero-home .container > .post { margin: 0; border-radius: var(--aero-radius-panel) !important; border-inline-width: 1px; }
+  .aero-home :is(.container, .feed-window-row) > .post { margin: 0; border-radius: var(--aero-radius-panel) !important; border-inline-width: 1px; }
   .aero-home .feed-tabs { margin: 0; }
   .aero-home .composer-footer { flex-wrap: wrap; gap: 8px; }
 }

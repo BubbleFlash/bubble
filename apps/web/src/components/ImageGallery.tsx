@@ -3,6 +3,7 @@ import type { MouseEvent, PointerEvent, TouchEvent } from "react";
 import AssetImage from "./AssetImage";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { useNearViewport } from "../hooks/useNearViewport";
+import type { FeedCardState } from "../lib/feedWindow";
 
 function GalleryImage({ src, alt, onSettled }: { src: string; alt: string; onSettled?: (loaded: boolean) => void }) {
   const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
@@ -17,9 +18,9 @@ function GalleryImage({ src, alt, onSettled }: { src: string; alt: string; onSet
   </span>;
 }
 
-export default function ImageGallery({ images, alt, mobileCarouselFrom = 3 }: { images: string[]; alt: string; mobileCarouselFrom?: number }) {
+export default function ImageGallery({ images, alt, mobileCarouselFrom = 3, retained }: { images: string[]; alt: string; mobileCarouselFrom?: number; retained?: FeedCardState }) {
   const [index, setIndex] = useState<number | null>(null);
-  const [slide, setSlide] = useState(0);
+  const [slide, setSlide] = useState(() => Math.max(0, images.indexOf(retained?.slideUrl ?? "")));
   const [readySlide, setReadySlide] = useState<{ index: number; url: string }>();
   const [failedSlide, setFailedSlide] = useState<number>();
   const { ref: gallery, near } = useNearViewport<HTMLDivElement>("240px 0px");
@@ -55,9 +56,12 @@ export default function ImageGallery({ images, alt, mobileCarouselFrom = 3 }: { 
   const requestedSlide = images.length ? slide % images.length : 0;
   const requestedUrl = images[requestedSlide];
   const settleSlide = useCallback((loaded: boolean) => {
-    if (loaded && requestedUrl) setReadySlide({ index: requestedSlide, url: requestedUrl });
+    if (loaded && requestedUrl) {
+      if (retained) retained.slideUrl = requestedSlide === 0 ? undefined : requestedUrl;
+      setReadySlide({ index: requestedSlide, url: requestedUrl });
+    }
     else setFailedSlide(requestedSlide);
-  }, [requestedSlide, requestedUrl]);
+  }, [requestedSlide, requestedUrl, retained]);
   if (!images.length) return null;
   const move = (offset: number) => setIndex((current) => current === null ? null : (current + offset + images.length) % images.length);
   const visibleSlide = readySlide && images[readySlide.index] === readySlide.url ? readySlide.index : requestedSlide;
