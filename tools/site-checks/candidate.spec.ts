@@ -415,6 +415,32 @@ test("publish a multiline comment and retry a pasted photo in a multiline reply"
   ]);
 });
 
+test("comment attachment menu follows the configured theme on the feed and post page", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", route => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { primaryColor: "#e19a63" } },
+  } }));
+  for (const path of ["/", "/posts/fixture-0"]) {
+    await page.goto(origin + path);
+    if (path === "/") await page.locator(".feed-post").first().getByRole("button", { name: "0 комментариев" }).click();
+    const toggle = page.getByRole("button", { name: "Вложения", exact: true });
+    await toggle.click();
+    const menu = page.locator(".comment-attachment-menu");
+    const photo = menu.getByRole("button", { name: "Фото" });
+    await expect(photo).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Музыка" })).toBeVisible();
+    expect(await menu.evaluate(el => getComputedStyle(el).getPropertyValue("--aero-chosen-primary").trim())).toBe("#e19a63");
+    const themedBackground = await menu.evaluate(el => getComputedStyle(el).backgroundImage);
+    await page.locator(".aero-home").evaluate(el => el.style.setProperty("--aero-chosen-primary", "#349af4"));
+    await expect(menu).not.toHaveCSS("background-image", themedBackground);
+    const [anchor, popup] = await Promise.all([toggle.boundingBox(), menu.boundingBox()]);
+    expect(Math.abs(anchor!.y - (popup!.y + popup!.height) - 4)).toBeLessThan(2);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  }
+});
+
 test("grow post and comment drafts and restore their initial height", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
