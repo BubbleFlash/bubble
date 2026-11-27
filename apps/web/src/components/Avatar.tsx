@@ -5,6 +5,7 @@ import AssetImage from "./AssetImage";
 import { hueFor } from "../lib/hue";
 import { Link } from "react-router-dom";
 import { useProfilePresence } from "../hooks/useProfilePresence";
+import { useNearViewport } from "../hooks/useNearViewport";
 import OnlineStatus from "./OnlineStatus";
 
 /** Opt-in link: keep the base Avatar decorative inside existing links. */
@@ -49,13 +50,18 @@ export default function Avatar({
     }),
   } as CSSProperties;
   const effectName = effect?.effect;
+  const { ref, near } = useNearViewport<HTMLElement>("96px 0px", false);
+  const pulseRef = effectName === "pulse" ? ref : undefined;
+  const pulsing = effectName === "pulse" && near;
   const hue = hueFor(username);
   const avatar = url ? (
-    <AssetImage className="avatar" data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
+    <AssetImage className="avatar" imageRef={pulseRef} data-frame={effectName} data-pulsing={pulsing || undefined} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
   ) : (
     <span
+      ref={pulseRef}
       className="avatar avatar-fallback"
       data-frame={effectName}
+      data-pulsing={pulsing || undefined}
       style={{ ...style, background: hue.bg, color: hue.fg }}
       aria-hidden="true"
     >

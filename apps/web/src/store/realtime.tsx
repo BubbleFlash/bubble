@@ -89,7 +89,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         if (message.senderId !== userId) {
           void invalidate(["unread-messages"]);
           // A chime for someone else's message, unless you are already reading that conversation.
-          if (!isViewingConversation(message.conversationId)) playSound("message");
+          if (!isViewingConversation(message.conversationId)) void playSound("message", { userId, eventId: `message/${message.id}` });
         }
       },
       onRead: ({ conversationId, readerId }) => {
@@ -124,8 +124,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             void invalidate(["public", "posts"]);
           }
           const visible = document.visibilityState === "visible";
-          if (event.sound !== false) playSound(item.type);
           const version = notificationVersion(item);
+          if (event.sound !== false) void playSound(item.type, { userId, eventId: `notification/${version}` });
           if (visible && !hideToasts.matches && !toastTimers.has(version)) {
             setToasts((current) => [...current, { userId, item }]);
             toastTimers.set(version, window.setTimeout(() => dismissToast(version), 2700));

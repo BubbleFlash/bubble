@@ -162,7 +162,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .avatar[data-frame="pulse"] { animation: avatar-glow-pulse 2.6s ease-in-out infinite; }
+  .avatar[data-pulsing] { animation: avatar-glow-pulse 2.6s ease-in-out infinite; }
 }
 
 @keyframes avatar-glow-pulse {

@@ -3,6 +3,7 @@ import type { NotificationType } from "@commune/shared";
 import singleSound from "../assets/sounds/single.mp3";
 import doubleSound from "../assets/sounds/double.mp3";
 import tripleSound from "../assets/sounds/triple.mp3";
+import { sessionGeneration } from "./browserSession";
 
 /**
  * Notification sounds share the same device-local volume and mute setting.
@@ -47,6 +48,11 @@ function load(): SoundPrefs {
 
 let prefs: SoundPrefs = load();
 const listeners = new Set<() => void>();
+window.addEventListener("storage", (event) => {
+  if (event.key !== STORAGE_KEY && event.key !== null) return;
+  prefs = load();
+  listeners.forEach((listener) => listener());
+});
 
 export function setSoundPrefs(patch: Partial<SoundPrefs>) {
   prefs = { ...prefs, ...patch };
@@ -86,7 +92,6 @@ const soundUrls: Record<SoundKind, string> = {
   repost: singleSound,
 };
 const buffers = new Map<string, Promise<AudioBuffer>>();
-let lastPlayed = -Infinity;
 let previewId = 0;
 
 function loadBuffer(context: AudioContext, url: string): Promise<AudioBuffer> {
@@ -130,29 +135,56 @@ export function armSoundUnlock() {
   events.forEach((e) => window.addEventListener(e, handler, { passive: true }));
 }
 
-/**
- * Plays a chime. Returns false when it was skipped (muted, too soon after the last one,
- * or the browser has not allowed sound yet). `force` is for the preview buttons.
- */
-export function playSound(kind: SoundKind, opts: { force?: boolean } = {}): boolean {
-  if (!ctx) return false;
-  if ((!opts.force && (!prefs.enabled || (kind === "message" && !prefs.messageEnabled))) || prefs.volume <= 0) return false;
-  const now = performance.now();
-  if (!opts.force && now - lastPlayed < MIN_GAP_MS) return false;
+type SoundRequest = { force: true } | { userId: string; eventId: string };
+
+// Keep recent deliveries across tabs, including tabs that wake up after the chime.
+function playOnce(userId: string, eventId: string, start: () => void) {
+  const key = "bubble.sound.recent." + userId;
+  const now = Date.now();
+  let recent: { ids: string[]; lastPlayed: number };
+  try {
+    recent = JSON.parse(localStorage.getItem(key) ?? "null") ?? { ids: [], lastPlayed: 0 };
+    if (recent.ids.includes(eventId)) return;
+    const play = now - recent.lastPlayed >= MIN_GAP_MS;
+    recent.ids = [...recent.ids.slice(-127), eventId];
+    if (play) recent.lastPlayed = now;
+    localStorage.setItem(key, JSON.stringify(recent));
+    if (!play) return;
+  } catch {
+    if (!document.hasFocus()) return;
+  }
+  start();
+}
+
+export async function playSound(kind: SoundKind, opts: SoundRequest) {
+  const preview = "force" in opts;
+  const enabled = () => prefs.volume > 0 && (preview || (prefs.enabled && (kind !== "message" || prefs.messageEnabled)));
+  if (!ctx || !enabled()) return;
   const context = ctx;
-  const currentPreview = opts.force ? ++previewId : 0;
-  if (!opts.force) lastPlayed = now;
-  void Promise.all([loadBuffer(context, soundUrls[kind]), context.state === "running" ? Promise.resolve() : context.resume()])
-    .then(([buffer]) => {
-      if ((!opts.force && (!prefs.enabled || (kind === "message" && !prefs.messageEnabled))) || prefs.volume <= 0 || (opts.force && currentPreview !== previewId)) return;
+  const currentPreview = preview ? ++previewId : 0;
+  const generation = sessionGeneration();
+  try {
+    const [buffer] = await Promise.all([loadBuffer(context, soundUrls[kind]), context.state === "running" ? undefined : context.resume()]);
+    const start = () => {
       const source = context.createBufferSource();
       source.buffer = buffer;
       const gain = context.createGain();
       gain.gain.value = prefs.volume * prefs.volume;
       source.connect(gain).connect(context.destination);
       source.start();
-    }).catch(() => undefined);
-  return true;
+    };
+    if (preview) {
+      if (enabled() && currentPreview === previewId) start();
+      return;
+    }
+    const claim = () => {
+      if (enabled() && context.state === "running" && sessionGeneration() === generation) playOnce(opts.userId, opts.eventId, start);
+    };
+    if (navigator.locks) await navigator.locks.request("bubble.sound." + opts.userId, claim);
+    else if (document.hasFocus()) claim();
+  } catch {
+    // Audio output may disappear or be suspended.
+  }
 }
 
 /** True when the person is already looking at this conversation, so a chime would just be noise. */

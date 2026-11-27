@@ -93,6 +93,60 @@ async function moveCaretToEnd(field: Locator) {
   });
 }
 
+test("one chime across tabs for each realtime delivery", async ({ context }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  const tabs = await Promise.all([context.newPage(), context.newPage(), context.newPage()]);
+  const send: Array<(packet: string) => void> = [];
+  for (const [index, tab] of tabs.entries()) {
+    await installFixtures(tab, origin);
+    await tab.addInitScript(() => {
+      const start = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function (...args) {
+        start.apply(this, args);
+        document.documentElement.dataset.chimes = String(Number(document.documentElement.dataset.chimes ?? 0) + 1);
+      };
+    });
+    let deliver: ((packet: string) => void) | undefined;
+    await tab.routeWebSocket("**/socket.io/**", (socket) => {
+        socket.onMessage((data) => {
+          if (String(data).startsWith("40")) {
+            socket.send('40{"sid":"fixture"}');
+            deliver = packet => socket.send(packet);
+          }
+        });
+        socket.send('0{"sid":"fixture","upgrades":[],"pingInterval":60000,"pingTimeout":60000,"maxPayload":100000}');
+    });
+    await tab.goto(origin);
+    await expect(tab.getByRole("tablist")).toBeVisible();
+    if (index > 0) await tab.keyboard.press("Shift");
+    await expect.poll(() => Boolean(deliver)).toBe(true);
+    send.push(deliver!);
+  }
+  const counts = () => Promise.all(tabs.filter(tab => !tab.isClosed()).map(tab =>
+    tab.evaluate(() => Number(document.documentElement.dataset.chimes ?? 0))));
+  const total = async () => (await counts()).reduce((a, b) => a + b, 0);
+  const notification = '42' + JSON.stringify(["notification:new", { notification: {
+    id: "shared-like", createdAt, type: "like", actor: posts[0]!.author, postId: posts[0]!.id,
+  } }]);
+  send.forEach(deliver => deliver(notification));
+  await expect.poll(total).toBe(1);
+  const played = await counts();
+  expect(played[0]).toBe(0);
+  const winner = played.indexOf(1);
+  await tabs[winner]!.close();
+  const survivor = winner === 1 ? 2 : 1;
+  await tabs[survivor]!.waitForTimeout(1000);
+  send[survivor]!(notification);
+  const message = '42' + JSON.stringify(["message:new", { message: {
+    id: "shared-message", conversationId: "chat", senderId: "sender", createdAt,
+  } }]);
+  await tabs[survivor]!.waitForTimeout(1000);
+  expect(await total()).toBe(0);
+  send[0]!(message);
+  send[survivor]!(message);
+  await expect.poll(total).toBe(1);
+});
+
 test("post like follows rapid taps, reconciles failed writes and keeps the feed in place", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
@@ -672,6 +726,11 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
   const longFeed = Array.from({ length: 240 }, (_, index) => ({
     ...posts[index % posts.length]!,
     id: `long-fixture-${index}`,
+    author: {
+      ...posts[0]!.author,
+      avatarUrl: index % 2 ? "/bubble-logo.png" : null,
+      avatarFrame: { effect: "pulse", color: "#1177cc", intensity: 3 },
+    },
     content: index === 239 ? "Строка записи\n".repeat(15) + "Конец длинной записи" : `Тестовая запись ${index}`,
     musicAttachments: [],
   }));
@@ -733,9 +792,13 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
   expect(probe.aligned).toBe(true);
   const last = page.locator("article.feed-post").last();
   await last.scrollIntoViewIfNeeded();
+  await expect(last.locator(".avatar")).toHaveAttribute("data-pulsing", "true");
+  await expect(page.locator("article.feed-post").first().locator(".avatar")).not.toHaveAttribute("data-pulsing", "true");
+  expect(await page.locator(".feed-post .avatar[data-pulsing]").count()).toBeLessThan(20);
   await last.getByRole("button", { name: "Читать далее…" }).click();
   await expect(last.getByText("Конец длинной записи", { exact: false })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.locator("article.feed-post").first().locator(".avatar")).toHaveAttribute("data-pulsing", "true");
   await expect(page.getByRole("tablist", { name: "Лента" })).not.toHaveAttribute("data-stuck", "true");
 });
 

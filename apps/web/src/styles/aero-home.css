@@ -669,6 +669,16 @@ html[data-aero-no-scroll]:has(.aero-home)::-webkit-scrollbar-thumb {
   .aero-home .feed-tabs .tab, .aero-home .feed-tabs .tab.active { display: flex; align-items: center; justify-content: center; min-height: 40px; height: auto; line-height: 1.25; padding: 6px; border-bottom: 1px solid var(--aero-color-border); white-space: normal; }
 }
 @media (min-width: 1101px) {
+  /* The wallpaper covers one viewport even when the feed spans many screens. */
+  .aero-app.aero-home { isolation: isolate; background: var(--aero-color-wallpaper-fallback); }
+  .aero-app.aero-home::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--aero-color-wallpaper-fallback) var(--aero-wallpaper-image) center / cover;
+  }
   /* Keep card heights stable as desktop browsers reveal the next section of a long feed. */
   .aero-home .feed-post { content-visibility: visible; }
 }
