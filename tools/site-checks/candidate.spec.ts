@@ -388,7 +388,10 @@ test("publish a multiline comment and retry a pasted photo in a multiline reply"
     const data = new DataTransfer();
     const bytes = Uint8Array.from(atob(photo), (character) => character.charCodeAt(0));
     data.items.add(new File([bytes], "photo.gif", { type: "image/gif" }));
-    field.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    const paste = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+    // Firefox creates an empty DataTransfer for script-created clipboard events.
+    Object.defineProperty(paste, "clipboardData", { value: data });
+    field.dispatchEvent(paste);
   }, photo);
   const preview = page.getByRole("img", { name: "Предпросмотр вложения" });
   await expect(preview).toBeVisible();
@@ -796,7 +799,10 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
   // the label, icon and hit target stay fully opaque.
   const hoverSamples = [];
   for (const control of [page.locator(".left-nav .side-link:not(.active)").first(),
-    last.locator(".post-like"), last.locator(".post-actions button").nth(1)]) {
+    last.locator(".post-like"), last.locator(".post-actions button").nth(1),
+    page.getByRole("button", { name: "Уведомления", exact: true }), page.locator(".header .nav-profile"),
+    page.locator(".aero-window-chrome .aero-window-close"),
+    page.getByRole("button", { name: "Выйти", exact: true }).first()]) {
     await page.mouse.move(0, 0);
     for (const entering of [true, false]) {
       await control.evaluate((el, enter) => {
@@ -837,6 +843,42 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(page.locator("article.feed-post").first().locator(".avatar-presence")).toHaveAttribute("data-pulse-halo", "true");
   await expect(page.getByRole("tablist", { name: "Лента" })).not.toHaveAttribute("data-stuck", "true");
+});
+
+test("type a comment at both ends of a long desktop feed", async ({ page }, info) => {
+  test.skip(info.project.use.hasTouch);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const items = Array.from({ length: 240 }, (_, i) => ({ ...posts[0], id: `typing-${i}`, musicAttachments: [] }));
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  await page.route("**/api/posts/typing-*/comments*", route => route.fulfill({ json: [] }));
+  await page.goto(origin);
+  for (const index of [0, 239]) {
+    const card = page.locator(".feed-post").nth(index);
+    await card.getByRole("button", { name: "0 комментариев" }).click();
+    const field = card.getByRole("textbox", { name: "Написать комментарий" });
+    await field.click();
+    const measurements = await field.evaluateHandle(el => {
+      const frames: number[] = [];
+      let writes = 0;
+      const observer = new MutationObserver(records => { writes += records.length; });
+      observer.observe(el, { attributes: true, attributeFilter: ["style"] });
+      el.addEventListener("keydown", event => {
+        const start = event.timeStamp;
+        requestAnimationFrame(() => frames.push(performance.now() - start));
+      });
+      return () => { observer.disconnect(); return { frames, writes }; };
+    });
+    const text = "Typing a comment with a real keyboard";
+    await field.pressSequentially(text);
+    await expect(field).toHaveValue(text);
+    await field.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    const sample = await measurements.evaluate(read => read());
+    await info.attach(`typing-${index}`, { body: JSON.stringify(sample), contentType: "application/json" });
+    expect(sample.writes).toBe(0);
+    expect(sample.frames).toHaveLength(text.length);
+    await measurements.dispose();
+  }
 });
 
 test("resize a post draft from its bottom corner on a touch device", async ({ page }) => {

@@ -237,10 +237,20 @@
 .aero-comment-input .emoji-input-field { flex: 1 1 0; }
 .aero-home .inline-comments .comment-input-field textarea {
   --comment-max-height: min(35dvh, 240px);
-  display: block; box-sizing: border-box; width: 100%; height: var(--aero-control-min-height, 44px);
+  display: block; box-sizing: border-box; width: 100%; height: auto; field-sizing: content;
   padding: 10px 82px 10px 10px; line-height: 22px;
-  min-height: clamp(var(--aero-control-min-height, 44px), var(--textarea-content-height, 0px), var(--comment-max-height));
+  min-height: var(--aero-control-min-height, 44px);
   max-height: var(--comment-max-height); resize: none;
+}
+@supports not (field-sizing: content) {
+  .comment-input-field { display: grid; }
+  .comment-input-field > :is(textarea, .comment-input-sizer) { grid-area: 1 / 1; }
+  .comment-input-sizer {
+    pointer-events: none; visibility: hidden; overflow: hidden; min-width: 0;
+    white-space: pre-wrap; overflow-wrap: anywhere; box-sizing: border-box;
+    font: inherit; line-height: 22px; padding: 10px 82px 10px 10px; border: 1px solid transparent;
+    max-height: min(35dvh, 240px);
+  }
 }
 .aero-home .comment-input-field .emoji-input-button { right: 40px; }
 .comment-attachment-toggle { position: absolute; right: 2px; top: 2px; width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; color: var(--aero-color-text-muted); cursor: pointer; }
@@ -363,12 +373,35 @@
 /* Fade the painted highlight behind the label. Only a transitioning control
    needs compositing; do not promote every button in the feed with will-change. */
 @media (min-width: 1101px) and (hover: hover) {
-  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost) {
+  .aero-window-chrome .aero-window-control {
+    transition: none;
+    --window-hover-glow: 0 0 7px var(--aero-color-primary);
+  }
+  .aero-window-chrome .aero-window-close { --window-hover-glow: 0 0 9px var(--aero-color-error-border); }
+  .aero-window-chrome .aero-window-control::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border: 1px solid var(--aero-color-hover-border);
+    border-radius: inherit;
+    pointer-events: none;
+    background: rgb(255 255 255 / 8%);
+    box-shadow: var(--window-hover-glow), inset 0 1px white;
+    opacity: 0;
+    transition: opacity var(--aero-motion-duration) var(--aero-motion-easing);
+  }
+  .aero-window-chrome .aero-window-control:hover:not(:active) {
+    filter: none;
+    border-color: var(--aero-color-border-strong);
+    box-shadow: var(--aero-shadow-inset-geometry) var(--aero-color-highlight);
+  }
+  .aero-window-chrome .aero-window-control:hover:not(:active)::before { opacity: 1; }
+  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost, .header .icon-btn, .header .nav-link, .header .btn-ghost) {
     position: relative;
     isolation: isolate;
     transition: none;
   }
-  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost)::before {
+  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost, .header .icon-btn, .header .nav-link, .header .btn-ghost)::before {
     content: "";
     position: absolute;
     inset: -1px;
@@ -381,15 +414,15 @@
     opacity: 0;
     transition: opacity var(--aero-motion-duration) var(--aero-motion-easing);
   }
-  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost):hover:not(:active):not(:disabled):not([aria-disabled="true"]) {
+  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost, .header .icon-btn, .header .nav-link, .header .btn-ghost):hover:not(:active):not(:disabled):not([aria-disabled="true"]) {
     background: transparent;
     border-color: transparent;
     box-shadow: none;
   }
-  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost):hover:not(:active):not(:disabled):not([aria-disabled="true"])::before {
+  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost, .header .icon-btn, .header .nav-link, .header .btn-ghost):hover:not(:active):not(:disabled):not([aria-disabled="true"])::before {
     opacity: 1;
   }
-  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost):active::before {
+  .aero-home :is(.side-link:not(.active), .post-actions .btn-ghost, .header .icon-btn, .header .nav-link, .header .btn-ghost):active::before {
     transition: none;
   }
 }

@@ -4,15 +4,15 @@ import EmojiInputButton from "./EmojiInputButton";
 import { COMMENT_MAX_LENGTH } from "@commune/shared";
 import { createPortal } from "react-dom";
 import SendButton from "./SendButton";
-import { useGrowingTextarea } from "../hooks/useGrowingTextarea";
 import { usesMobileKeyboard } from "../lib/mobileKeyboard";
+
+const nativeSizing = CSS.supports("field-sizing", "content");
 
 export default forwardRef<HTMLTextAreaElement, { value: string; onChange: (value: string) => void; pending: boolean; replying?: boolean; canSubmit: boolean; onImage: () => void; onMusic: () => void; onPaste: ClipboardEventHandler<HTMLTextAreaElement> }>(
   function CommentInput({ value, onChange, pending, replying, canSubmit, onImage, onMusic, onPaste }, ref) {
     const label = replying ? "Написать ответ" : "Написать комментарий";
     const mobileKeyboard = usesMobileKeyboard();
     const field = useRef<HTMLTextAreaElement>(null);
-    useGrowingTextarea(field, value);
     const [open, setOpen] = useState(false);
     const button = useRef<HTMLButtonElement>(null);
     const menu = useRef<HTMLDivElement>(null);
@@ -32,6 +32,7 @@ export default forwardRef<HTMLTextAreaElement, { value: string; onChange: (value
     return (
       <div className="aero-comment-input">
         <div className="emoji-input-field comment-input-field">
+          {!nativeSizing && <span aria-hidden="true" className="comment-input-sizer">{value + "\u200b"}</span>}
           <textarea
             ref={field}
             aria-label={label}
