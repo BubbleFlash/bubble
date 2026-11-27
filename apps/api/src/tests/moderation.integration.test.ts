@@ -47,6 +47,34 @@ integration("moderation on isolated MongoDB", () => {
     await mongoose.disconnect();
   });
 
+  it("publishes game links for guests and restricts additions to staff", async () => {
+    const path = "/moderation/games";
+    const game = { name: "Новая игра", url: "https://games.example.test/play" };
+    const initial = await app.get("/api/games");
+    expect(initial.status).toBe(200);
+    expect(initial.body.items.map((item: { url: string }) => item.url)).toEqual([
+      "https://ghosty-web.com.ru/",
+      "https://neucorochen.github.io/bubbletianbubblegame/",
+    ]);
+    expect((await app.post("/api" + path).send(game)).status).toBe(401);
+    expect((await post("user", path, game)).status).toBe(403);
+    expect((await post("moderator", path, { ...game, url: "javascript:alert(1)" })).status).toBe(400);
+    expect((await post("moderator", path, { ...game, logoUrl: "http://games.example.test/logo.png" })).status).toBe(400);
+    expect((await post("admin", path, { ...game, url: "https://ghosty-web.com.ru" })).status).toBe(409);
+
+    const other = { name: "Игра с логотипом", url: "https://games.example.test/other", logoUrl: "https://games.example.test/logo.png" };
+    const results = await Promise.all([
+      post("moderator", path, game),
+      post("admin", path, other),
+      post("admin", path, game),
+    ]);
+    expect(results.map(({ status }) => status).sort()).toEqual([201, 201, 409]);
+
+    const saved = await app.get("/api/games");
+    expect(saved.body.items.slice(2)).toHaveLength(2);
+    expect(saved.body.items.slice(2)).toEqual(expect.arrayContaining([{ ...game, logoUrl: null }, other]));
+  });
+
   it("enforces roles, warnings, timed restrictions and old sessions", async () => {
     expect((await app.get("/api/moderation/users").set(auth("user"))).status).toBe(403);
     expect((await app.get("/api/admin/errors").set(auth("moderator"))).status).toBe(403);

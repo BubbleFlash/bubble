@@ -41,6 +41,7 @@ import {
   createRepostSchema,
   createReportSchema,
   forgotPasswordSchema,
+  gameLinkSchema,
   changePasswordSchema,
   changeEmailSchema,
   confirmEmailChangeSchema,
@@ -73,6 +74,7 @@ import * as news from "../controllers/newsController.js";
 import * as serverFundraiser from "../controllers/serverFundraiserController.js";
 import * as developmentWidget from "../controllers/developmentWidgetController.js";
 import * as siteContent from "../controllers/siteContentController.js";
+import * as gameCatalog from "../controllers/gameCatalogController.js";
 import * as feedbackExport from "../controllers/feedbackExportController.js";
 import * as billing from "../controllers/billingController.js";
 import * as insights from "../controllers/insightsController.js";
@@ -550,6 +552,7 @@ router.post("/moderation/users/:id/warnings/:warningId/lift", ...staff, asyncHan
 router.post("/moderation/users/:id/measures", ...staff, asyncHandler(moderation.applyMeasure));
 router.patch("/moderation/users/:id/role", ...adminOnly, asyncHandler(moderation.changeRole));
 router.get("/moderation/history", ...staff, asyncHandler(moderation.history));
+router.post("/moderation/games", ...staff, validate(gameLinkSchema), asyncHandler(gameCatalog.add));
 router.get("/admin/errors", ...adminOnly, asyncHandler(monitor.listErrors));
 router.get("/admin/feedback-export/groups", ...adminOnly, asyncHandler(feedbackExport.listFeedbackCommunities));
 router.get("/admin/feedback-export/:communityId", ...adminOnly, asyncHandler(feedbackExport.lastFeedbackExport));
@@ -578,6 +581,7 @@ router.get("/server-fundraiser", publicLimiter, asyncHandler(serverFundraiser.ge
 router.get("/development-widget", publicLimiter, asyncHandler(developmentWidget.latest));
 router.get("/site-updates", publicLimiter, asyncHandler(developmentWidget.updates));
 router.get("/site-content", publicLimiter, asyncHandler(siteContent.getContent));
+router.get("/games", publicLimiter, asyncHandler(gameCatalog.list));
 router.get("/site-team", publicLimiter, asyncHandler(siteContent.team));
 router.get("/online-count", publicLimiter, asyncHandler(async (_req, res) => {
   const { onlineCount } = await import("../services/realtime.js");

@@ -5,6 +5,7 @@ import { ALLOWED_MUSIC_TYPES, MAX_MUSIC_BYTES } from "@commune/shared";
 import type { MusicTrackDTO, MusicUploadTicket } from "@commune/shared";
 import { api, withQuery } from "../lib/api";
 import MusicTrackList from "../components/MusicTrackList";
+import AeroDialogTitlebar from "../components/AeroDialogTitlebar";
 import { useAuth } from "../store/auth";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
@@ -285,23 +286,20 @@ export default function MusicPage() {
       <dialog
         ref={dialogRef}
         {...uploadBackdrop}
-        className="music-page__upload-dialog"
+        className="aero-dialog-frame"
         aria-labelledby="music-upload-title"
         onCancel={(event) => {
           event.preventDefault();
           closeUploadDialog();
         }}
       >
-        <header className="music-attachment-picker__header">
-          <h2 id="music-upload-title">Загрузить музыку</h2>
-          <span className="aero-window-controls music-player__window-controls">
-            <span className="aero-window-control aero-window-close">
-              <button type="button" className="music-player__close" onClick={closeUploadDialog} disabled={uploadMutation.isPending} aria-label="Закрыть окно загрузки" title="Закрыть">
-                <i className="aero-control-close" aria-hidden="true" />
-              </button>
-            </span>
-          </span>
-        </header>
+        <AeroDialogTitlebar
+          title="Загрузить музыку"
+          titleId="music-upload-title"
+          closeLabel="Закрыть окно загрузки"
+          closeDisabled={uploadMutation.isPending}
+          onClose={closeUploadDialog}
+        />
 
         <form className="music-page__upload-form" onSubmit={upload}>
           <fieldset disabled={uploadMutation.isPending}>

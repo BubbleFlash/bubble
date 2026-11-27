@@ -93,6 +93,91 @@ async function moveCaretToEnd(field: Locator) {
   });
 }
 
+test("open the games catalog from member navigation and publish a link as moderator", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({
+    json: { accessToken: "fixture", user: { ...viewer, role: "moderator" } },
+  }));
+  const items = [{ name: "Гости", url: "https://ghosty-web.com.ru/", logoUrl: "/ghosty-game.webp" }];
+  await page.route("**/api/games", (route) => route.fulfill({ json: { items } }));
+  await page.route("**/api/moderation/games", (route) => {
+    const input = route.request().postDataJSON();
+    expect(input).toEqual({ name: "Новая игра", url: "https://games.example.test/play" });
+    const added = { ...input, logoUrl: null };
+    items.push(added);
+    return route.fulfill({ status: 201, json: added });
+  });
+
+  await page.goto(origin);
+  const menu = page.getByRole("button", { name: "Открыть меню" });
+  const mobile = page.viewportSize()!.width <= 1100;
+  const openGames = async () => {
+    if (mobile) await menu.click();
+    await page.getByRole("button", { name: "Игры", exact: true }).click();
+  };
+  await openGames();
+  const dialog = page.getByRole("dialog", { name: "Игры" });
+  const frameGeometry = (modal: Locator) => modal.evaluate((element) => {
+    const frame = element.getBoundingClientRect();
+    const title = element.querySelector("h2")!.getBoundingClientRect();
+    const button = element.querySelector("header button")!.getBoundingClientRect();
+    const header = element.querySelector("header")!.getBoundingClientRect();
+    return {
+      titleLeft: title.left - frame.left,
+      titleTop: title.top - frame.top,
+      titleHeight: title.height,
+      headerHeight: header.height,
+      closeTop: button.top - frame.top,
+      closeRight: frame.right - button.right,
+      radius: getComputedStyle(element).borderRadius,
+    };
+  });
+  const ghosty = dialog.getByRole("link", { name: "Гости" });
+  await expect(ghosty).toHaveAttribute("href", "https://ghosty-web.com.ru/");
+  await expect(ghosty).toHaveAttribute("target", "_blank");
+  await expect.poll(() => ghosty.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  const gamesFrame = await frameGeometry(dialog);
+  expect(gamesFrame).toMatchObject({ headerHeight: 26, titleTop: 5, titleHeight: 18 });
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(mobile ? menu : page.getByRole("button", { name: "Игры", exact: true })).toBeFocused();
+
+  await page.goto(`${origin}/music`);
+  await page.getByRole("button", { name: "Загрузить музыку" }).click();
+  const upload = page.getByRole("dialog", { name: "Загрузить музыку" });
+  expect(await frameGeometry(upload)).toEqual(gamesFrame);
+  await upload.getByRole("button", { name: "Закрыть окно загрузки" }).click();
+  await expect(upload).toBeHidden();
+
+  await page.goto(`${origin}/moderation`);
+  await page.getByRole("button", { name: "Игры", exact: true }).click();
+  await page.getByLabel("Название игры").fill("Новая игра");
+  await page.getByLabel("Ссылка на игру").fill("https://games.example.test/play");
+  await page.getByRole("button", { name: "Добавить игру" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Игра добавлена" })).toBeVisible();
+  await page.goto(origin);
+  await openGames();
+  await expect(dialog.getByRole("link", { name: "Новая игра" })).toHaveAttribute("href", "https://games.example.test/play");
+  await dialog.getByRole("button", { name: "Закрыть каталог игр" }).click();
+  await expect(dialog).toBeHidden();
+});
+
+test("open the games catalog as a guest from the project landing", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 401, json: { error: "No session" } }));
+  await page.route("**/api/games", (route) => route.fulfill({ json: {
+    items: [{ name: "Bubble-chan murble game", url: "https://neucorochen.github.io/bubbletianbubblegame/", logoUrl: "/bubble-chan-game.png" }],
+  } }));
+  await page.goto(origin);
+  await page.getByRole("button", { name: "Игры", exact: true }).click();
+  const game = page.getByRole("dialog", { name: "Игры" }).getByRole("link", { name: "Bubble-chan murble game" });
+  await expect(game).toHaveAttribute("href", "https://neucorochen.github.io/bubbletianbubblegame/");
+  await expect(game).toHaveAttribute("rel", "noopener noreferrer");
+  await expect.poll(() => game.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+});
+
 for (const platform of ["desktop", "Android", "iPhone", "iPadOS"] as const) {
   test(`edit and submit posts, comments and messages with the ${platform} keyboard`, async ({ page }) => {
     const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;

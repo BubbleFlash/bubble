@@ -20,6 +20,7 @@ import { appearanceStyle } from "./lib/appearance";
 import { prefetchLikelyRoutes } from "./lib/prefetch";
 import MusicPlayer from "./components/MusicPlayer";
 import BackToTop from "./components/BackToTop";
+import GameCatalogDialog from "./components/GameCatalogDialog";
 import { useStickyTabs } from "./hooks/useStickyTabs";
 
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -275,6 +276,7 @@ export default function App() {
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>();
   const [opacityPreview, setOpacityPreview] = useState<number>();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [gamesTrigger, setGamesTrigger] = useState<HTMLButtonElement | null>(null);
   const homeRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -427,6 +429,7 @@ export default function App() {
           <Header
             menuOpen={mobileMenuOpen}
             setMenuOpen={setMobileMenuOpen}
+            onOpenGames={setGamesTrigger}
             onNavigateToNotification={() => finish([])}
             minimal={projectLanding}
           />
@@ -434,7 +437,7 @@ export default function App() {
         </div>
         <PwaBanner />
         <div className={`shell${user && !projectLanding ? " has-left" : ""}${wide ? " wide" : ""}${guestLanding ? " guest-landing-shell" : ""}`}>
-          {user && !projectLanding && <LeftNav />}
+          {user && !projectLanding && <LeftNav onOpenGames={setGamesTrigger} />}
           <main id="main" tabIndex={-1} className="container">
             {user && !projectLanding && <ModerationNotices key={user.id} />}
             <AppRoutes onWallpaperPreview={setWallpaperPreview} onOpacityPreview={setOpacityPreview} onNotificationItems={remember} onNavigateToNotification={() => finish([])} />
@@ -447,6 +450,10 @@ export default function App() {
           <BottomNav navRef={navRef} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen((open) => !open)} />
         </div>}
       </div>
+      {gamesTrigger && <GameCatalogDialog onClose={() => {
+        setGamesTrigger(null);
+        gamesTrigger.focus();
+      }} />}
     </div>
   );
 }

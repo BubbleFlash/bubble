@@ -20,6 +20,7 @@ import { violationReasons } from "../lib/moderationReasons";
 import DevelopmentWidgetSettings from "../components/DevelopmentWidgetSettings";
 import SiteContentSettings from "../components/SiteContentSettings";
 import SiteTeamSettings from "../components/SiteTeamSettings";
+import GameCatalogSettings from "../components/GameCatalogSettings";
 
 type Kind = "post" | "comment" | "wallpaper";
 type State = "published" | "hidden" | "removed" | "withdrawn";
@@ -841,7 +842,7 @@ export default function ModerationPage() {
         <ModerationHelp />
       </div>
       <nav className="tabs feed-tabs moderation-tabs" aria-label="Панель модерации">
-        {["Жалобы", "Пользователи", "Контент", "Журнал", ...(user.role === "admin" ? ["Регистрация", "Тестовый доступ", "Дневник", "Тексты", "Лимиты", "Сбор"] : [])].map((name) => (
+        {["Жалобы", "Пользователи", "Контент", "Журнал", "Игры", ...(user.role === "admin" ? ["Регистрация", "Тестовый доступ", "Дневник", "Тексты", "Лимиты", "Сбор"] : [])].map((name) => (
           <button
             key={name}
             className={"tab" + (section === name ? " active" : "")}
@@ -870,6 +871,7 @@ export default function ModerationPage() {
         />
       )}
       {section === "Журнал" && <HistoryList />}
+      {section === "Игры" && <GameCatalogSettings key={user.id} />}
       {section === "Регистрация" && user.role === "admin" && <RegistrationSettings />}
       {section === "Тестовый доступ" && user.role === "admin" && <TestGateSettings />}
       {section === "Лимиты" && user.role === "admin" && <RateLimitSettings />}

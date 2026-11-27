@@ -29,7 +29,7 @@ const routeGroups = [
   ["/uploads", "image font direct"],
   ["/push", "status subscribe unsubscribe preferences test"],
   ["/billing", "checkout portal"],
-  ["/moderation", "notices reports content users history"],
+  ["/moderation", "notices reports content users history games"],
   ["/admin", "errors telemetry rate-limits"],
 ] as const;
 
@@ -40,7 +40,7 @@ export function telemetryRoute(path: string): string {
     .replace(/\/+$/, "")
     .toLowerCase();
   if (
-    /^\/(?:news|contact|link-preview|server-fundraiser|insights|profile-presence|socket\.io|client-errors|client-network)$/.test(
+    /^\/(?:news|games|contact|link-preview|server-fundraiser|insights|profile-presence|socket\.io|client-errors|client-network)$/.test(
       clean,
     )
   )

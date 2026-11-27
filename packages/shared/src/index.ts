@@ -924,3 +924,25 @@ export interface PushStatus {
   publicKey: string | null;
   preferences: PushPreferences;
 }
+
+function webUrl(protocols: string[], message: string) {
+  return z.string().trim().max(2048).transform((value, ctx) => {
+    if (/^https?:\/\//i.test(value) && URL.canParse(value)) {
+      const url = new URL(value);
+      if (protocols.includes(url.protocol) && !url.username && !url.password && url.href.length <= 2048) {
+        return url.href;
+      }
+    }
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    return z.NEVER;
+  });
+}
+
+export const gameLinkSchema = z.object({
+  name: z.string().trim().min(1, "Введите название игры.").max(100),
+  url: webUrl(["https:", "http:"], "Укажите ссылку на игру с http:// или https://."),
+  logoUrl: webUrl(["https:"], "Укажите HTTPS-ссылку на изображение.").optional(),
+}).strict();
+
+export type GameLinkInput = z.infer<typeof gameLinkSchema>;
+export type GameLink = Omit<GameLinkInput, "logoUrl"> & { logoUrl: string | null };

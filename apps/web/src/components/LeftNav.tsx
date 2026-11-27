@@ -12,7 +12,7 @@ import { useLocation } from "react-router-dom";
 import { openFeed } from "../lib/feedNavigation";
 
 /** Left column for members on wide screens: brand and primary navigation. */
-export default function LeftNav() {
+export default function LeftNav({ onOpenGames }: { onOpenGames: (trigger: HTMLButtonElement) => void }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const location = useLocation();
@@ -53,6 +53,10 @@ export default function LeftNav() {
       <nav>
         {inAdmin ? adminNavigation.filter((item) => item.id !== "errors" || user.role === "admin").map((item) => <span key={item.id}>{link(item.to, item.icon, item.label, 0, true)}</span>) : <>
           {navigationFor("member", "desktop").map((item) => <span key={item.id}>{link(item.to(user.username), item.icon, item.label, item.id === "messages" ? m : item.id === "notifications" ? n : 0, item.end)}</span>)}
+          <button type="button" className="side-link games-menu-button" aria-haspopup="dialog" onClick={(event) => onOpenGames(event.currentTarget)}>
+            <span className="side-icon"><NavigationIcon name="games" size={28} /></span>
+            <span className="side-label">Игры</span>
+          </button>
           {user.role === "admin" && link("/admin", "shield", "Админка")}
           {user.role === "moderator" && link("/moderation", "shield", "Модерация")}
         </>}

@@ -22,9 +22,10 @@ import { openFeed } from "../lib/feedNavigation";
 /** Pages where the navbar is hidden so sign-in flows stay focused. */
 export const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/confirm-email-change"];
 
-export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigateToNotification, minimal = false }: {
+export default function Header({ menuOpen: open, setMenuOpen: setOpen, onOpenGames, onNavigateToNotification, minimal = false }: {
   menuOpen: boolean;
   setMenuOpen: Dispatch<SetStateAction<boolean>>;
+  onOpenGames: (trigger: HTMLButtonElement) => void;
   onNavigateToNotification: () => void;
   minimal?: boolean;
 }) {
@@ -77,6 +78,15 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
       {extra}
     </NavLink>
   );
+  const gamesInDrawer = (
+    <button type="button" className="nav-link games-menu-button" aria-haspopup="dialog" onClick={(event) => {
+      const toggle = document.querySelector<HTMLButtonElement>(user ? ".bottom-menu-toggle" : ".header [aria-controls='mobile-menu']");
+      setOpen(false);
+      onOpenGames(toggle ?? event.currentTarget);
+    }}>
+      <NavigationIcon name="games" size={20} /> Игры
+    </button>
+  );
 
   return (
     <>
@@ -87,6 +97,12 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             <img src="/bubble-header-desktop.png" width="576" height="211" alt="" />
           </picture>
         </Link>
+
+        {minimal && !AUTH_PATHS.includes(pathname) && pathname !== "/verify-email" && (
+          <button type="button" className="nav-link games-menu-button" aria-haspopup="dialog" onClick={(event) => onOpenGames(event.currentTarget)}>
+            <NavigationIcon name="games" size={20} /> Игры
+          </button>
+        )}
 
         {!minimal && <>
 
@@ -101,6 +117,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
           {user && <NotificationMenu key={user.id} count={count} onNavigateToItem={onNavigateToNotification} />}
           <nav className="header-right nav-desktop" aria-label="Основная навигация">
             {!user && navigationFor("guest", "header").map((entry) => <NavLink key={entry.id} to={entry.to("")} className={navClass}>{entry.label}</NavLink>)}
+            {!user && <button type="button" className="nav-link games-menu-button" aria-haspopup="dialog" onClick={(event) => onOpenGames(event.currentTarget)}>Игры</button>}
             {user && (
               <>
                 <Link to={`/u/${user.username}`} className="nav-link nav-profile">
@@ -153,6 +170,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             <>
               <nav className="drawer-links" aria-label="Меню">
                 {navigationFor("member", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(user.username), entry.icon, entry.label, entry.id === "messages" && msgCount > 0 ? <span className="pill">{msgCount}</span> : entry.id === "notifications" && count > 0 ? <span className="pill">{countLabel}</span> : undefined, entry.end)}</span>)}
+                {gamesInDrawer}
                 {user.role === "admin" && item("/admin", "shield", "Админка")}
                 {user.role === "moderator" && item("/moderation", "shield", "Модерация")}
                 {item("/about", "info", "О проекте")}
@@ -168,6 +186,7 @@ export default function Header({ menuOpen: open, setMenuOpen: setOpen, onNavigat
             <>
               <nav className="drawer-links" aria-label="Меню">
                 {navigationFor("guest", "drawer").map((entry) => <span key={entry.id}>{item(entry.to(""), entry.icon, entry.guestLabel ?? entry.label, undefined, entry.end)}</span>)}
+                {gamesInDrawer}
                 {item("/about", "info", "О проекте")}
                 {item("/rules", "info", "Правила сообщества")}
               </nav>
