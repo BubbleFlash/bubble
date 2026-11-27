@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ClipboardEventHandler } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEventHandler } from "react";
 import Icon from "./Icon";
 import EmojiInputButton from "./EmojiInputButton";
 import { COMMENT_MAX_LENGTH } from "@commune/shared";
@@ -6,13 +6,25 @@ import { createPortal } from "react-dom";
 import SendButton from "./SendButton";
 import { usesMobileKeyboard } from "../lib/mobileKeyboard";
 
-const nativeSizing = CSS.supports("field-sizing", "content");
-
 export default forwardRef<HTMLTextAreaElement, { value: string; onChange: (value: string) => void; pending: boolean; replying?: boolean; canSubmit: boolean; onImage: () => void; onMusic: () => void; onPaste: ClipboardEventHandler<HTMLTextAreaElement> }>(
   function CommentInput({ value, onChange, pending, replying, canSubmit, onImage, onMusic, onPaste }, ref) {
     const label = replying ? "Написать ответ" : "Написать комментарий";
     const mobileKeyboard = usesMobileKeyboard();
     const field = useRef<HTMLTextAreaElement>(null);
+    const sizer = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+      const input = field.current!;
+      // ResizeObserver reports a change only after a line wraps or is removed.
+      let lastHeight = 0;
+      const observer = new ResizeObserver(([entry]) => {
+        const height = entry?.borderBoxSize[0]?.blockSize;
+        if (!height || height === lastHeight) return;
+        lastHeight = height;
+        input.style.setProperty("--comment-content-height", `${height}px`);
+      });
+      observer.observe(sizer.current!, { box: "border-box" });
+      return () => observer.disconnect();
+    }, []);
     const [open, setOpen] = useState(false);
     const button = useRef<HTMLButtonElement>(null);
     const menu = useRef<HTMLDivElement>(null);
@@ -32,7 +44,7 @@ export default forwardRef<HTMLTextAreaElement, { value: string; onChange: (value
     return (
       <div className="aero-comment-input">
         <div className="emoji-input-field comment-input-field">
-          {!nativeSizing && <span aria-hidden="true" className="comment-input-sizer">{value + "\u200b"}</span>}
+          <div ref={sizer} aria-hidden="true" className="comment-input-sizer">{value + "\u200b"}</div>
           <textarea
             ref={field}
             aria-label={label}
