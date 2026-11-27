@@ -70,7 +70,7 @@ export async function anonymizeExpiredAccounts(now = new Date()) {
         },
         $unset: {
           deletionExpiresAt: 1, passwordHash: 1, googleId: 1, pendingEmail: 1, credentialsChangedAt: 1,
-          appearance: 1, avatarFrame: 1, shareProfileAppearance: 1, profileAppearanceVisibility: 1,
+          appearance: 1, avatarFrame: 1, shareProfileAppearance: 1, profileAppearanceVisibility: 1, hideProfileFonts: 1,
           friendsVisibility: 1, musicLibraryVisibility: 1, notificationPreferences: 1, failedLogins: 1, lockUntil: 1,
         },
         $inc: { sessionVersion: 1 },

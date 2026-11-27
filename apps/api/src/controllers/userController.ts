@@ -118,7 +118,7 @@ export async function updateMe(req: Request, res: Response) {
 }
 
 export async function updateAppearance(req: Request, res: Response) {
-  const { appearance, avatarFrame, profileAppearanceVisibility } = req.body as UpdateAppearanceInput;
+  const { appearance, avatarFrame, profileAppearanceVisibility, hideProfileFonts } = req.body as UpdateAppearanceInput;
   const update: Record<string, unknown> = {};
   if (appearance?.backgroundUrl !== undefined) update["appearance.backgroundUrl"] = appearance.backgroundUrl;
   if (appearance?.primaryColor !== undefined) update["appearance.primaryColor"] = appearance.primaryColor;
@@ -133,6 +133,7 @@ export async function updateAppearance(req: Request, res: Response) {
   }
   if (avatarFrame !== undefined) update.avatarFrame = avatarFrame;
   if (profileAppearanceVisibility !== undefined) update.profileAppearanceVisibility = profileAppearanceVisibility;
+  if (hideProfileFonts !== undefined) update.hideProfileFonts = hideProfileFonts;
 
   const previous = await User.findByIdAndUpdate(req.userId, { $set: update }, {
     returnDocument: "before",
@@ -146,7 +147,7 @@ export async function updateAppearance(req: Request, res: Response) {
   if (appearance?.font !== undefined && previous.appearance?.font !== appearance.font) {
     await deleteFontIfUnused(previous.appearance?.font);
   }
-  res.json({ appearance, avatarFrame, profileAppearanceVisibility });
+  res.json({ appearance, avatarFrame, profileAppearanceVisibility, hideProfileFonts });
 }
 
 export async function getProfile(req: Request, res: Response) {

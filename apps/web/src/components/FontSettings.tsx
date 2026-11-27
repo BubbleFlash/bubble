@@ -8,12 +8,16 @@ export default function FontSettings({
   error,
   onChange,
   onFile,
+  hideProfileFonts,
+  onHideProfileFontsChange,
 }: {
   font?: SiteFont | null;
   file: File | null;
   error?: string;
   onChange: (font: SiteFont | null) => void;
   onFile: (file: File) => void;
+  hideProfileFonts: boolean;
+  onHideProfileFontsChange: (checked: boolean) => void;
 }) {
   const storedFamily = useStoredFont(font, "BubbleSavedFontPreview");
   const selection = file || (font && !standardFontFamily(font)) ? "custom" : (font ?? "");
@@ -53,6 +57,15 @@ export default function FontSettings({
         </label>
       </div>
       <p className="muted">WOFF2, WOFF, TTF или OTF, до 2 МБ.</p>
+      <label className="appearance-profile-fonts">
+        <input
+          className="aero-checkbox"
+          type="checkbox"
+          checked={hideProfileFonts}
+          onChange={(event) => onHideProfileFontsChange(event.target.checked)}
+        />
+        Отключать авторские шрифты в чужих профилях
+      </label>
       {error && <p role="alert">{error}</p>}
       <div
         className="appearance-font-preview"

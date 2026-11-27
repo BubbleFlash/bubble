@@ -142,6 +142,7 @@ export function toPublicUser(u: UserLike): PublicUser {
 type UserWithAppearance = UserLike & {
   appearance?: (Omit<Partial<SiteAppearance>, "windowOpacity"> & { windowOpacity?: number | null }) | null;
   shareProfileAppearance?: boolean | null;
+  hideProfileFonts?: boolean | null;
   profileAppearanceVisibility?: FriendsVisibility | null;
 };
 
@@ -155,6 +156,7 @@ export function toAccountUser(u: UserWithAppearance): AccountUser {
     ...toPublicUser(u),
     email: u.email,
     profileAppearanceVisibility: profileAppearanceVisibility(u),
+    hideProfileFonts: u.hideProfileFonts ?? undefined,
     appearance: backgroundUrl !== undefined || primaryColor !== undefined || accentColor !== undefined || font !== undefined || windowOpacity != null
       ? { backgroundUrl, primaryColor, accentColor, font, windowOpacity: windowOpacity ?? undefined }
       : undefined,

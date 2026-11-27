@@ -24,6 +24,7 @@ const userSchema = new Schema(
       default: undefined,
     },
     shareProfileAppearance: { type: Boolean },
+    hideProfileFonts: { type: Boolean },
     profileAppearanceVisibility: { type: String, enum: ["everyone", "friends", "only_me"] },
     appearance: {
       backgroundUrl: { type: String, index: true, sparse: true },

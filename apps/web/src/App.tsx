@@ -284,7 +284,7 @@ export default function App() {
   const { data: profile, isError: profileError } = useProfile(profileName ?? "", visitingProfile);
   const profileTheme = visitingProfile && !profileError ? profile?.profileAppearance : undefined;
   const appearance = profileTheme ?? user?.appearance;
-  const fontFamily = useStoredFont(appearance?.font);
+  const fontFamily = useStoredFont(user?.hideProfileFonts ? user.appearance?.font : appearance?.font);
   const preview = pathname === "/settings" ? wallpaperPreview : undefined;
   const localWallpaper = preview?.startsWith("blob:") ? preview : undefined;
   const backgroundUrl = preview === undefined ? appearance?.backgroundUrl : preview;
