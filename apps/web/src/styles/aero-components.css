@@ -410,7 +410,7 @@
 .aero-home .music-player::before { top: 27px; }
 .music-player__title { flex: 1; min-width: 0; font-size: 13px; line-height: 18px; color: var(--aero-color-text); }
 .music-player__title span {
-  -webkit-text-stroke: 1.2px rgb(238 249 255 / 88%);
+  -webkit-text-stroke: 1.6px rgb(238 249 255 / 88%);
   paint-order: stroke fill;
   text-shadow: 0 0 3px rgb(218 242 255 / 80%);
 }

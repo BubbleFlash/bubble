@@ -918,7 +918,7 @@ test("outline the floating music title without filling the glass", async ({ page
     const text = title.locator("span");
     await expect(bar).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(bar).toHaveCSS("background-image", "none");
-    await expect(text).toHaveCSS("-webkit-text-stroke-width", "1.2px");
+    await expect(text).toHaveCSS("-webkit-text-stroke-width", "1.6px");
     await expect(text).not.toHaveCSS("text-shadow", "none");
   };
   await checkTitle();
