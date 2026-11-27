@@ -162,16 +162,30 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .avatar[data-pulsing] { animation: avatar-glow-pulse 2.6s ease-in-out infinite; }
+  .avatar-pulse { isolation: isolate; }
+  .avatar-pulse::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: 34%;
+    background: var(--avatar-glow);
+    box-shadow: 0 0 calc(var(--avatar-glow-radius) * 2) 2px var(--avatar-glow);
+    opacity: 0;
+  }
+  .avatar-pulse[data-pulse-halo]::before {
+    animation: avatar-glow-pulse 2.6s ease-in-out infinite;
+  }
+}
+@supports (-moz-appearance: none) {
+  /* Firefox's Aero theme suppresses box shadows. Blur this static halo once. */
+  .avatar-pulse::before { filter: blur(var(--avatar-glow-radius)); }
 }
 
 @keyframes avatar-glow-pulse {
-  0%, 100% {
-    filter: var(--avatar-glow-core) drop-shadow(0 0 calc(var(--avatar-glow-radius) * .65) var(--avatar-glow));
-  }
-  50% {
-    filter: var(--avatar-glow-core) drop-shadow(0 0 calc(var(--avatar-glow-radius) * 1.5) var(--avatar-glow));
-  }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 .profile-id > div { min-width: 0; }

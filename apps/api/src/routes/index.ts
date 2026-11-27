@@ -275,6 +275,7 @@ router.post(
 );
 
 router.get("/music/picker", requireAuth, validate(musicPickerQuerySchema, "query"), asyncHandler(music.picker));
+router.get("/music/uploads/:id", requireAuth, validate(musicTrackIdSchema, "params"), asyncHandler(music.uploadStatus));
 router.post("/music/library/status", requireAuth, validate(musicLibraryStatusSchema), asyncHandler(music.libraryStatuses));
 router.patch("/music/:id", requireAuth, validate(musicTrackIdSchema, "params"), validate(musicRenameSchema), requireActive, asyncHandler(music.rename));
 router.get(

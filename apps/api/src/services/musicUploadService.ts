@@ -23,6 +23,7 @@ export async function createMusicUpload(
   const storageKey = `music/${userId}/${randomUUID()}`;
 
   const upload = await MusicUpload.create({
+    normalizeToMp3: true,
     userId,
     storageKey,
     title: input.title,
@@ -71,6 +72,8 @@ export async function completeMusicUpload(
     };
   }
 
+  if (upload.failed) throw badRequest("Не удалось подготовить MP3. Проверьте аудиофайл и повторите загрузку.");
+  if (upload.nextAttemptAt) return { processing: true as const };
   if (upload.expiresAt.getTime() <= Date.now()) {
     throw badRequest("Upload has expired");
   }
@@ -101,18 +104,39 @@ export async function completeMusicUpload(
     throw badRequest("Uploaded file type does not match");
   }
 
+  if (upload.normalizeToMp3) {
+    if (!metadata.ETag) throw new Error("Missing uploaded object ETag");
+    await MusicUpload.updateOne({ _id: upload.id, nextAttemptAt: null, completedTrackId: null, failed: { $ne: true } },
+      { $set: { sourceETag: metadata.ETag, nextAttemptAt: new Date(), attempts: 0 } });
+    return { processing: true as const };
+  }
+  // Tickets issued before the MP3 worker was deployed retain the original completion path.
+  return publishMusicTrack(upload, upload.storageKey, upload.mimeType, upload.size, duration);
+}
+
+export async function musicUploadStatus(userId: string, uploadId: string) {
+  const upload = await MusicUpload.findOne({ _id: uploadId, userId }).select("completedTrackId failed").lean();
+  if (!upload) throw notFound("Upload not found");
+  if (upload.completedTrackId) return { trackId: upload.completedTrackId.toString() };
+  if (upload.failed) throw badRequest("Не удалось подготовить MP3. Проверьте аудиофайл и повторите загрузку.");
+  return { processing: true as const };
+}
+
+export async function publishMusicTrack(upload: InstanceType<typeof MusicUpload>, storageKey: string,
+  mimeType: string, size: number, duration?: number) {
+  const userId = upload.userId.toString();
   let track;
 
   try {
     track = await MusicTrack.findOneAndUpdate(
-      { storageKey: upload.storageKey },
+      { storageKey },
       {
         $setOnInsert: {
           title: upload.title,
           artist: upload.artist,
-          storageKey: upload.storageKey,
-          mimeType: upload.mimeType,
-          size: upload.size,
+          storageKey,
+          mimeType,
+          size,
           duration: duration ?? null,
           uploadedBy: userId,
         },
@@ -134,7 +158,7 @@ export async function completeMusicUpload(
     }
 
     track = await MusicTrack.findOne({
-      storageKey: upload.storageKey,
+      storageKey,
     });
   }
 
@@ -183,6 +207,7 @@ export async function completeMusicUpload(
     {
       $set: {
         completedTrackId: track._id,
+        ...(upload.normalizeToMp3 && { nextAttemptAt: new Date(), attempts: 0 }),
       },
     },
   );

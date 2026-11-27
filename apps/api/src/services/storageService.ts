@@ -5,13 +5,15 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { ReadStream } from "node:fs";
 import { env } from "../config/env.js";
 import { s3Client, s3PresignClient } from "./s3Client.js";
 
 export async function uploadObject(
   key: string,
-  body: Buffer,
+  body: Buffer | ReadStream,
   contentType: string,
+  size?: number,
 ): Promise<void> {
   await s3Client.send(
     new PutObjectCommand({
@@ -19,16 +21,18 @@ export async function uploadObject(
       Key: key,
       Body: body,
       ContentType: contentType,
+      ContentLength: size,
     }),
   );
 }
 
-export async function getObject(key: string, ifNoneMatch?: string) {
+export async function getObject(key: string, ifNoneMatch?: string, ifMatch?: string) {
   return s3Client.send(
     new GetObjectCommand({
       Bucket: env.S3_BUCKET,
       Key: key,
       ...(ifNoneMatch ? { IfNoneMatch: ifNoneMatch } : {}),
+      ...(ifMatch ? { IfMatch: ifMatch } : {}),
     }),
   );
 }

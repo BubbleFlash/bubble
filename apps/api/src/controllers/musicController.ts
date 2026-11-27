@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { setTimeout as sleep } from "node:timers/promises";
 import type {
   MusicUploadSignInput,
   MusicUploadTicket,
@@ -8,6 +9,7 @@ import type {
 } from "@commune/shared";
 import {
   completeMusicUpload,
+  musicUploadStatus,
   createMusicUpload,
 } from "../services/musicUploadService.js";
 import {
@@ -50,11 +52,19 @@ export async function signUpload(req: Request, res: Response) {
 }
 
 export async function completeUpload(req: Request, res: Response) {
-  const { uploadId, duration } = req.body as MusicUploadCompleteInput;
+  const { uploadId, duration, background } = req.body as MusicUploadCompleteInput;
+  let result = await completeMusicUpload(req.userId!, uploadId, duration);
+  // Older clients expect a published track ID in the completion response.
+  while (!background && "processing" in result && !res.destroyed) {
+    await sleep(2000);
+    result = await musicUploadStatus(req.userId!, uploadId);
+  }
+  if (!res.destroyed) res.status("processing" in result ? 202 : 201).json(result);
+}
 
-  const body = await completeMusicUpload(req.userId!, uploadId, duration);
-
-  res.status(201).json(body);
+export async function uploadStatus(req: Request, res: Response) {
+  res.set("Cache-Control", "no-store");
+  res.json(await musicUploadStatus(req.userId!, req.params.id!));
 }
 
 export async function rename(req: Request, res: Response) {

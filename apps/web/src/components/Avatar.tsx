@@ -55,22 +55,21 @@ export default function Avatar({
   const pulsing = effectName === "pulse" && near;
   const hue = hueFor(username);
   const avatar = url ? (
-    <AssetImage className="avatar" imageRef={pulseRef} data-frame={effectName} data-pulsing={pulsing || undefined} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
+    <AssetImage className="avatar" imageRef={pulseRef} data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
   ) : (
     <span
       ref={pulseRef}
       className="avatar avatar-fallback"
       data-frame={effectName}
-      data-pulsing={pulsing || undefined}
       style={{ ...style, background: hue.bg, color: hue.fg }}
       aria-hidden="true"
     >
       {Array.from(displayNameOf({ username, displayName }))[0]?.toUpperCase()}
     </span>
   );
-  if (!trackOnline && online === undefined) return avatar;
-  return <span className="avatar-presence" style={{ width: size, height: size }}>
+  if (!trackOnline && online === undefined && !pulseRef) return avatar;
+  return <span className={pulseRef ? "avatar-presence avatar-pulse" : "avatar-presence"} data-pulse-halo={pulsing || undefined} style={pulseRef ? style : { width: size, height: size }}>
     {avatar}
-    {status !== undefined && <OnlineStatus online={status} />}
+    {(trackOnline || online !== undefined) && status !== undefined && <OnlineStatus online={status} />}
   </span>;
 }

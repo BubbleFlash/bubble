@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ALLOWED_MUSIC_TYPES, MAX_MUSIC_BYTES } from "@commune/shared";
-import type { MusicTrackDTO, MusicUploadTicket } from "@commune/shared";
-import { api, withQuery } from "../lib/api";
+import type { MusicTrackDTO, MusicUploadResult, MusicUploadTicket } from "@commune/shared";
+import { api, ApiError, withQuery } from "../lib/api";
 import MusicTrackList from "../components/MusicTrackList";
 import { useAuth } from "../store/auth";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
@@ -52,9 +52,29 @@ function readAudioDuration(file: File): Promise<number | undefined> {
   });
 }
 
+type PendingUpload = { id: string; title: string; userId: string };
+
+function MusicProcessingStatus({ upload, onPublished }: { upload: PendingUpload; onPublished: (id: string) => void }) {
+  const status = useQuery({
+    queryKey: ["music-upload", upload.userId, upload.id],
+    queryFn: ({ signal }) => api<MusicUploadResult>(`/music/uploads/${upload.id}`, { signal }),
+    refetchInterval: ({ state }) => (state.data && "trackId" in state.data) ||
+      (state.error instanceof ApiError && [400, 403, 404].includes(state.error.status)) ? false : 5000,
+  });
+  useEffect(() => {
+    if (status.data && "trackId" in status.data) onPublished(upload.id);
+  }, [status.data, upload.id, onPublished]);
+  return <p role="status">{upload.title} — {status.error ? status.error.message : "подготовка MP3…"}</p>;
+}
+
 export default function MusicPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [pending, setPending] = useState<PendingUpload[]>([]);
+  const onPublished = useCallback((id?: string) => {
+    if (id) setPending(items => items.filter(item => item.id !== id));
+    for (const key of ["music", "profile-music", "music-picker"]) void queryClient.invalidateQueries({ queryKey: [key] });
+  }, [queryClient]);
 
   const [scope, setScope] = useState<MusicScope>("mine");
   const [search, setSearch] = useState("");
@@ -127,15 +147,15 @@ export default function MusicPage() {
         throw new Error("Не удалось загрузить файл в хранилище.");
       }
 
-      await api<{ trackId: string }>("/music/uploads/complete", {
+      const result = await api<MusicUploadResult>("/music/uploads/complete", {
         method: "POST",
-        body: { uploadId: ticket.uploadId, duration: await durationPromise },
+        body: { uploadId: ticket.uploadId, duration: await durationPromise, background: true },
       });
+      if ("processing" in result && user) return { id: ticket.uploadId, title: trackTitle, userId: user.id };
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["music"] });
-      void queryClient.invalidateQueries({ queryKey: ["profile-music"] });
-      void queryClient.invalidateQueries({ queryKey: ["music-picker"] });
+    onSuccess: (upload) => {
+      if (upload) setPending(items => [...items, upload]);
+      else onPublished();
       dialogRef.current?.close();
       resetUploadForm();
     },
@@ -234,6 +254,8 @@ export default function MusicPage() {
   return (
     <section className="music-page">
       <h1 className="search-title">Музыка</h1>
+      {pending.filter(item => item.userId === user?.id).map(upload =>
+        <MusicProcessingStatus key={upload.id} upload={upload} onPublished={onPublished} />)}
 
       <div className="music-page__toolbar">
         <input

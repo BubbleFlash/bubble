@@ -4,10 +4,12 @@ import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { startAccountDeletionWorker } from "./services/accountDeletion.js";
 import { flushTelemetry } from "./services/telemetry.js";
+import { startMusicUploadWorker } from "./services/musicUploadWorker.js";
 
 async function main() {
   await connectDb();
   const stopAccountDeletionWorker = startAccountDeletionWorker();
+  const stopMusicUploadWorker = startMusicUploadWorker();
   const server = createApp().listen(env.PORT, () => {
     logger.info(`API listening on http://localhost:${env.PORT}`);
   });
@@ -15,6 +17,7 @@ async function main() {
   const shutdown = (signal: string) => {
     logger.info(`${signal} received, shutting down`);
     stopAccountDeletionWorker();
+    stopMusicUploadWorker();
     server.close(async () => {
       await flushTelemetry();
       await disconnectDb();

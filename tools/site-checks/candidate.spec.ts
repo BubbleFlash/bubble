@@ -792,13 +792,50 @@ test("scroll deep in the feed without restyling the entire desktop shell", async
   expect(probe.aligned).toBe(true);
   const last = page.locator("article.feed-post").last();
   await last.scrollIntoViewIfNeeded();
-  await expect(last.locator(".avatar")).toHaveAttribute("data-pulsing", "true");
-  await expect(page.locator("article.feed-post").first().locator(".avatar")).not.toHaveAttribute("data-pulsing", "true");
-  expect(await page.locator(".feed-post .avatar[data-pulsing]").count()).toBeLessThan(20);
+  // Drive the real pointer in both directions. The hover surface must fade while
+  // the label, icon and hit target stay fully opaque.
+  const hoverSamples = [];
+  for (const control of [page.locator(".left-nav .side-link:not(.active)").first(),
+    last.locator(".post-like"), last.locator(".post-actions button").nth(1)]) {
+    await page.mouse.move(0, 0);
+    for (const entering of [true, false]) {
+      await control.evaluate((el, enter) => {
+        el.removeAttribute("data-hover-sample");
+        el.addEventListener(enter ? "pointerenter" : "pointerleave", () => {
+          const values: number[] = [];
+          const times: number[] = [];
+          function sample(t: number) {
+            times.push(t);
+            values.push(Number(getComputedStyle(el, "::before").opacity));
+            if (t - times[0]! < 240) requestAnimationFrame(sample);
+            else el.setAttribute("data-hover-sample", JSON.stringify({ values, times }));
+          }
+          requestAnimationFrame(sample);
+        }, { once: true });
+      }, entering);
+      if (entering) await control.hover();
+      else await page.mouse.move(0, 0);
+      await expect(control).toHaveAttribute("data-hover-sample", /values/);
+      const sample = JSON.parse((await control.getAttribute("data-hover-sample"))!);
+      hoverSamples.push(sample);
+      expect(sample.values.some((v: number) => v > 0 && v < 1)).toBe(true);
+      expect(sample.values.at(-1)).toBe(entering ? 1 : 0);
+      await expect(control).toHaveCSS("opacity", "1");
+    }
+  }
+  await info.attach("deep-hover", { body: JSON.stringify(hoverSamples), contentType: "application/json" });
+  await expect(last.locator(".avatar-presence")).toHaveAttribute("data-pulse-halo", "true");
+  await expect(page.locator("article.feed-post").first().locator(".avatar-presence")).not.toHaveAttribute("data-pulse-halo", "true");
+  expect(await page.locator(".feed-post [data-pulse-halo]").count()).toBeLessThan(20);
+  const halo = last.locator(".avatar-pulse");
+  expect(await halo.evaluate(el => getComputedStyle(el, "::before").animationName)).toBe("avatar-glow-pulse");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await halo.evaluate(el => getComputedStyle(el, "::before").animationName)).toBe("none");
+  expect(await last.locator(".post-like").evaluate(el => getComputedStyle(el, "::before").transitionDuration)).toBe("0s");
   await last.getByRole("button", { name: "Читать далее…" }).click();
   await expect(last.getByText("Конец длинной записи", { exact: false })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(page.locator("article.feed-post").first().locator(".avatar")).toHaveAttribute("data-pulsing", "true");
+  await expect(page.locator("article.feed-post").first().locator(".avatar-presence")).toHaveAttribute("data-pulse-halo", "true");
   await expect(page.getByRole("tablist", { name: "Лента" })).not.toHaveAttribute("data-stuck", "true");
 });
 
@@ -1075,7 +1112,7 @@ test("ordinary API failure stays on the page without reloading", async ({ page }
   expect(navigations).toBe(1);
 });
 
-async function installMusicFixture(page: Page, origin: string) {
+function fixtureWav() {
   // The real audio element plays a fixture signal with no network or media dependencies.
   const frameCount = 8000 * 30;
   const wav = Buffer.alloc(44 + frameCount, 128);
@@ -1083,6 +1120,36 @@ async function installMusicFixture(page: Page, origin: string) {
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(8000, 28);
   wav.writeUInt16LE(1, 32); wav.writeUInt16LE(8, 34); wav.write("data", 36); wav.writeUInt32LE(frameCount, 40);
+  return wav;
+}
+
+test("music upload shows background MP3 processing until the library is refreshed", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const id = "0123456789abcdef01234567";
+  await page.route("**/api/music/uploads/sign", route => route.fulfill({ json: { uploadId: id, url: origin + "/fixture-upload" } }));
+  await page.route("**/fixture-upload", route => route.fulfill({ status: 200, body: "" }));
+  await page.route("**/api/music/uploads/complete", route => {
+    expect(route.request().postDataJSON().background).toBe(true);
+    return route.fulfill({ status: 202, json: { processing: true } });
+  });
+  let published = false;
+  await page.route("**/api/music/uploads/" + id, route => route.fulfill({ json: published ? { trackId: id } : { processing: true } }));
+  await page.goto(origin + "/music");
+  await page.getByRole("button", { name: "Загрузить музыку", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Аудиофайл").setInputFiles({ name: "Artist - Song.wav", mimeType: "audio/wav", buffer: fixtureWav() });
+  await dialog.getByRole("button", { name: "Загрузить", exact: true }).click();
+  await expect(page.getByText("Song — подготовка MP3…")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  const refreshed = page.waitForRequest(request => published && new URL(request.url()).pathname === "/api/music/picker");
+  published = true;
+  await refreshed;
+  await expect(page.getByText("Song — подготовка MP3…")).toHaveCount(0);
+});
+
+async function installMusicFixture(page: Page, origin: string) {
+  const wav = fixtureWav();
   await page.route(/\/api\/music\/track-[012]\/play$/, (route) => route.fulfill({ json: { url: `${origin}/fixture.wav` } }));
   await page.route(/\/api\/music\/track-[012]\/library$/, (route) => route.fulfill({ json: { added: false } }));
   await page.route("**/fixture.wav", (route) => {

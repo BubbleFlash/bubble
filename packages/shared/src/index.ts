@@ -717,6 +717,7 @@ export const musicUploadSignSchema = z.object({
 });
 
 export const musicUploadCompleteSchema = z.object({
+  background: z.boolean().optional(),
   uploadId: z.string().regex(/^[a-f0-9]{24}$/i, "Invalid upload ID"),
   duration: z.number().finite().positive().max(604800).optional(),
 });
@@ -757,6 +758,7 @@ export const musicLibraryStatusSchema = z.object({
 
 export type MusicUploadSignInput = z.infer<typeof musicUploadSignSchema>;
 export type MusicUploadCompleteInput = z.infer<typeof musicUploadCompleteSchema>;
+export type MusicUploadResult = { trackId: string } | { processing: true };
 export type MusicListQuery = z.infer<typeof musicListQuerySchema>;
 
 export interface MusicUploadTicket {

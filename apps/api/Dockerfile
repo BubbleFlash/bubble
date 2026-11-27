@@ -11,6 +11,7 @@ COPY apps/api apps/api
 RUN npm run build -w @commune/api
 
 FROM node:20-alpine
+RUN apk add --no-cache ffmpeg
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package.json ./
