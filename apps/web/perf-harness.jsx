@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useInfiniteQuery } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "/src/store/auth.tsx";
 import { MusicPlayerProvider } from "/src/store/music.tsx";
@@ -25,20 +25,26 @@ const posts = Array.from({ length: 60 }, (_, i) => ({
   createdAt: "2026-11-17T00:00:00Z",
   likeCount: 0,
   likedByMe: false,
+  imageUrls: Array.from({ length: 5 }, (_, slide) => "/__perf_photos/" + i + "/" + slide),
   commentCount: 0,
   repostCount: 0,
   musicAttachments: [
     { id: "track-" + i, title: "Тестовый трек", artist: "Исполнитель", duration: 120 },
   ],
 }));
-const query = {
-  data: { pages: [{ items: posts, nextCursor: null }] },
-  isSuccess: true,
-  hasNextPage: false,
-  fetchNextPage: () => {},
-};
 const h = React.createElement;
 const { Profiler } = React;
+function FixtureFeed() {
+  const query = useInfiniteQuery({
+    queryKey: ["feed", "all"],
+    initialPageParam: null,
+    initialData: { pages: [{ items: posts, nextCursor: null }], pageParams: [null] },
+    staleTime: Infinity,
+    queryFn: () => Promise.resolve({ items: posts, nextCursor: null }),
+    getNextPageParam: () => undefined,
+  });
+  return h(PostList, { query, inlineComments: true, emptyMessage: "" });
+}
 function ClockProbe() {
   return h("output", { id: "clock-probe", style: { display: "none" } }, String(useMusicTime()));
 }
@@ -54,7 +60,7 @@ const feed = h(
     id: "feed",
     onRender: (...args) => window.__commits.push({ phase: args[1], duration: args[2] }),
   },
-  h(PostList, { query, inlineComments: true, emptyMessage: "" }),
+  h(FixtureFeed),
 );
 const shell = h(
   "div",

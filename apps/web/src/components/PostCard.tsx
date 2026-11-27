@@ -7,7 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { PostDTO } from "@commune/shared";
 import { useAuth } from "../store/auth";
-import { useDeletePost, useModeratePost, useSetPostLike } from "../hooks/usePosts";
+import { useDeletePost, useModeratePost } from "../hooks/usePosts";
+import { usePostLike } from "../hooks/usePostLike";
 import Avatar, { ProfileAvatar } from "./Avatar";
 import Icon from "./Icon";
 import PlusBadge from "./PlusBadge";
@@ -41,7 +42,7 @@ export function postTime(iso: string): string {
 export default memo(function PostCard({ post, inlineComments = false, expandable = true, pinTarget, communitySource }: { post: PostDTO; inlineComments?: boolean; expandable?: boolean; pinTarget?: string; communitySource?: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const like = useSetPostLike();
+  const like = usePostLike(post);
   const del = useDeletePost();
   const moderate = useModeratePost();
   const cache = useQueryClient();
@@ -152,14 +153,14 @@ export default memo(function PostCard({ post, inlineComments = false, expandable
         </p>}
         <div className="post-actions">
           <button
-            className={`btn btn-ghost ${post.likedByMe ? "liked" : ""}`}
-            onClick={() => like.mutate({ id: post.id, liked: !post.likedByMe })}
-            disabled={like.isPending || post.likePostId === null}
-            aria-label={post.likePostId === null ? "Исходная публикация недоступна" : `Нравится · ${post.likeCount}`}
-            aria-pressed={post.likedByMe}
+            className={`btn btn-ghost post-like${like.reaction.likedByMe ? " liked" : ""}`}
+            onClick={like.toggle}
+            disabled={post.likePostId === null}
+            aria-label={post.likePostId === null ? "Исходная публикация недоступна" : `Нравится · ${like.reaction.likeCount}`}
+            aria-pressed={like.reaction.likedByMe}
           >
-            <Icon name="heart" size={19} filled={post.likedByMe} />
-            <span>{post.likeCount}</span>
+            <Icon name="heart" size={19} filled={like.reaction.likedByMe} />
+            <span>{like.reaction.likeCount}</span>
           </button>
           {inlineComments ? <button type="button" className="btn btn-ghost" aria-label={`${post.commentCount} ${pluralRu(post.commentCount, "комментарий", "комментария", "комментариев")}`} aria-expanded={commentsOpen} onClick={() => { setCommentsMounted(true); setCommentsOpen(v => !v); }}><Icon name="comment" size={19} /><span>{post.commentCount}</span></button> : <Link className="btn btn-ghost" to={`/posts/${post.id}`}>
             <Icon name="comment" size={19} />

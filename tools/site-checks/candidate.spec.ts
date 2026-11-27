@@ -93,6 +93,162 @@ async function moveCaretToEnd(field: Locator) {
   });
 }
 
+test("one chime across tabs for each realtime delivery", async ({ context }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  const tabs = await Promise.all([context.newPage(), context.newPage(), context.newPage()]);
+  const send: Array<(packet: string) => void> = [];
+  for (const [index, tab] of tabs.entries()) {
+    await installFixtures(tab, origin);
+    await tab.addInitScript(() => {
+      const start = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function (...args) {
+        start.apply(this, args);
+        document.documentElement.dataset.chimes = String(Number(document.documentElement.dataset.chimes ?? 0) + 1);
+      };
+    });
+    let deliver: ((packet: string) => void) | undefined;
+    await tab.routeWebSocket("**/socket.io/**", (socket) => {
+        socket.onMessage((data) => {
+          if (String(data).startsWith("40")) {
+            socket.send('40{"sid":"fixture"}');
+            deliver = packet => socket.send(packet);
+          }
+        });
+        socket.send('0{"sid":"fixture","upgrades":[],"pingInterval":60000,"pingTimeout":60000,"maxPayload":100000}');
+    });
+    await tab.goto(origin);
+    await expect(tab.getByRole("tablist")).toBeVisible();
+    if (index > 0) await tab.keyboard.press("Shift");
+    await expect.poll(() => Boolean(deliver)).toBe(true);
+    send.push(deliver!);
+  }
+  const counts = () => Promise.all(tabs.filter(tab => !tab.isClosed()).map(tab =>
+    tab.evaluate(() => Number(document.documentElement.dataset.chimes ?? 0))));
+  const total = async () => (await counts()).reduce((a, b) => a + b, 0);
+  const notification = '42' + JSON.stringify(["notification:new", { notification: {
+    id: "shared-like", createdAt, type: "like", actor: posts[0]!.author, postId: posts[0]!.id,
+  } }]);
+  send.forEach(deliver => deliver(notification));
+  await expect.poll(total).toBe(1);
+  const played = await counts();
+  expect(played[0]).toBe(0);
+  const winner = played.indexOf(1);
+  await tabs[winner]!.close();
+  const survivor = winner === 1 ? 2 : 1;
+  await tabs[survivor]!.waitForTimeout(1000);
+  send[survivor]!(notification);
+  const message = '42' + JSON.stringify(["message:new", { message: {
+    id: "shared-message", conversationId: "chat", senderId: "sender", createdAt,
+  } }]);
+  await tabs[survivor]!.waitForTimeout(1000);
+  expect(await total()).toBe(0);
+  send[0]!(message);
+  send[survivor]!(message);
+  await expect.poll(total).toBe(1);
+});
+
+test("post like follows rapid taps, reconciles failed writes and keeps the feed in place", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const received: string[] = [];
+  const release: Array<(status: number) => void> = [];
+  await page.route("**/api/posts/fixture-0/like", async route => {
+    const method = route.request().method();
+    received.push(method);
+    const status = await new Promise<number>(resolve => release.push(resolve));
+    await route.fulfill({ status, json: status === 200
+      ? { ...posts[0], likeCount: Number(method === "PUT"), likedByMe: method === "PUT" }
+      : { error: "Отказ" } });
+  });
+  await page.goto(origin);
+  const card = page.locator('[data-post-id="fixture-0"]');
+  const heart = card.locator(".post-actions button[aria-pressed]").first();
+  await heart.click();
+  await expect(heart).toHaveAttribute("aria-label", "Нравится · 1");
+  await expect.poll(() => received.length).toBe(1);
+  await heart.click();
+  await expect(heart).toHaveAttribute("aria-pressed", "false");
+  expect(received).toEqual(["PUT"]);
+  release[0]!(200);
+  await expect.poll(() => received.length).toBe(2);
+  await expect(heart).toHaveAttribute("aria-label", "Нравится · 0");
+  release[1]!(403);
+  await expect(card.getByRole("alert")).toBeVisible();
+  await expect(heart).toHaveAttribute("aria-label", "Нравится · 1");
+  await expect(heart).toHaveAttribute("aria-pressed", "true");
+  expect(received).toEqual(["PUT", "DELETE"]);
+});
+
+test("a touch like shows its pressed color without leaving a hover highlight", async ({ page }, info) => {
+  test.skip(!info.project.use.hasTouch);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/posts/fixture-0/like", route => route.fulfill({
+    json: { ...posts[0], likedByMe: true, likeCount: 1 },
+  }));
+  await page.goto(origin);
+  const button = page.locator('[data-post-id="fixture-0"] .post-actions button[aria-pressed]').first();
+  const idle = await button.evaluate(el => getComputedStyle(el).backgroundColor);
+  await button.tap();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  await expect(button.locator("svg")).toHaveCSS("color", "rgb(177, 36, 64)");
+  await expect(button).toHaveCSS("background-color", idle);
+  await expect(button).toHaveCSS("background-image", "none");
+});
+
+test("feed gallery preserves its height while preparing the next slide", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const photos = Array.from({ length: 5 }, (_, index) => `/fixture-gallery/${index}.svg`);
+  const requested: string[] = [];
+  let releaseNext = () => {};
+  const nextPhoto = new Promise<void>(resolve => { releaseNext = resolve; });
+  await page.route("**/fixture-gallery/*.svg", async route => {
+    const path = new URL(route.request().url()).pathname;
+    requested.push(path);
+    if (path === photos[1]) await nextPhoto;
+    if (path === photos[2]) return route.fulfill({ status: 404 });
+    const height = path === photos[1] ? 480 : 180;
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="${height}"><rect width="100%" height="100%" fill="teal"/></svg>`,
+    });
+  });
+  await page.route("**/api/posts?*", route => route.fulfill({
+    json: { items: [{ ...posts[0], imageUrls: photos }], nextCursor: null },
+  }));
+  await page.goto(origin);
+  const gallery = page.locator('[data-post-id="fixture-0"] .image-gallery--carousel');
+  const active = gallery.locator(".image-gallery__item:not([hidden]) img");
+  await expect.poll(() => active.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(480);
+  const size = await active.boundingBox();
+  expect(size!.height / size!.width).toBeCloseTo(180 / 480, 2);
+  await expect.poll(() => new Set(requested).size).toBe(3);
+  expect(new Set(requested)).toEqual(new Set([photos[0], photos[1], photos[4]]));
+  try {
+    await gallery.getByRole("button", { name: "Следующее фото" }).click();
+    await expect(gallery.getByRole("status", { name: "Загрузка изображения" })).toBeVisible();
+    await expect(active).toHaveAttribute("src", photos[0]!);
+    expect((await active.boundingBox())!.height).toBeCloseTo(size!.height, 0);
+    await gallery.getByRole("button", { name: "Предыдущее фото" }).click();
+    await expect(gallery.getByRole("status", { name: "Загрузка изображения" })).toBeHidden();
+    await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  } finally {
+    releaseNext();
+  }
+  await expect.poll(() => active.evaluate((image: HTMLImageElement) => image.naturalHeight)).toBe(480);
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("2 / 5");
+  await gallery.getByRole("button", { name: "Открыть изображение 2 из 5" }).click();
+  await expect(page.getByRole("dialog", { name: "Просмотр изображения" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Просмотр изображения" })).toBeHidden();
+  await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  await expect(gallery.getByRole("status").filter({ hasText: "Не удалось загрузить изображение" })).toBeVisible();
+  await expect(active).toHaveAttribute("src", photos[1]!);
+  await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("4 / 5");
+});
+
 for (const platform of ["desktop", "Android", "iPhone", "iPadOS"] as const) {
   test(`edit and submit posts, comments and messages with the ${platform} keyboard`, async ({ page }) => {
     const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -232,7 +388,10 @@ test("publish a multiline comment and retry a pasted photo in a multiline reply"
     const data = new DataTransfer();
     const bytes = Uint8Array.from(atob(photo), (character) => character.charCodeAt(0));
     data.items.add(new File([bytes], "photo.gif", { type: "image/gif" }));
-    field.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    const paste = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+    // Firefox creates an empty DataTransfer for script-created clipboard events.
+    Object.defineProperty(paste, "clipboardData", { value: data });
+    field.dispatchEvent(paste);
   }, photo);
   const preview = page.getByRole("img", { name: "Предпросмотр вложения" });
   await expect(preview).toBeVisible();
@@ -254,6 +413,32 @@ test("publish a multiline comment and retry a pasted photo in a multiline reply"
     expect.objectContaining({ content: "Комментарий\nsecond line" }),
     expect.objectContaining({ content: "Ответ\nwith photo", parentId: comments[0]!.id, imageUrls: [url] }),
   ]);
+});
+
+test("comment attachment menu follows the configured theme on the feed and post page", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.route("**/api/auth/refresh", route => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { primaryColor: "#e19a63" } },
+  } }));
+  for (const path of ["/", "/posts/fixture-0"]) {
+    await page.goto(origin + path);
+    if (path === "/") await page.locator(".feed-post").first().getByRole("button", { name: "0 комментариев" }).click();
+    const toggle = page.getByRole("button", { name: "Вложения", exact: true });
+    await toggle.click();
+    const menu = page.locator(".comment-attachment-menu");
+    const photo = menu.getByRole("button", { name: "Фото" });
+    await expect(photo).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Музыка" })).toBeVisible();
+    expect(await menu.evaluate(el => getComputedStyle(el).getPropertyValue("--aero-chosen-primary").trim())).toBe("#e19a63");
+    const themedBackground = await menu.evaluate(el => getComputedStyle(el).backgroundImage);
+    await page.locator(".aero-home").evaluate(el => el.style.setProperty("--aero-chosen-primary", "#349af4"));
+    await expect(menu).not.toHaveCSS("background-image", themedBackground);
+    const [anchor, popup] = await Promise.all([toggle.boundingBox(), menu.boundingBox()]);
+    expect(Math.abs(anchor!.y - (popup!.y + popup!.height) - 4)).toBeLessThan(2);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  }
 });
 
 test("grow post and comment drafts and restore their initial height", async ({ page }) => {
@@ -554,6 +739,174 @@ test("scroll the feed, open comments and follow a post link", async ({ page }, i
   expect(runtimeErrors).toEqual([]);
 });
 
+test("scroll deep in the feed without restyling the entire desktop shell", async ({ page }, info) => {
+  test.skip(info.project.use.hasTouch);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await page.addInitScript(() => {
+    const metrics = { textMeasurements: 0 };
+    Object.assign(window, { deepFeedMetrics: metrics });
+    const getRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this.classList.contains("post-body")) metrics.textMeasurements++;
+      return getRect.call(this);
+    };
+  });
+  const longFeed = Array.from({ length: 240 }, (_, index) => ({
+    ...posts[index % posts.length]!,
+    id: `long-fixture-${index}`,
+    author: {
+      ...posts[0]!.author,
+      avatarUrl: index % 2 ? "/bubble-logo.png" : null,
+      avatarFrame: { effect: "pulse", color: "#1177cc", intensity: 3 },
+    },
+    content: index === 239 ? "Строка записи\n".repeat(15) + "Конец длинной записи" : `Тестовая запись ${index}`,
+    musicAttachments: [],
+  }));
+  await page.route("**/api/posts?*", route => route.fulfill({
+    json: { items: longFeed, nextCursor: null },
+  }));
+  await page.goto(origin);
+  await expect(page.locator("article.feed-post")).toHaveCount(longFeed.length);
+  const probe = await page.evaluate(async () => {
+    const metrics = (window as Window & { deepFeedMetrics: { textMeasurements: number } }).deepFeedMetrics;
+    const initialMeasurements = metrics.textMeasurements;
+    const shell = document.querySelector<HTMLElement>(".aero-window > .shell")!;
+    const tabs = document.querySelector<HTMLElement>(".feed-tabs")!;
+    const chrome = document.querySelector<HTMLElement>(".aero-window-chrome")!;
+    let writes = 0;
+    const observer = new MutationObserver(records => { writes += records.length; });
+    observer.observe(shell, { attributes: true, attributeFilter: ["style"] });
+    const samples = [];
+    try {
+      for (const fraction of [0.1, 0.75]) {
+        window.scrollTo(0, document.documentElement.scrollHeight * fraction);
+        const initialY = window.scrollY;
+        const intervals: number[] = [];
+        await new Promise<void>(resolve => {
+          let start = 0;
+          let previous = 0;
+          function step(now: number) {
+            if (previous) intervals.push(now - previous);
+            previous = now;
+            start ||= now;
+            window.scrollTo(0, initialY + (now - start) * 2);
+            if (now - start < 1000) requestAnimationFrame(step);
+            else resolve();
+          }
+          requestAnimationFrame(step);
+        });
+        intervals.sort((a, b) => a - b);
+        samples.push({ y: window.scrollY, frames: intervals.length, p95: intervals[Math.ceil(intervals.length * 0.95) - 1] });
+      }
+      return {
+        writes,
+        samples,
+        initialMeasurements,
+        textMeasurements: metrics.textMeasurements,
+        stuck: tabs.dataset.stuck,
+        aligned: Math.abs(tabs.getBoundingClientRect().top - chrome.getBoundingClientRect().bottom) < 2,
+      };
+    } finally {
+      observer.disconnect();
+    }
+  });
+  await info.attach("deep-feed-timings", { body: JSON.stringify(probe), contentType: "application/json" });
+  expect(probe.samples[1]!.y).toBeGreaterThan(probe.samples[0]!.y);
+  expect(probe.samples[1]!.frames).toBeGreaterThan(20);
+  expect(probe.writes).toBe(0);
+  expect(probe.textMeasurements).toBeLessThan(longFeed.length / 2);
+  expect(probe.textMeasurements).toBeGreaterThan(0);
+  expect(probe.stuck).toBe("true");
+  expect(probe.aligned).toBe(true);
+  const last = page.locator("article.feed-post").last();
+  await last.scrollIntoViewIfNeeded();
+  // Drive the real pointer in both directions. The hover surface must fade while
+  // the label, icon and hit target stay fully opaque.
+  const hoverSamples = [];
+  for (const control of [page.locator(".left-nav .side-link:not(.active)").first(),
+    last.locator(".post-like"), last.locator(".post-actions button").nth(1),
+    page.getByRole("button", { name: "Уведомления", exact: true }), page.locator(".header .nav-profile"),
+    page.locator(".aero-window-chrome .aero-window-close"),
+    page.getByRole("button", { name: "Выйти", exact: true }).first()]) {
+    await page.mouse.move(0, 0);
+    for (const entering of [true, false]) {
+      await control.evaluate((el, enter) => {
+        el.removeAttribute("data-hover-sample");
+        el.addEventListener(enter ? "pointerenter" : "pointerleave", () => {
+          const values: number[] = [];
+          const times: number[] = [];
+          function sample(t: number) {
+            times.push(t);
+            values.push(Number(getComputedStyle(el, "::before").opacity));
+            if (t - times[0]! < 240) requestAnimationFrame(sample);
+            else el.setAttribute("data-hover-sample", JSON.stringify({ values, times }));
+          }
+          requestAnimationFrame(sample);
+        }, { once: true });
+      }, entering);
+      if (entering) await control.hover();
+      else await page.mouse.move(0, 0);
+      await expect(control).toHaveAttribute("data-hover-sample", /values/);
+      const sample = JSON.parse((await control.getAttribute("data-hover-sample"))!);
+      hoverSamples.push(sample);
+      expect(sample.values.some((v: number) => v > 0 && v < 1)).toBe(true);
+      expect(sample.values.at(-1)).toBe(entering ? 1 : 0);
+      await expect(control).toHaveCSS("opacity", "1");
+    }
+  }
+  await info.attach("deep-hover", { body: JSON.stringify(hoverSamples), contentType: "application/json" });
+  await expect(last.locator(".avatar-presence")).toHaveAttribute("data-pulse-halo", "true");
+  await expect(page.locator("article.feed-post").first().locator(".avatar-presence")).not.toHaveAttribute("data-pulse-halo", "true");
+  expect(await page.locator(".feed-post [data-pulse-halo]").count()).toBeLessThan(20);
+  const halo = last.locator(".avatar-pulse");
+  expect(await halo.evaluate(el => getComputedStyle(el, "::before").animationName)).toBe("avatar-glow-pulse");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await halo.evaluate(el => getComputedStyle(el, "::before").animationName)).toBe("none");
+  expect(await last.locator(".post-like").evaluate(el => getComputedStyle(el, "::before").transitionDuration)).toBe("0s");
+  await last.getByRole("button", { name: "Читать далее…" }).click();
+  await expect(last.getByText("Конец длинной записи", { exact: false })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.locator("article.feed-post").first().locator(".avatar-presence")).toHaveAttribute("data-pulse-halo", "true");
+  await expect(page.getByRole("tablist", { name: "Лента" })).not.toHaveAttribute("data-stuck", "true");
+});
+
+test("type a comment at both ends of a long desktop feed", async ({ page }, info) => {
+  test.skip(info.project.use.hasTouch);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const items = Array.from({ length: 240 }, (_, i) => ({ ...posts[0], id: `typing-${i}`, musicAttachments: [] }));
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  await page.route("**/api/posts/typing-*/comments*", route => route.fulfill({ json: [] }));
+  await page.goto(origin);
+  for (const index of [0, 239]) {
+    const card = page.locator(".feed-post").nth(index);
+    await card.getByRole("button", { name: "0 комментариев" }).click();
+    const field = card.getByRole("textbox", { name: "Написать комментарий" });
+    await field.click();
+    const measurements = await field.evaluateHandle(el => {
+      const frames: number[] = [];
+      let writes = 0;
+      const observer = new MutationObserver(records => { writes += records.length; });
+      observer.observe(el, { attributes: true, attributeFilter: ["style"] });
+      el.addEventListener("keydown", event => {
+        const start = event.timeStamp;
+        requestAnimationFrame(() => frames.push(performance.now() - start));
+      });
+      return () => { observer.disconnect(); return { frames, writes }; };
+    });
+    const text = "Typing a comment with a real keyboard";
+    await field.pressSequentially(text);
+    await expect(field).toHaveValue(text);
+    await field.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    const sample = await measurements.evaluate(read => read());
+    await info.attach(`typing-${index}`, { body: JSON.stringify(sample), contentType: "application/json" });
+    expect(sample.writes).toBe(0);
+    expect(sample.frames).toHaveLength(text.length);
+    await measurements.dispose();
+  }
+});
+
 test("resize a post draft from its bottom corner on a touch device", async ({ page }) => {
   test.skip(page.viewportSize()!.width > 1100, "Touch viewport only");
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -698,8 +1051,8 @@ test("feed navigation jumps to the top and refreshes only the first page", async
   await expect.poll(() => requests.slice(requestCount)).toEqual(["all:first", "all:first"]);
 });
 
-test("Firefox keeps the Aero title bar stable while the feed scrolls", async ({ page, browserName }, info) => {
-  test.skip(browserName !== "firefox");
+test("the Aero title bar stays stable while the feed scrolls", async ({ page, browserName }, info) => {
+  test.skip(browserName !== "firefox" && info.project.use.hasTouch);
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
   await page.goto(origin);
@@ -736,7 +1089,7 @@ test("Firefox keeps the Aero title bar stable while the feed scrolls", async ({ 
     const changed = scrolled.filter((channel, index) => Math.abs(channel - atTop[index]!) > 12);
     expect(changed.length / atTop.length, `title bar after scrolling ${delta}px`).toBeLessThan(0.01);
   }
-  await info.attach("firefox-scrolled-header", { body: await page.screenshot(), contentType: "image/png" });
+  await info.attach("scrolled-header", { body: await page.screenshot(), contentType: "image/png" });
 });
 
 for (const failure of ["offline", "rate-limited", "unavailable"] as const) {
@@ -827,7 +1180,7 @@ test("ordinary API failure stays on the page without reloading", async ({ page }
   expect(navigations).toBe(1);
 });
 
-async function installMusicFixture(page: Page, origin: string) {
+function fixtureWav() {
   // The real audio element plays a fixture signal with no network or media dependencies.
   const frameCount = 8000 * 30;
   const wav = Buffer.alloc(44 + frameCount, 128);
@@ -835,6 +1188,36 @@ async function installMusicFixture(page: Page, origin: string) {
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(8000, 28);
   wav.writeUInt16LE(1, 32); wav.writeUInt16LE(8, 34); wav.write("data", 36); wav.writeUInt32LE(frameCount, 40);
+  return wav;
+}
+
+test("music upload shows background MP3 processing until the library is refreshed", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const id = "0123456789abcdef01234567";
+  await page.route("**/api/music/uploads/sign", route => route.fulfill({ json: { uploadId: id, url: origin + "/fixture-upload" } }));
+  await page.route("**/fixture-upload", route => route.fulfill({ status: 200, body: "" }));
+  await page.route("**/api/music/uploads/complete", route => {
+    expect(route.request().postDataJSON().background).toBe(true);
+    return route.fulfill({ status: 202, json: { processing: true } });
+  });
+  let published = false;
+  await page.route("**/api/music/uploads/" + id, route => route.fulfill({ json: published ? { trackId: id } : { processing: true } }));
+  await page.goto(origin + "/music");
+  await page.getByRole("button", { name: "Загрузить музыку", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Аудиофайл").setInputFiles({ name: "Artist - Song.wav", mimeType: "audio/wav", buffer: fixtureWav() });
+  await dialog.getByRole("button", { name: "Загрузить", exact: true }).click();
+  await expect(page.getByText("Song — подготовка MP3…")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  const refreshed = page.waitForRequest(request => published && new URL(request.url()).pathname === "/api/music/picker");
+  published = true;
+  await refreshed;
+  await expect(page.getByText("Song — подготовка MP3…")).toHaveCount(0);
+});
+
+async function installMusicFixture(page: Page, origin: string) {
+  const wav = fixtureWav();
   await page.route(/\/api\/music\/track-[012]\/play$/, (route) => route.fulfill({ json: { url: `${origin}/fixture.wav` } }));
   await page.route(/\/api\/music\/track-[012]\/library$/, (route) => route.fulfill({ json: { added: false } }));
   await page.route("**/fixture.wav", (route) => {

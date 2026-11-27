@@ -1,7 +1,7 @@
 // Local, deterministic UI workload; no production API or user data.
 // Start Vite, then: node tools/measure-feed.mjs [output.json]
 // PERF_VERIFY=1 also checks comments, playback, image fallback and image formats.
-/* global process, Buffer, URL, console, performance, File, window, document, localStorage, EventTarget, Event, PerformanceObserver, requestAnimationFrame, createImageBitmap */
+/* global process, Buffer, URL, console, performance, File, window, document, localStorage, EventTarget, Event, PerformanceObserver, requestAnimationFrame, createImageBitmap, setTimeout */
 import { chromium } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
@@ -15,8 +15,13 @@ for (const channel of (process.env.PERF_CHANNELS ?? "chrome,msedge").split(","))
       const page = await browser.newPage({ viewport: { width, height: 850 } });
       const requests = { previews: 0, statuses: 0 };
       const images = { direct: 0, proxy: 0 };
+      let photoRequests = 0;
       await page.route("**/*", async (route) => {
         const url = new URL(route.request().url());
+        if (url.pathname.startsWith("/__perf_photos/")) {
+          photoRequests++;
+          return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320"><rect width="640" height="320" fill="teal"/></svg>' });
+        }
         if (url.pathname.startsWith("/uploads/")) {
           if (url.searchParams.has("direct")) {
             images.direct++;
@@ -36,6 +41,11 @@ for (const channel of (process.env.PERF_CHANNELS ?? "chrome,msedge").split(","))
         }
         if (url.pathname.startsWith("/api/")) {
           let body = {};
+          if (url.pathname === "/api/posts/0/like") {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            const liked = route.request().method() === "PUT";
+            body = { id: "0", likeCount: Number(liked), likedByMe: liked };
+          }
           if (url.pathname.endsWith("/auth/refresh"))
             body = {
               accessToken: "fixture",
@@ -79,12 +89,14 @@ window.__vite_plugin_react_preamble_installed__ = true;
           duration = 120;
           volume = 1;
           paused = true;
+          readyState = 4;
           constructor() {
             super();
             window.__audio = this;
           }
           play() {
             this.paused = false;
+            this.dispatchEvent(new Event("canplay"));
             this.dispatchEvent(new Event("play"));
             return Promise.resolve();
           }
@@ -93,7 +105,9 @@ window.__vite_plugin_react_preamble_installed__ = true;
             this.dispatchEvent(new Event("pause"));
           }
           load() {}
-          removeAttribute() {}
+          src = "fixture.mp3";
+          getAttribute(name) { return name === "src" ? this.src : null; }
+          removeAttribute(name) { if (name === "src") this.src = ""; }
         };
       });
       const errors = [];
@@ -113,7 +127,21 @@ window.__vite_plugin_react_preamble_installed__ = true;
           throw new Error(errors.join("\n") || error.message);
         });
       await page.waitForTimeout(1000);
-      const initial = { mounted: await page.locator(".post").count(), ...requests };
+      const initial = { mounted: await page.locator(".post").count(), photoRequests, ...requests };
+      const heart = page.locator(".post").first().locator(".post-actions button[aria-pressed]").first();
+      const like = await heart.evaluate(async (button) => {
+        const start = performance.now();
+        button.click();
+        return new Promise((resolve, reject) => {
+          function check() {
+            if (button.getAttribute("aria-pressed") === "true") resolve(Math.round(performance.now() - start));
+            else if (performance.now() - start > 4000) reject(new Error("Like did not appear"));
+            else requestAnimationFrame(check);
+          }
+          requestAnimationFrame(check);
+        });
+      });
+      await page.waitForTimeout(900);
       await page.evaluate(() => {
         window.__commits = [];
       });
@@ -169,7 +197,7 @@ window.__vite_plugin_react_preamble_installed__ = true;
         const first = page.locator(".post").first();
         const comments = first.getByRole("button", { name: /0 комментариев/ });
         await comments.click();
-        const field = first.locator(".inline-comments input");
+        const field = first.locator(".inline-comments textarea");
         await field.fill("Несохранённый ответ");
         await comments.click();
         await comments.click();
@@ -239,7 +267,7 @@ window.__vite_plugin_react_preamble_installed__ = true;
         return result;
       });
       if (errors.length) throw new Error(errors.join("\n"));
-      samples.push({ channel, width, initial, ticking, scroll, compression });
+      samples.push({ channel, width, initial, likeMs: like, ticking, scroll, compression });
       await page.close();
     }
   } finally {

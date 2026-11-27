@@ -92,6 +92,23 @@ export function sharedStaleTime(key: QueryKey, updatedAt: number, maxAge: number
   return at === undefined ? maxAge : Math.max(0, Math.min(maxAge, at + maxAge - updatedAt));
 }
 
+export function expireFeedSnapshots(qc: QueryClient) {
+  for (const feed of ["all", "following"]) {
+    const queryKey = ["feed", feed];
+    const state = qc.getQueryState(queryKey);
+    const current = bridge;
+    if (current?.generation === sessionGeneration() && (!state || state.isInvalidated)) {
+      // An absent or already stale query will not emit another invalidate event.
+      const key = JSON.stringify(queryKey);
+      const at = Date.now();
+      current.invalidatedAt.set(key, at);
+      current.cache.delete(key);
+      current.channel.postMessage({ scope: current.scope, key, kind: "invalidate", at } satisfies Message);
+    }
+    void qc.invalidateQueries({ queryKey, exact: true, refetchType: "none" });
+  }
+}
+
 /** Coordinate only explicitly allowed account reads. A quiet or missing peer costs at most 40 ms. */
 export async function readAcrossTabs<T>(
   qc: QueryClient,

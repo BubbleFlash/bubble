@@ -44,10 +44,16 @@ const musicUploadSchema = new Schema(
       ref: "MusicTrack",
       default: null,
     },
+    normalizeToMp3: Boolean,
+    sourceETag: String,
+    nextAttemptAt: Date,
+    attempts: Number,
+    failed: Boolean,
   },
   { timestamps: true },
 );
 
 musicUploadSchema.index({ userId: 1, createdAt: -1 });
+musicUploadSchema.index({ nextAttemptAt: 1 }, { sparse: true });
 
 export const MusicUpload = model("MusicUpload", musicUploadSchema);

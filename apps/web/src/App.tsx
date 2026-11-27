@@ -337,25 +337,38 @@ export default function App() {
     const chrome = chromeRef.current;
     const content = home?.querySelector<HTMLElement>(".aero-window > .shell");
     if (!chrome || !content) return;
+    const narrow = window.matchMedia("(max-width: 1100px)");
     let frame = 0;
     const update = () => {
       frame = 0;
       const overlap = chrome.getBoundingClientRect().bottom - content.getBoundingClientRect().top;
       content.style.clipPath = overlap > 0 ? `inset(${Math.ceil(overlap)}px -100vmax -100vmax -100vmax)` : "";
     };
-    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const schedule = () => { if (narrow.matches && !frame) frame = requestAnimationFrame(update); };
     const observer = new ResizeObserver(schedule);
-    observer.observe(chrome);
-    observer.observe(content);
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    update();
-    return () => {
+    const stop = () => {
       observer.disconnect();
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       if (frame) cancelAnimationFrame(frame);
-      content.style.clipPath = "";
+      frame = 0;
+      content.style.removeProperty("clip-path");
+    };
+    const sync = () => {
+      stop();
+      // Desktop already has a fixed wallpaper mask above the scrolling shell.
+      if (!narrow.matches) return;
+      observer.observe(chrome);
+      observer.observe(content);
+      window.addEventListener("scroll", schedule, { passive: true });
+      window.addEventListener("resize", schedule);
+      update();
+    };
+    sync();
+    narrow.addEventListener("change", sync);
+    return () => {
+      narrow.removeEventListener("change", sync);
+      stop();
     };
   }, [projectLanding, pathname]);
   useLayoutEffect(() => {

@@ -5,6 +5,7 @@ import AssetImage from "./AssetImage";
 import { hueFor } from "../lib/hue";
 import { Link } from "react-router-dom";
 import { useProfilePresence } from "../hooks/useProfilePresence";
+import { useNearViewport } from "../hooks/useNearViewport";
 import OnlineStatus from "./OnlineStatus";
 
 /** Opt-in link: keep the base Avatar decorative inside existing links. */
@@ -49,11 +50,15 @@ export default function Avatar({
     }),
   } as CSSProperties;
   const effectName = effect?.effect;
+  const { ref, near } = useNearViewport<HTMLElement>("96px 0px", false);
+  const pulseRef = effectName === "pulse" ? ref : undefined;
+  const pulsing = effectName === "pulse" && near;
   const hue = hueFor(username);
   const avatar = url ? (
-    <AssetImage className="avatar" data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
+    <AssetImage className="avatar" imageRef={pulseRef} data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
   ) : (
     <span
+      ref={pulseRef}
       className="avatar avatar-fallback"
       data-frame={effectName}
       style={{ ...style, background: hue.bg, color: hue.fg }}
@@ -62,9 +67,9 @@ export default function Avatar({
       {Array.from(displayNameOf({ username, displayName }))[0]?.toUpperCase()}
     </span>
   );
-  if (!trackOnline && online === undefined) return avatar;
-  return <span className="avatar-presence" style={{ width: size, height: size }}>
+  if (!trackOnline && online === undefined && !pulseRef) return avatar;
+  return <span className={pulseRef ? "avatar-presence avatar-pulse" : "avatar-presence"} data-pulse-halo={pulsing || undefined} style={pulseRef ? style : { width: size, height: size }}>
     {avatar}
-    {status !== undefined && <OnlineStatus online={status} />}
+    {(trackOnline || online !== undefined) && status !== undefined && <OnlineStatus online={status} />}
   </span>;
 }

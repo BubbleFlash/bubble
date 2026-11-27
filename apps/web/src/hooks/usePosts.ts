@@ -42,11 +42,11 @@ function findPostInFeeds(qc: QueryClient, id: string): PostDTO | undefined {
 
 export function usePost(id: string) {
   const qc = useQueryClient();
-  return useQuery({
+  return useQuery<PostDTO>({
     queryKey: ["post", id],
     // Opening a post you just saw in a feed shows it at once; the fresh copy loads behind it.
     placeholderData: () => findPostInFeeds(qc, id),
-    queryFn: () => api<PostDTO>(`/posts/${id}`),
+    queryFn: ({ signal }) => api<PostDTO>(`/posts/${id}`, { signal }),
   });
 }
 
@@ -72,31 +72,6 @@ export function useCreatePost() {
     mutationFn: (input: CreatePostInput) => api<PostDTO>("/posts", { method: "POST", body: input }),
     // ["feed"] also covers community feeds, which are keyed ["feed", "community", slug].
     onSuccess: () => qc.invalidateQueries({ queryKey: ["feed"] }),
-  });
-}
-
-export function useSetPostLike() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, liked }: { id: string; liked: boolean }) =>
-      api<PostDTO>(`/posts/${id}/like`, { method: liked ? "PUT" : "DELETE" }),
-    onSuccess: (post) => {
-      const update = (row: PostDTO) => row.id === post.id
-        ? { ...row, likeCount: post.likeCount, likedByMe: post.likedByMe }
-        : row;
-      qc.setQueriesData<PostDTO>({ queryKey: ["post"] }, (row) => row && update(row));
-      qc.setQueryData(["post", post.id], post);
-      for (const key of [["feed"], ["search", "posts"], ["public", "posts"]]) {
-        qc.setQueriesData<InfiniteData<Page<PostDTO>>>({ queryKey: key }, (rows) => rows && ({
-          ...rows,
-          pages: rows.pages.map((page) => ({ ...page, items: page.items.map(update) })),
-        }));
-      }
-      if (post.likePostId) {
-        void qc.invalidateQueries({ queryKey: ["post", post.likePostId] });
-        for (const key of [["feed"], ["search", "posts"], ["public", "posts"]]) void qc.invalidateQueries({ queryKey: key });
-      }
-    },
   });
 }
 
