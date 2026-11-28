@@ -799,12 +799,6 @@
   gap: var(--aero-space-2);
 }
 
-.music-page__upload-status {
-  font-size: 13px;
-  color: var(--aero-color-text-muted);
-}
-
-.music-page__upload-status:empty { display: none; }
 .music-page__progress {
   display: grid;
   gap: 6px;
@@ -826,6 +820,7 @@
 .music-page__progress-caption strong {
   color: var(--aero-color-text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .aero-progress {

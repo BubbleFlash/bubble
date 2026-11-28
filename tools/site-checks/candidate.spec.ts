@@ -1484,6 +1484,7 @@ test("music upload preserves multiple jobs through reload and updates each card"
   }));
   const jobs = new Map<string, MusicUploadJob>();
   const tickets = new Map<string, MusicUploadJob>();
+  const signed = Promise.withResolvers<void>();
   const put = Promise.withResolvers<void>();
   const confirm = Promise.withResolvers<void>();
   await page.addInitScript(() => {
@@ -1493,7 +1494,8 @@ test("music upload preserves multiple jobs through reload and updates each card"
       if (body instanceof File) this.upload.dispatchEvent(new ProgressEvent("progress", { lengthComputable: true, loaded: 37, total: 100 }));
     };
   });
-  await page.route("**/api/music/uploads/sign", route => {
+  await page.route("**/api/music/uploads/sign", async route => {
+    await signed.promise;
     const id = "0123456789abcdef0123456" + tickets.size;
     const { title, artist } = route.request().postDataJSON();
     tickets.set(id, { id, title, artist, stage: "queued" });
@@ -1524,10 +1526,13 @@ test("music upload preserves multiple jobs through reload and updates each card"
     await dialog.getByRole("button", { name: "Загрузить", exact: true }).click();
   };
   await start("Song");
-  await expect(dialog.getByText("37%", { exact: true })).toBeVisible();
-  const transferBar = dialog.getByRole("progressbar", { name: "Передача файла" });
-  await expect(transferBar).toHaveAttribute("aria-valuenow", "37");
-  await expect(transferBar.locator("span")).toHaveAttribute("style", "width: 37%;");
+  const transferBar = dialog.getByRole("progressbar", { name: "Общий прогресс загрузки" });
+  await expect(dialog.getByText("Подготовка загрузки…")).toBeVisible();
+  await expect(transferBar).toHaveAttribute("aria-valuenow", "0");
+  signed.resolve();
+  await expect(dialog.getByText("Передача файла — 37%")).toBeVisible();
+  await expect(transferBar).toHaveAttribute("aria-valuenow", "11");
+  await expect(transferBar.locator("span")).toHaveAttribute("style", "width: 11%;");
   const fundraiserBar = page.locator(".right-rail .server-fundraiser [role=progressbar]");
   await expect(fundraiserBar).toHaveAttribute("aria-valuenow", "2700");
   const barStyle = (element: Element) => [getComputedStyle(element).background, getComputedStyle(element).borderRadius,
@@ -1535,11 +1540,13 @@ test("music upload preserves multiple jobs through reload and updates each card"
   expect(await transferBar.evaluate(barStyle)).toEqual(await fundraiserBar.evaluate(barStyle));
   put.resolve();
   await expect(dialog.getByText("Сервер проверяет приём файла…")).toBeVisible();
+  await expect(transferBar).toHaveAttribute("aria-valuenow", "30");
   confirm.resolve();
   await expect(dialog).toBeHidden();
   const first = page.getByRole("article", { name: "Artist — Song", exact: true });
   await expect(first.getByRole("status")).toHaveText("Ожидает обработки");
-  await expect(first.getByRole("progressbar")).toHaveCount(0);
+  const processingBar = first.getByRole("progressbar", { name: "Общий прогресс загрузки" });
+  await expect(processingBar).toHaveAttribute("aria-valuenow", "40");
   await expect(first.getByRole("button")).toHaveCount(0);
   await start("Second");
   await expect(dialog).toBeHidden();
@@ -1549,16 +1556,21 @@ test("music upload preserves multiple jobs through reload and updates each card"
   jobs.set(firstJob!.id, { ...firstJob!, stage: "converting", processedSeconds: 17 });
   await page.reload();
   await expect(first.getByText("Обработано 0:17 аудио")).toBeVisible();
+  await expect(processingBar).toHaveAttribute("aria-valuenow", "60");
   await expect(second.getByRole("status")).toHaveText("Ожидает обработки");
   jobs.set(firstJob!.id, { ...firstJob!, stage: "converting", progressPercent: 42, processedSeconds: 17 });
-  await expect(first.getByText("42%", { exact: true })).toBeVisible();
-  await expect(first.getByRole("progressbar", { name: "Конвертация в MP3" })).toHaveAttribute("aria-valuenow", "42");
+  await expect(first.getByText("Конвертация в MP3 — 42%")).toBeVisible();
+  await expect(processingBar).toHaveAttribute("aria-valuenow", "66");
   jobs.set(firstJob!.id, { ...firstJob!, stage: "validating", progressPercent: 28 });
-  await expect(first.getByRole("progressbar", { name: "Проверка готового MP3" })).toHaveAttribute("aria-valuenow", "28");
+  await expect(first.getByText("Проверка готового MP3 — 28%")).toBeVisible();
+  await expect(processingBar).toHaveAttribute("aria-valuenow", "79");
+  jobs.set(firstJob!.id, { ...firstJob!, stage: "saving" });
+  await expect(first.getByText("Сохранение в библиотеку")).toBeVisible();
+  await expect(processingBar).toHaveAttribute("aria-valuenow", "90");
   jobs.set(firstJob!.id, { ...firstJob!, stage: "retrying", retryReason: "tools_unavailable" });
   jobs.set(secondJob!.id, { ...secondJob!, stage: "delayed" });
   await expect(first.getByRole("status")).toContainText("Обработка аудио на сервере временно недоступна");
-  await expect(first.getByRole("progressbar")).toHaveCount(0);
+  await expect(processingBar).toHaveAttribute("aria-valuenow", "40");
   await expect(second.getByRole("status")).toContainText("Обработка задерживается");
   published = true;
   jobs.delete(firstJob!.id);

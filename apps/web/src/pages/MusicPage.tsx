@@ -42,13 +42,35 @@ const uploadStages: Record<MusicUploadStage, string> = {
   failed: "Не удалось подготовить MP3. Проверьте, что файл открывается, или выберите другую копию.",
 };
 
-function MusicProgress({ label, percent }: { label: string; percent: number }) {
+const transferEnd = 30;
+const accepted = 40;
+// The overall bar represents milestones, with measured progress interpolated within a stage.
+const processingProgress: Record<MusicUploadStage, readonly [start: number, end?: number]> = {
+  queued: [accepted],
+  downloading: [accepted],
+  inspecting: [50],
+  converting: [60, 75],
+  validating: [75, 90],
+  saving: [90],
+  retrying: [accepted],
+  delayed: [accepted],
+  failed: [accepted],
+};
+
+function MusicProgress({ label, percent, stagePercent, failed }: {
+  label: string;
+  percent: number;
+  stagePercent?: number;
+  failed?: boolean;
+}) {
   return <div className="music-page__progress">
     <div className="music-page__progress-caption">
-      <span role="status">{label}</span>
-      <strong aria-hidden="true">{percent}%</strong>
+      <span role="status" className={failed ? "aero-error" : undefined}>
+        {label}{stagePercent !== undefined && ` — ${stagePercent}%`}
+      </span>
+      <strong aria-hidden="true">Всего {percent}%</strong>
     </div>
-    <AeroProgress label={label} value={percent} />
+    <AeroProgress label="Общий прогресс загрузки" value={percent} />
   </div>;
 }
 
@@ -57,12 +79,12 @@ function MusicProcessingCard({ job, retry }: { job: MusicUploadJob; retry: (job:
   const message = job.stage === "retrying" && job.retryReason === "tools_unavailable"
     ? "Обработка аудио на сервере временно недоступна. Повторим автоматически, исходник сохранён."
     : uploadStages[job.stage];
+  const [start, end = start] = processingProgress[job.stage];
+  const percent = start + Math.floor((end - start) * (job.progressPercent ?? 0) / 100);
   return <article className="card music-page__track music-page__processing" aria-label={`${job.artist} — ${job.title}`}>
     <div>
       <strong>{job.artist} — {job.title}</strong>
-      {job.progressPercent === undefined ? (
-        <p className={job.stage === "failed" ? "aero-error" : "muted"} role="status">{message}</p>
-      ) : <MusicProgress label={message} percent={job.progressPercent} />}
+      <MusicProgress label={message} percent={percent} stagePercent={job.progressPercent} failed={job.stage === "failed"} />
       {job.progressPercent === undefined && seconds !== undefined && <small className="muted">Обработано {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")} аудио</small>}
     </div>
     {job.stage === "failed" && <button type="button" className="aero-button" onClick={() => retry(job)}>Повторить загрузку</button>}
@@ -450,16 +472,12 @@ export default function MusicPage() {
               Отмена
             </button>
           </div>
-          {transfer?.stage === "uploading" && transfer.percent !== undefined ? (
-            <MusicProgress label="Передача файла" percent={transfer.percent} />
-          ) : (
-            <span className="music-page__upload-status" role="status">
-              {transfer?.stage === "signing" ? "Подготовка загрузки…" :
-                transfer?.stage === "uploading" ? "Передача файла…" :
-                transfer?.stage === "confirming" ? "Сервер проверяет приём файла…" :
-                readingMetadata ? "Чтение данных трека…" : ""}
-            </span>
+          {transfer?.stage === "signing" && <MusicProgress label="Подготовка загрузки…" percent={0} />}
+          {transfer?.stage === "uploading" && (
+            <MusicProgress label="Передача файла" percent={Math.floor((transfer.percent ?? 0) * transferEnd / 100)} stagePercent={transfer.percent} />
           )}
+          {transfer?.stage === "confirming" && <MusicProgress label="Сервер проверяет приём файла…" percent={transferEnd} />}
+          {!transfer && readingMetadata && <MusicProgress label="Чтение данных трека…" percent={0} />}
         </form>
       </dialog>
 
