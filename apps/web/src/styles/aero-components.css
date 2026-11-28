@@ -506,11 +506,12 @@
 .aero-home .music-attachment-picker .music-attachment-picker__search:focus { outline: none; border-color: var(--aero-color-border-strong); box-shadow: none; }
 .aero-home .music-attachment-picker .music-attachment-picker__search:focus-visible { outline: 1px dotted var(--aero-color-focus); outline-offset: -4px; }
 .aero-home .music-attachment-picker .music-picker-tabs { position: static; top: auto; }
-.music-attachment-picker__scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 2px 4px 4px 2px; scrollbar-color: #bedff3 #e4f3fc; }
+.music-attachment-picker__scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 2px 4px 4px 2px; scrollbar-color: var(--aero-color-scrollbar-thumb) var(--aero-color-canvas); }
+@supports selector(::-webkit-scrollbar) { .music-attachment-picker__scroll { scrollbar-color: auto; } }
 .music-attachment-picker__scroll::-webkit-scrollbar { width: 16px; }
-.music-attachment-picker__scroll::-webkit-scrollbar-track { background: rgb(193 227 246 / 65%); border-left: 1px solid #8bbbd7; }
-.music-attachment-picker__scroll::-webkit-scrollbar-thumb { min-height: 40px; border: 1px solid #8bbbd7; border-radius: 4px; background: linear-gradient(90deg, #f6fcff, #d3eafa 48%, #bedff3 51%, #e8f8ff); box-shadow: inset 0 1px #fff; }
-.music-attachment-picker__scroll::-webkit-scrollbar-thumb:hover { border-color: #297cb8; background: linear-gradient(90deg, #fff, #b8e3fa); }
+.music-attachment-picker__scroll::-webkit-scrollbar-track { background: var(--aero-color-scrollbar-track); border-left: 1px solid var(--aero-color-border); }
+.music-attachment-picker__scroll::-webkit-scrollbar-thumb { min-height: 40px; border: 1px solid var(--aero-color-border); border-radius: 4px; background: var(--aero-gradient-scrollbar); box-shadow: inset 0 1px #fff; }
+.music-attachment-picker__scroll::-webkit-scrollbar-thumb:hover { border-color: var(--aero-color-border-strong); background: var(--aero-gradient-scrollbar-hover); }
 .aero-home .music-player--queue { grid-template-areas: "frame" "queue" "timeline" "controls"; }
 .music-player__queue { grid-area: queue; height: min(225px, calc(100dvh - var(--bottom-h, 60px) - 155px)); min-height: 50px; margin-top: 4px; border: 1px solid #477d9c; border-radius: 4px; background: transparent; color: #dce7f0; font-size: 12px; }
 .music-player__queue { scrollbar-color: #607d8e #1c2b35; }
@@ -871,8 +872,12 @@
 }
 
 .aero-app.aero-home .music-page__track.music-page__track--playing {
-  background: linear-gradient(135deg, #b9dff3, #94cbed);
-  border-color: #559dca;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--aero-color-primary) 32%, var(--aero-color-surface)),
+    color-mix(in srgb, var(--aero-color-primary) 48%, var(--aero-color-surface))
+  );
+  border-color: color-mix(in srgb, var(--aero-color-primary) 65%, var(--aero-color-text));
 }
 
 .music-page__track .music-page__library-button {

@@ -483,6 +483,40 @@ test("comment attachment menu follows the configured theme on the feed and post 
   }
 });
 
+test("music picker scrollbar and active track follow the configured theme", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin);
+  await page.route("**/api/auth/refresh", route => route.fulfill({ json: {
+    accessToken: "fixture", user: { ...viewer, appearance: { primaryColor: "#bc76a4" } },
+  } }));
+  const tracks = posts.map(post => post.musicAttachments[0]!);
+  await page.route(url => url.pathname === "/api/music/picker", route => route.fulfill({
+    json: { tracks, nextCursor: null },
+  }));
+  await page.goto(origin);
+  await page.getByRole("textbox", { name: "Написать запись" }).click();
+  await page.getByRole("button", { name: "Прикрепить музыку", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Выбрать музыку" });
+  const scroller = picker.getByLabel("Список музыки");
+  await expect(scroller).toBeVisible();
+  await picker.getByRole("button", { name: "Воспроизвести Тестовый трек", exact: true }).first().click();
+  const playing = picker.locator(".music-page__track--playing");
+  await expect(playing.getByRole("button", { name: "Пауза Тестовый трек" })).toBeVisible();
+
+  const scrollbarColors = (element: Element) => CSS.supports("selector(::-webkit-scrollbar)")
+    ? [getComputedStyle(element, "::-webkit-scrollbar-track").backgroundColor,
+       getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundImage]
+    : [getComputedStyle(element).scrollbarColor];
+  const scrollbarBefore = await scroller.evaluate(scrollbarColors);
+  expect(scrollbarBefore).not.toContain("auto");
+  const rowBefore = await playing.evaluate(element => getComputedStyle(element).backgroundImage);
+  await page.locator(".aero-home").evaluate(element => element.style.setProperty("--aero-chosen-primary", "#349af4"));
+  const scrollbarAfter = await scroller.evaluate(scrollbarColors);
+  scrollbarBefore.forEach((color, index) => expect(scrollbarAfter[index]).not.toBe(color));
+  await expect(playing).not.toHaveCSS("background-image", rowBefore);
+});
+
 test("grow post and comment drafts and restore their initial height", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
