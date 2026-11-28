@@ -249,6 +249,48 @@ test("feed gallery preserves its height while preparing the next slide", async (
   await expect(gallery.locator(".image-gallery__count")).toHaveText("4 / 5");
 });
 
+test("feed uses responsive photo and avatar URLs and the gallery opens the original", async ({ page }, info) => {
+  test.skip(!info.project.use.hasTouch);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const avatarUrl = `/uploads/${"a".repeat(32)}-a3-512.webp`;
+  const photo = `/uploads/${"b".repeat(32)}-p3-1600.webp`;
+  const damaged = `/uploads/${"c".repeat(32)}-p1-1600.webp`;
+  const photos = [photo, damaged, ...Array.from({ length: 3 }, (_, i) => `/uploads/${(i + 1).toString(16).repeat(32)}.webp`)];
+  await page.route("**/api/posts?*", route => route.fulfill({
+    json: { items: [{ ...posts[0]!, author: { ...posts[0]!.author, avatarUrl }, imageUrls: photos }], nextCursor: null },
+  }));
+  await page.route(url => url.pathname.startsWith("/uploads/"), route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === damaged && url.searchParams.has("w")) {
+      return route.fulfill({ contentType: "image/webp", body: "invalid WebP" });
+    }
+    const width = Number(url.searchParams.get("w")) || 1600;
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${width / 2}"><rect width="100%" height="100%" fill="teal"/></svg>`,
+    });
+  });
+  await page.goto(origin);
+  const card = page.locator('[data-post-id="fixture-0"]');
+  const avatar = card.locator("img.avatar");
+  const gallery = card.locator(".image-gallery--carousel");
+  await expect.poll(() => avatar.evaluate((img: HTMLImageElement) => img.currentSrc)).toContain(avatarUrl + "?w=96");
+  const displayed = gallery.locator(".image-gallery__item:not([hidden]) img");
+  await expect.poll(() => displayed.evaluate((img: HTMLImageElement) => img.currentSrc)).toContain(photo + "?w=640");
+  await gallery.getByRole("button", { name: "Открыть изображение 1 из 5" }).click();
+  const original = card.locator("dialog.image-viewer img");
+  await expect.poll(() => original.evaluate((img: HTMLImageElement) => img.currentSrc)).toContain(photo + "?direct=1");
+  await expect(original).not.toHaveAttribute("srcset", /.+/);
+  await page.keyboard.press("Escape");
+  await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("2 / 5");
+  await expect.poll(() => displayed.evaluate((img: HTMLImageElement) => img.currentSrc)).toBe(origin + damaged);
+  await gallery.getByRole("button", { name: "Следующее фото" }).click();
+  await expect(gallery.locator(".image-gallery__count")).toHaveText("3 / 5");
+  await expect.poll(() => displayed.evaluate((img: HTMLImageElement) => img.currentSrc)).toContain(photos[2]! + "?direct=1");
+});
+
 for (const platform of ["desktop", "Android", "iPhone", "iPadOS"] as const) {
   test(`edit and submit posts, comments and messages with the ${platform} keyboard`, async ({ page }) => {
     const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
@@ -356,7 +398,7 @@ test("publish a multiline comment and retry a pasted photo in a multiline reply"
   const photo = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
   const url = `/uploads/${"a".repeat(32)}.gif`;
   let attempts = 0;
-  await page.route("**/api/uploads", (route) => ++attempts === 1
+  await page.route(url => url.pathname === "/api/uploads", (route) => ++attempts === 1
     ? route.fulfill({ status: 503, json: { error: "Service unavailable" } })
     : route.fulfill({ status: 201, json: { url } }));
   await page.route(`**${url}*`, (route) => route.fulfill({ contentType: "image/gif", body: Buffer.from(photo, "base64") }));
@@ -1006,6 +1048,50 @@ test("windowed feed keeps focus, drafts, slides and history across deep scroll",
   await page.goBack();
   await expect.poll(async () => (await tail.count()) ? Math.abs(await position() - beforeProfile) : 1000).toBeLessThan(28);
   await info.attach("windowed-feed-mounted", { body: String(await cards.count()), contentType: "text/plain" });
+});
+
+test("post text reuses its cut after scrolling away and remeasures at a new width", async ({ page }) => {
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  const items = Array.from({ length: 40 }, (_, index) => ({
+    ...posts[0]!, id: `cut-${index}`,
+    content: "Проверяем перенос длинного текста по словам. ".repeat(35) + "Последняя строка",
+    imageUrls: [], musicAttachments: [],
+  }));
+  await page.route("**/api/posts?*", route => route.fulfill({ json: { items, nextCursor: null } }));
+  await page.goto(origin);
+  const first = page.locator('[data-post-id="cut-0"]');
+  const body = first.locator(".post-text__body");
+  const expand = first.getByRole("button", { name: "Читать далее…" });
+  await expect(expand).toBeVisible();
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await body.evaluate(el => {
+    el.setAttribute("data-probes", "0");
+    new MutationObserver(records => {
+      const probes = records.flatMap(record => [...record.addedNodes])
+        .filter(node => node instanceof HTMLElement && node.style.visibility === "hidden");
+      el.setAttribute("data-probes", String(Number(el.getAttribute("data-probes")) + probes.length));
+    }).observe(el, { childList: true });
+    new IntersectionObserver(([entry]) => {
+      el.setAttribute("data-near", String(entry!.isIntersecting));
+    }, { rootMargin: "600px 0px" }).observe(el);
+  });
+  await expand.evaluate(el => el.focus({ preventScroll: true }));
+  const before = await body.innerText();
+  await page.evaluate(() => window.scrollTo({ top: 2500, behavior: "instant" }));
+  await expect(body).toHaveAttribute("data-near", "false");
+  await expect(expand).toBeFocused();
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await expect(body).toHaveAttribute("data-near", "true");
+  await body.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(body).toHaveAttribute("data-probes", "0");
+  expect(await body.innerText()).toBe(before);
+
+  await body.evaluate(el => { el.style.width = "150px"; });
+  await expect(body).toHaveAttribute("data-probes", "1");
+  await expect.poll(async () => (await body.innerText()).length).toBeLessThan(before.length);
+  await expand.click();
+  await expect(body.getByText("Последняя строка", { exact: false })).toBeVisible();
 });
 
 test("windowed feed covers the viewport during a fast touch scroll", async ({ page, context, browserName }, info) => {

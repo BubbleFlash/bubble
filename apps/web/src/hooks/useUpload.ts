@@ -16,7 +16,7 @@ export function useUploadImage(kind: "post" | "avatar" | "wallpaper" = "post") {
       try {
         const options = { post: POST_PHOTO, avatar: AVATAR_PHOTO, wallpaper: WALLPAPER_PHOTO };
         const ready = await prepareImage(file, options[kind]);
-        return await uploadImage(ready, setProgress);
+        return await uploadImage(ready, setProgress, kind === "wallpaper" ? undefined : kind);
       } finally {
         setProgress(null);
       }

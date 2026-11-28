@@ -1,20 +1,21 @@
 import type { Request, Response } from "express";
-import type { UploadResponse } from "@commune/shared";
+import type { ImagePreviewKind, UploadResponse } from "@commune/shared";
 import { confirmDirectUpload, createUploadTicket, saveFont, saveImage } from "../services/uploadService.js";
 import { badRequest } from "../utils/errors.js";
 import { detectImageType } from "../utils/images.js";
 
-export async function storeUploadedImage(file: Request['file']) {
+export async function storeUploadedImage(file: Request['file'], kind?: ImagePreviewKind) {
   if (!file) throw badRequest("No file uploaded");
 
   const ext = detectImageType(file.buffer);
   if (!ext) throw badRequest("Only PNG, JPEG, GIF and WebP images are allowed");
 
-  return saveImage(file.buffer, ext);
+  return saveImage(file.buffer, ext, kind);
 }
 
 export async function upload(req: Request, res: Response) {
-  const body: UploadResponse = { url: await storeUploadedImage(req.file) };
+  const kind = req.query.preview;
+  const body: UploadResponse = { url: await storeUploadedImage(req.file, kind === "post" || kind === "avatar" ? kind : undefined) };
   res.status(201).json(body);
 }
 

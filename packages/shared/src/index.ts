@@ -58,10 +58,24 @@ export const changeEmailSchema = z.object({
 export const confirmEmailChangeSchema = verifyEmailSchema;
 export const deleteAccountSchema = z.object({ confirmation: z.literal("УДАЛИТЬ") });
 
-/** Path of a file stored by the upload endpoint, e.g. /uploads/3f2a...c9.png */
+/** Canonical image path. New uploads can carry a manifest of their responsive variants. */
 export const uploadUrlSchema = z
   .string()
-  .regex(/^\/uploads\/[a-f0-9]{32}\.(png|jpg|gif|webp)$/, "Invalid image reference");
+  .regex(/^\/uploads\/[a-f0-9]{32}(?:-(?:p[123]|a[123])-[1-9]\d{0,4})?\.(png|jpg|gif|webp)$/, "Invalid image reference");
+
+export const imagePreviewWidths = { post: [640, 1280], avatar: [96, 192] } as const;
+export type ImagePreviewKind = keyof typeof imagePreviewWidths;
+
+export function imagePreviews(url: string) {
+  const manifest = /^\/uploads\/[a-f0-9]{32}-([pa])([123])-([1-9]\d{0,4})\.(?:png|jpg|webp)$/.exec(url);
+  if (!manifest) return undefined;
+  const [, role, mask, originalWidth] = manifest;
+  const kind = role === "p" ? "post" : "avatar";
+  return {
+    kind, originalWidth: Number(originalWidth),
+    widths: imagePreviewWidths[kind].filter((_, index) => Number(mask) & (1 << index)),
+  };
+}
 
 /** Largest image the API accepts. Stays under the 4.5 MB request limit of Vercel functions. */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;

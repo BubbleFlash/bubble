@@ -5,7 +5,7 @@ import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { useNearViewport } from "../hooks/useNearViewport";
 import type { FeedCardState } from "../lib/feedWindow";
 
-function GalleryImage({ src, alt, onSettled }: { src: string; alt: string; onSettled?: (loaded: boolean) => void }) {
+function GalleryImage({ src, alt, hidden, onSettled }: { src: string; alt: string; hidden: boolean; onSettled?: (loaded: boolean) => void }) {
   const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
   useLayoutEffect(() => {
     if (state !== "loading") onSettled?.(state === "loaded");
@@ -14,6 +14,8 @@ function GalleryImage({ src, alt, onSettled }: { src: string; alt: string; onSet
     {state === "loading" && <span className="gallery-image__loading" role="status" aria-label="Загрузка изображения" />}
     {state === "error" && <span className="gallery-image__error">Не удалось загрузить изображение</span>}
     <AssetImage src={src} alt={alt} draggable={false} loading="eager" decoding="async"
+      preview="post" sizes="(max-width: 600px) calc(100vw - 70px), (max-width: 1100px) calc(100vw - 64px), 760px"
+      fetchPriority={hidden ? "low" : "auto"}
       onLoad={() => setState("loaded")} onError={() => setState("error")} />
   </span>;
 }
@@ -74,7 +76,7 @@ export default function ImageGallery({ images, alt, mobileCarouselFrom = 3, reta
     return <button type="button" className="image-gallery__item" key={`${url}-${i}`}
       hidden={carousel && i !== visibleSlide} onClick={() => setIndex(i)}
       aria-label={`Открыть изображение ${i + 1} из ${images.length}`}>
-      {near ? <GalleryImage src={url} alt={alt} onSettled={carousel && i === requestedSlide ? settleSlide : undefined} /> : <span className="gallery-image gallery-image--waiting" />}
+      {near ? <GalleryImage src={url} alt={alt} hidden={carousel && i !== visibleSlide && i !== requestedSlide} onSettled={carousel && i === requestedSlide ? settleSlide : undefined} /> : <span className="gallery-image gallery-image--waiting" />}
     </button>;
   });
   const moveSlide = (offset: number) => {

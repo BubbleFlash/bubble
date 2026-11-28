@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import { Types } from "mongoose";
 import request from "supertest";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createPostSchema,
@@ -25,7 +26,9 @@ import { Post } from "../models/Post.js";
 import { User } from "../models/User.js";
 import { Community } from "../models/Community.js";
 import { Wallpaper } from "../models/Wallpaper.js";
+import { Comment } from "../models/Comment.js";
 import { createApp } from "../app.js";
+import { deleteUploadIfUnused } from "../services/uploadService.js";
 import { env } from "../config/env.js";
 import { detectImageType } from "../utils/images.js";
 import { signAccessToken } from "../utils/tokens.js";
@@ -195,6 +198,94 @@ describe("POST /api/uploads", () => {
     );
   });
 
+  it("stores a smaller avatar while preserving the exact uploaded bytes", async () => {
+    const original = await sharp({ create: { width: 512, height: 512, channels: 3, background: "#37658a" } })
+      .jpeg({ quality: 100 }).toBuffer();
+    const response = await request(app).post("/api/uploads?preview=avatar").set(auth)
+      .attach("file", original, "avatar.jpg");
+    expect(response.status).toBe(201);
+    const match = /^\/uploads\/([a-f0-9]{32})-a3-512\.jpg$/.exec(response.body.url);
+    expect(match).not.toBeNull();
+    for (const [index, width] of [96, 192].entries()) {
+      const [key, bytes, type] = storage.uploadObject.mock.calls[index + 1]!;
+      expect(key).toBe(`uploads/previews/${response.body.url.split("/").at(-1)}-${width}.webp`);
+      expect(type).toBe("image/webp");
+      expect((await sharp(bytes).metadata()).width).toBe(width);
+      expect(bytes.length).toBeLessThan(original.length);
+    }
+    expect(storage.uploadObject.mock.calls[0]).toEqual([response.body.url.slice(1), original, "image/jpeg"]);
+  });
+
+  it("keeps a legacy-style original if the optional decoder cannot generate previews", async () => {
+    const response = await request(app).post("/api/uploads?preview=post").set(auth)
+      .attach("file", png, "preview-failure.png");
+    expect(response.status).toBe(201);
+    expect(response.body.url).toMatch(/^\/uploads\/[a-f0-9]{32}\.png$/);
+    expect(storage.uploadObject.mock.calls).toEqual([[response.body.url.slice(1), png, "image/png"]]);
+  });
+
+  it("checks moderation on the original and conditionally serves the exact preview key", async () => {
+    env.S3_DIRECT_IMAGES = true;
+    env.S3_PUBLIC_ENDPOINT = "https://storage.example.test";
+    const id = "c".repeat(32);
+    const url = `/uploads/${id}-p3-1600.webp`;
+    const post = vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Not modified"), { name: "NotModified" }));
+    const response = await request(app).get(url + "?w=640&direct=1").set("If-None-Match", '"preview-v1"');
+    expect(response.status).toBe(304);
+    expect(response.headers["cache-control"]).toBe("private, no-cache");
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({
+      $or: [{ $or: [{ imageUrl: url }, { imageUrls: url }] }, { deletionPendingImages: url }],
+    });
+    expect(storage.getObject).toHaveBeenCalledWith(`uploads/previews/${id}-p3-1600.webp-640.webp`, '"preview-v1"');
+    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("uses the original when a stored preview is missing", async () => {
+    const id = "d".repeat(32);
+    const url = `/uploads/${id}-a1-512.png`;
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockRejectedValueOnce(Object.assign(new Error("Missing"), { name: "NoSuchKey" }));
+    storage.getObject.mockResolvedValueOnce({
+      Body: { transformToWebStream: () => Readable.toWeb(Readable.from([png])) }, ContentType: "image/png",
+    });
+    const response = await request(app).get(url + "?w=96");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(png);
+    expect(storage.getObject.mock.calls).toEqual([[`uploads/previews/${id}-a1-512.png-96.webp`], [url.slice(1)]]);
+  });
+
+  it("does not let a different manifest read a preview from the same random ID", async () => {
+    const file = `${"d".repeat(32)}-p1-1600.webp`;
+    const alias = file.replace("-p1-", "-p3-");
+    vi.spyOn(Post, "exists").mockResolvedValue(null);
+    vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
+    storage.getObject.mockImplementation(async (key: string) => {
+      if (key === `uploads/previews/${file}-640.webp`) {
+        return { Body: { transformToWebStream: () => Readable.toWeb(Readable.from([webp])) } };
+      }
+      throw Object.assign(new Error("Missing"), { name: "NoSuchKey" });
+    });
+    try {
+      expect((await request(app).get(`/uploads/${alias}?w=640`)).status).toBe(404);
+    } finally {
+      storage.getObject.mockReset();
+    }
+  });
+
+  it("deletes previews together with an unreferenced upload", async () => {
+    const file = `${"d".repeat(32)}-a3-512.png`;
+    for (const model of [Post, User, Community, Wallpaper, Comment]) {
+      vi.spyOn(model, "exists").mockResolvedValue(null);
+    }
+    await deleteUploadIfUnused(`/uploads/${file}`, true);
+    expect(storage.deleteObject.mock.calls).toEqual([
+      [`uploads/${file}`], [`uploads/previews/${file}-96.webp`], [`uploads/previews/${file}-192.webp`],
+    ]);
+  });
+
   it("revalidates cached bytes in storage without downloading them again", async () => {
     vi.spyOn(Post, "exists").mockResolvedValue(null);
     vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
@@ -231,7 +322,7 @@ describe("POST /api/uploads", () => {
     expect(storage.getObject.mock.calls).toEqual([[key, '"image-v1"'], [key]]);
   });
 
-  it("does not fetch an image referenced only by moderated content", async () => {
+  it.each([".png?direct=1", "-p1-1600.webp?w=640"])("does not fetch a moderated image at %s", async suffix => {
     env.S3_DIRECT_IMAGES = true;
     env.S3_PUBLIC_ENDPOINT = "https://storage.example.test";
     vi.spyOn(Post, "exists").mockResolvedValueOnce({ _id: new Types.ObjectId() }).mockResolvedValueOnce(null);
@@ -240,7 +331,7 @@ describe("POST /api/uploads", () => {
     vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
     storage.getObject.mockClear();
 
-    const response = await request(app).get(`/uploads/${"a".repeat(32)}.png?direct=1`).set("If-None-Match", '"image-v1"');
+    const response = await request(app).get(`/uploads/${"a".repeat(32)}${suffix}`).set("If-None-Match", '"image-v1"');
     expect(response.status).toBe(404);
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(storage.getObject).not.toHaveBeenCalled();
@@ -268,6 +359,9 @@ describe("POST /api/uploads", () => {
     vi.spyOn(Post, "exists").mockResolvedValue(null);
     vi.spyOn(Wallpaper, "exists").mockResolvedValue(null);
     if (mode === "signing error") storage.createDownloadUrl.mockRejectedValueOnce(new Error("Signing unavailable"));
+    storage.getObject.mockResolvedValueOnce({
+      Body: { transformToWebStream: () => Readable.toWeb(Readable.from([png])) }, ContentType: "image/png",
+    });
     const response = await request(app).get(`/uploads/${"a".repeat(32)}.png${mode === "proxy fallback" ? "" : "?direct=1"}`);
     expect(response.status).toBe(200);
     expect(Buffer.compare(response.body, png)).toBe(0);

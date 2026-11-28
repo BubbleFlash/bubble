@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { fontUploadUrlSchema, uploadUrlSchema, type UploadTicket } from "@commune/shared";
+import { fontUploadUrlSchema, imagePreviews, uploadUrlSchema, type ImagePreviewKind, type UploadTicket } from "@commune/shared";
 import { logger } from "../config/logger.js";
 import { Post } from "../models/Post.js";
 import { Comment } from "../models/Comment.js";
@@ -11,6 +11,7 @@ import { badRequest } from "../utils/errors.js";
 import { detectFontType } from "../utils/fonts.js";
 import type { ImageExt } from "../utils/images.js";
 import { deleteObject, uploadObject } from "./storageService.js";
+import { imagePreviewKey, prepareImagePreviews } from "./imagePreviews.js";
 
 const STORAGE_PREFIX = "uploads";
 
@@ -25,17 +26,30 @@ const contentTypes: Record<string, string> = {
 export async function saveImage(
   buffer: Buffer,
   ext: ImageExt,
+  kind?: ImagePreviewKind,
 ): Promise<string> {
-  const name = `${crypto.randomBytes(16).toString("hex")}.${ext}`;
+  const id = crypto.randomBytes(16).toString("hex");
+  const previews = kind && ext !== "gif" ? await prepareImagePreviews(buffer, kind) : undefined;
+  const manifest = previews ? `-${kind === "post" ? "p" : "a"}${previews.mask}-${previews.width}` : "";
+  const name = `${id}${manifest}.${ext}`;
   const key = `${STORAGE_PREFIX}/${name}`;
+  const url = `/uploads/${name}`;
 
-  await uploadObject(
-    key,
-    buffer,
-    contentTypes[ext] ?? "application/octet-stream",
-  );
+  await uploadObject(key, buffer, contentTypes[ext] ?? "application/octet-stream");
+  for (const { target, bytes } of previews?.variants ?? []) {
+    try {
+      await uploadObject(imagePreviewKey(name, target), bytes, "image/webp");
+    } catch (error) {
+      logger.warn({ err: error, url, width: target }, "Image preview could not be stored");
+    }
+  }
 
-  return `/uploads/${name}`;
+  return url;
+}
+
+async function deleteImagePreviews(url: string) {
+  const previews = imagePreviews(url);
+  if (previews) await Promise.all(previews.widths.map(width => deleteObject(imagePreviewKey(path.basename(url), width))));
 }
 
 export async function saveFont(owner: string, buffer: Buffer): Promise<string> {
@@ -93,6 +107,7 @@ export async function deleteUploadIfUnused(
     if (usedByPost || usedByUser || usedByWorkshop || usedByCommunity || usedByComment) return;
 
     await deleteObject(`${STORAGE_PREFIX}/${path.basename(url)}`);
+    await deleteImagePreviews(url);
   } catch (err) {
     logger.warn({ err, url }, "Failed to delete upload");
     if (throwOnError) throw err;

@@ -55,7 +55,7 @@ export default function Avatar({
   const pulsing = effectName === "pulse" && near;
   const hue = hueFor(username);
   const avatar = url ? (
-    <AssetImage className="avatar" imageRef={pulseRef} data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} />
+    <AssetImage className="avatar" imageRef={pulseRef} data-frame={effectName} src={url} alt="" style={style} loading="lazy" decoding="async" width={size} height={size} preview="avatar" sizes={`${size}px`} />
   ) : (
     <span
       ref={pulseRef}

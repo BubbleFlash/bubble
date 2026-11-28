@@ -10,6 +10,14 @@ API проверяет сигнатуру файла и принимает из�
 
 GIF files within the limit keep their original bytes. For other formats, the original can skip encoding if it needs no resizing or square crop and fits both the 96 KiB cap and its target budget. Existing stored files are not recompressed or migrated.
 
+## Responsive previews for new uploads (#234)
+
+The public upload endpoint accepts `?preview=post` or `?preview=avatar`. It keeps the uploaded original bytes and uses Sharp in the existing API to write smaller WebP objects into the same S3 bucket. Post variants are 640 and 1280 pixels wide. Avatar variants are 96 and 192 pixels wide. The API skips animation, upscaling, and previews larger than the uploaded original. It prepares up to two uploads concurrently and falls back to an original-only upload when capacity is unavailable or preview generation fails. The returned canonical path advertises the prepared variants and the original width. No database migration is required.
+
+The gallery and avatar select resources with `srcset` and `sizes`. The full-screen viewer uses the preserved original. A legacy path works as before. The preview URL adds `?w=<width>` to the canonical path. The API checks moderation using the canonical path before reading the variant. Preview responses use the proxy and its ETag policy. A missing preview falls back to the original. Normal deletion of an unreferenced upload deletes its previews.
+
+The API and the shared schema must support the new path before the frontend requests variants. A rollback to an API version that predates the new path format would reject paths already produced by the new version. To pause new variants, stop requesting or generating them while retaining the new path reader and validator.
+
 ## Reusing existing downloads (#58)
 
 `GET /uploads/:file` checks moderation before serving or validating an image. Proxy responses use `private, no-cache` and the S3 ETag. A browser can retain bytes but must revalidate them before reuse. `If-None-Match` goes to S3. An unchanged object can return 304, and a provider that rejects the conditional request with 400 gets retried without it. Blocked images and missing objects return 404. Consult the [access boundaries](../BUBBLE_CONTEXT.md#изображения-и-прочие-файлы) when changing this route.

@@ -3,7 +3,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
-import { fontUploadUrlSchema, uploadUrlSchema } from "@commune/shared";
+import { fontUploadUrlSchema, imagePreviews, uploadUrlSchema } from "@commune/shared";
 import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { asyncHandler } from "./utils/errors.js";
@@ -14,6 +14,7 @@ import { lemonSqueezyWebhook, rawBody } from "./controllers/paymentController.js
 import { router } from "./routes/index.js";
 import { hasRealtimeSecret, verifySession } from "./controllers/internalController.js";
 import { uploadIsModerated } from "./services/uploadService.js";
+import { imagePreviewKey } from "./services/imagePreviews.js";
 import { createDownloadUrl, getObject } from "./services/storageService.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -79,21 +80,25 @@ export function createApp() {
     "/uploads/:file",
     asyncHandler(async (req, res) => {
       const file = req.params.file ?? "";
+      const url = `/uploads/${file}`;
+      const isImage = uploadUrlSchema.safeParse(url).success;
       res.set("Cache-Control", "no-store");
 
-      if (!uploadUrlSchema.safeParse(`/uploads/${file}`).success &&
-          !fontUploadUrlSchema.safeParse(`/uploads/${file}`).success) {
+      if (!isImage && !fontUploadUrlSchema.safeParse(url).success) {
         res.status(404).json({ error: "Not found" });
         return;
       }
 
-      if (uploadUrlSchema.safeParse("/uploads/" + file).success && await uploadIsModerated("/uploads/" + file)) {
+      if (isImage && await uploadIsModerated(url)) {
         res.status(404).set("Cache-Control", "no-store").json({ error: "Not found" });
         return;
       }
 
-      if (env.S3_DIRECT_IMAGES && env.S3_PUBLIC_ENDPOINT && req.query.direct === "1" &&
-          uploadUrlSchema.safeParse(`/uploads/${file}`).success) {
+      const previews = imagePreviews(url);
+      const width = typeof req.query.w === "string" ? Number(req.query.w) : NaN;
+      const previewKey = previews?.widths.some(candidate => candidate === width) && req.query.w === String(width)
+        ? imagePreviewKey(file, width) : undefined;
+      if (!previewKey && env.S3_DIRECT_IMAGES && env.S3_PUBLIC_ENDPOINT && req.query.direct === "1" && isImage) {
         try {
           const url = await createDownloadUrl(`uploads/${file}`, 60, undefined, "no-store");
           res.redirect(302, url);
@@ -107,30 +112,29 @@ export function createApp() {
       let object;
       const validator = req.get("If-None-Match");
       const key = `uploads/${file}`;
+      const isMissing = (err: unknown) => err instanceof Error && (
+        err.name === "NoSuchKey" || err.name === "NotFound" ||
+        (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404
+      );
+      const read = (objectKey: string) => validator
+        ? getObject(objectKey, validator).catch((err: unknown) => {
+            const status = (err as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata?.httpStatusCode;
+            if (status !== 400) throw err;
+            return getObject(objectKey);
+          })
+        : getObject(objectKey);
 
       try {
-        object = validator
-          ? await getObject(key, validator).catch((err: unknown) => {
-              const status = (err as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata?.httpStatusCode;
-              if (status !== 400) throw err;
-              // Some storage providers reject the conditional header. Retry the same object without it.
-              return getObject(key);
-            })
-          : await getObject(key);
+        object = previewKey ? await read(previewKey).catch((err: unknown) => {
+          if (!isMissing(err)) throw err;
+          return read(key);
+        }) : await read(key);
       } catch (err) {
         if (validator && err instanceof Error && (err.name === "NotModified" || (err as Error & { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 304)) {
           res.status(304).set("Cache-Control", "private, no-cache").end();
           return;
         }
-        const isNotFound =
-          err instanceof Error &&
-          (err.name === "NoSuchKey" ||
-            err.name === "NotFound" ||
-            (err as Error & {
-              $metadata?: { httpStatusCode?: number };
-            }).$metadata?.httpStatusCode === 404);
-
-        if (isNotFound) {
+        if (isMissing(err)) {
           res.status(404).json({ error: "Not found" });
           return;
         }

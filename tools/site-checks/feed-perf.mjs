@@ -1,4 +1,4 @@
-/* global window, document, location, requestAnimationFrame */
+/* global window, document, requestAnimationFrame */
 /* eslint no-console: "off" */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -10,26 +10,60 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "@playwright/test";
 import { makeMedia, startFeedFixture } from "./feed-perf-fixtures.mjs";
+import { continuousGesture, measureCadence } from "./feed-cadence.mjs";
 
 const mode = process.argv[2] ?? "depth";
 const repeats = Number(process.argv[3] ?? 3);
 const profiles = (process.argv[4] ?? "desktop,mobile").split(",");
 const cap = Number(process.argv[5] ?? 240);
 const scrollOnly = process.env.BUBBLE_PERF_SCROLL_ONLY === "1";
+const continuousDepth = mode === "depth" && process.env.BUBBLE_PERF_INPUT === "continuous";
 const windowed = process.env.BUBBLE_PERF_WINDOW === "1";
 const filmstrip = mode === "media" && process.env.BUBBLE_PERF_FILMSTRIP === "1";
+const galleryStudy = mode === "media" && process.env.BUBBLE_PERF_GALLERY === "1";
+const audioPair = galleryStudy && process.env.BUBBLE_PERF_AUDIO_PAIR === "1";
+const delivery = process.env.BUBBLE_PERF_DELIVERY === "mixed" ? "mixed"
+  : galleryStudy && process.env.BUBBLE_PERF_DELIVERY === "1";
+const uploadStudy = mode === "avatars" && process.env.BUBBLE_PERF_UPLOAD_SAMPLES === "1";
+function variants() {
+  if (mode === "mount") return ["full", "limited"];
+  if (mode === "effects") return ["default", "reduced"];
+  if (mode === "cadence")
+    return (process.env.BUBBLE_PERF_CASES ?? "application,control").split(",");
+  if (uploadStudy) return ["stored", "preview"];
+  if (mode === "avatars") return ["default", "defer-neighbors", "priority", "no-route-prefetch"];
+  if (audioPair) return ["default", "idle-audio"];
+  if (galleryStudy && delivery) return ["original", "responsive"];
+  if (galleryStudy)
+    return [
+      ...new Set([
+        "default",
+        ...(process.env.BUBBLE_PERF_CASES ?? "decode").split(","),
+        "no-audio",
+      ]),
+    ];
+  return ["default"];
+}
+const cases = variants();
 const sessionMs = Number(process.env.BUBBLE_PERF_SESSION_MS ?? 600_000);
 const output = join(
   "test-results",
   "feed-perf",
   new Date().toISOString().replaceAll(/[:.]/g, "-") + "-" + mode,
 );
-assert.ok(["depth", "mount", "effects", "media", "session"].includes(mode));
+assert.ok(["depth", "mount", "effects", "media", "session", "cadence", "avatars"].includes(mode));
 assert.ok(Number.isSafeInteger(repeats) && repeats >= 1 && repeats <= 12);
 assert.ok(profiles.every((profile) => ["desktop", "mobile", "mobile6"].includes(profile)));
 assert.ok(Number.isSafeInteger(cap) && cap >= 20 && cap <= 1000 && cap % 20 === 0);
 assert.ok(Number.isSafeInteger(sessionMs) && sessionMs >= 0);
 await mkdir(output, { recursive: true });
+await mkdir(join(output, "runner"));
+const runnerHash = createHash("sha256");
+for (const file of ["feed-perf.mjs", "feed-perf-fixtures.mjs", "feed-cadence.mjs"]) {
+  const source = await readFile(new URL(file, import.meta.url));
+  await writeFile(join(output, "runner", file), source);
+  runnerHash.update(source);
+}
 console.log(output);
 
 const categories = [
@@ -51,7 +85,26 @@ const browser = await chromium.launch({
 let server;
 try {
   const media = await makeMedia(browser);
-  server = await startFeedFixture(media, cap, output, mode === "mount", windowed);
+  const samples = uploadStudy
+    ? JSON.parse(
+        execFileSync(process.env.PYTHON ?? "python", ["tools/site-checks/feed-image-samples.py"], {
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+        }),
+      )
+    : null;
+  server = await startFeedFixture(
+    media,
+    cap,
+    output,
+    mode === "mount",
+    windowed,
+    galleryStudy,
+    mode === "avatars",
+    mode === "session" && windowed,
+    samples,
+    delivery,
+  );
   const sha = execFileSync(
     "git",
     ["-c", "safe.directory=" + process.cwd().replaceAll("\\", "/"), "rev-parse", "HEAD"],
@@ -67,8 +120,20 @@ try {
     profiles,
     cap,
     scrollOnly,
+    continuousDepth,
     windowed,
     filmstrip,
+    galleryStudy,
+    audioPair,
+    delivery,
+    uploadStudy,
+    ...(samples && {
+      uploadMetadata: samples.map((variants) =>
+        variants.map(({ label, mime, size, bytes }) => ({ label, mime, size, bytes })),
+      ),
+    }),
+    cases,
+    cpuProfile: process.env.BUBBLE_PERF_CPU === "1",
     ...(mode === "session" && { sessionMs }),
     sha,
     chrome: browser.version(),
@@ -85,10 +150,7 @@ try {
     headless: process.env.BUBBLE_PERF_HEADED !== "1",
     serviceWorkers: "block",
     fixtureHash: server.fixtureHash,
-    runnerHash: createHash("sha256")
-      .update(await readFile(new URL(import.meta.url)))
-      .update(await readFile(new URL("./feed-perf-fixtures.mjs", import.meta.url)))
-      .digest("hex"),
+    runnerHash: runnerHash.digest("hex"),
     media: media.map(({ width, height, bytes }) => ({
       width,
       height,
@@ -96,12 +158,6 @@ try {
       sha256: createHash("sha256").update(bytes).digest("hex"),
     })),
   });
-  const cases =
-    mode === "mount"
-      ? ["full", "limited"]
-      : mode === "effects"
-        ? ["default", "reduced"]
-        : ["default"];
   for (const profile of profiles) {
     for (let run = 1; run <= repeats; run++) {
       const order = run % 2 ? cases : [...cases].reverse();
@@ -124,8 +180,12 @@ async function runCase(profile, run, variant) {
   const mobile = profile !== "desktop";
   const viewport = mobile ? { width: 390, height: 850 } : { width: 1280, height: 850 };
   const cpuRate = profile === "mobile6" ? 6 : mobile ? 4 : 1;
-  const name = `${profile}-${windowed ? "window" : variant}-${run}`;
+  const name =
+    mode === "cadence" || mode === "avatars" || galleryStudy
+      ? `${profile}-${windowed ? "window" : "full"}-${variant}-${run}`
+      : `${profile}-${windowed ? "window" : variant}-${run}`;
   const context = await browser.newContext({
+    ...(uploadStudy && { extraHTTPHeaders: { "x-perf-image-size": variant } }),
     viewport,
     hasTouch: mobile,
     isMobile: mobile,
@@ -182,7 +242,7 @@ async function runCase(profile, run, variant) {
         });
       });
     }
-    if (mode === "media") {
+    if ((mode === "media" && !audioPair) || mode === "avatars") {
       await cdp.send("Network.emulateNetworkConditions", {
         offline: false,
         latency: 100,
@@ -191,7 +251,17 @@ async function runCase(profile, run, variant) {
       });
     }
     await page.addInitScript(installProbe);
-    if (mode === "media") await page.addInitScript(installAvatarProbe);
+    if (mode === "media" || mode === "avatars") await page.addInitScript(installAvatarProbe);
+    if (mode === "avatars")
+      await page.addInitScript((v) => {
+        window.perfAvatarVariant = v;
+      }, variant);
+    if (galleryStudy)
+      await page.addInitScript((v) => {
+        window.perfSkipAudio = v === "no-audio";
+        window.perfIdleAudio = v === "idle-audio";
+        window.perfOriginalMedia = v === "original";
+      }, variant);
     await page.goto(server.origin, { waitUntil: "domcontentloaded" });
     await card(0).waitFor();
     await page.evaluate(() => document.fonts.ready);
@@ -203,7 +273,7 @@ async function runCase(profile, run, variant) {
     const stopDepths =
       mode === "mount"
         ? [cap]
-        : mode === "effects" || mode === "session"
+        : ["effects", "session", "avatars", "cadence"].includes(mode)
           ? [20]
           : mode === "media"
             ? [20, cap]
@@ -241,10 +311,76 @@ async function runCase(profile, run, variant) {
         window.perfProbe.frames = {};
       });
       const traceFile = `${name}-${depth}.trace.json.gz`;
+      if (mode === "avatars") {
+        await trace(cdp, traceFile, () =>
+          mark(page, "avatars-visible", async () => {
+            await page.waitForFunction(
+              () => {
+                const el = document.querySelector('[data-post-id="perf-13"] img.avatar');
+                return el?.complete && el.naturalWidth;
+              },
+              null,
+              { timeout: 45000 },
+            );
+            await delay(250);
+            if (uploadStudy) {
+              await page.waitForFunction(
+                () => {
+                  const image = document.querySelector(
+                    '[data-post-id="perf-13"] .image-gallery__item:not([hidden]) img',
+                  );
+                  return image?.complete && image.naturalWidth;
+                },
+                null,
+                { timeout: 45000 },
+              );
+            }
+          }),
+        );
+        await save(name + ".json", {
+          profile,
+          run,
+          variant,
+          viewport,
+          network,
+          traceFile,
+          structure,
+          data: await page.evaluate(() => ({
+            timeOrigin: performance.timeOrigin,
+            avatars: window.perfAvatars,
+            resources: performance
+              .getEntriesByType("resource")
+              .filter((e) => /\/(?:perf-media|uploads)\//.test(e.name))
+              .map((e) => e.toJSON()),
+            target: document
+              .querySelector('[data-post-id="perf-13"] img.avatar')
+              ?.getBoundingClientRect()
+              .toJSON(),
+          })),
+        });
+        continue;
+      }
+      if (mode === "cadence") {
+        await measureCadence({
+          page,
+          cdp,
+          profile,
+          variant,
+          run,
+          trace,
+          traceFile,
+          mark,
+          legacy: (direction) => gesture(page, cdp, viewport, mobile, direction),
+          saveCPU: (data) => save(name + ".cpuprofile", data),
+          save: (data) =>
+            save(name + ".json", { profile, run, variant, structure, traceFile, data }),
+        });
+        continue;
+      }
       const film = filmstrip ? await captureFilmstrip(cdp, name, depth) : null;
       const windows = await trace(cdp, traceFile, async () => {
         if (mode === "media") {
-          await mediaActions(page, target, depth, mobile);
+          await mediaActions(page, target, depth, mobile, variant);
         } else {
           await mark(page, "idle", () => delay(650));
           if (mode === "effects" || mode === "depth" || mode === "mount" || mode === "session") {
@@ -266,6 +402,14 @@ async function runCase(profile, run, variant) {
         heap: await cdp.send("Runtime.getHeapUsage"),
         dom: await cdp.send("Memory.getDOMCounters"),
         ...(mode === "media" && { avatars: await page.evaluate(() => window.perfAvatars) }),
+        ...(galleryStudy && {
+          resources: await page.evaluate(() =>
+            performance
+              .getEntriesByType("resource")
+              .filter((e) => /\/(?:perf-media|uploads)\//.test(e.name))
+              .map((e) => e.toJSON()),
+          ),
+        }),
       };
       depths.push(stats);
       console.log(name, depth, structure.cards, "cards", structure.elements, "elements");
@@ -273,6 +417,7 @@ async function runCase(profile, run, variant) {
         profile,
         run,
         variant: windowed ? "window" : variant,
+        ...(delivery && { deliveryVariant: variant }),
         viewport,
         cpuRate,
         navigation,
@@ -511,7 +656,9 @@ async function mark(page, name, action) {
 
 async function gesture(page, cdp, viewport, mobile, direction) {
   const start = await page.evaluate(() => window.scrollY);
-  if (mobile) {
+  if (continuousDepth) {
+    await continuousGesture(cdp, mobile ? "paced-touch" : "native-wheel", direction);
+  } else if (mobile) {
     const startY = direction > 0 ? 710 : 160;
     const touch = (type, y) =>
       cdp.send("Input.dispatchTouchEvent", {
@@ -559,19 +706,49 @@ async function commentAndLike(page, target) {
   });
 }
 
-async function mediaActions(page, target, depth, mobile) {
+async function mediaActions(page, target, depth, mobile, variant) {
   const gallery = target.locator(".image-gallery--carousel");
   await gallery.scrollIntoViewIfNeeded();
   await gallery.locator(".image-gallery__item[hidden] img").first().waitFor({ state: "attached" });
-  const second = `/perf-media/photo/${depth - 7}-1.jpg`;
-  const third = `/perf-media/photo/${depth - 7}-2.jpg`;
-  await page.waitForFunction((path) => {
-    const photo = [...document.images].find((img) => img.src.endsWith(path));
-    return photo?.complete && photo.naturalWidth > 0;
-  }, second);
+  const second = server.mediaPath(`/perf-media/photo/${depth - 7}-1.jpg`);
+  const third = server.mediaPath(`/perf-media/photo/${depth - 7}-2.jpg`);
+  await page.waitForFunction(
+    (path) => {
+      const photo = [...document.images].find((img) => img.src && new URL(img.src).pathname === path);
+      return photo?.complete && photo.naturalWidth > 0;
+    },
+    second,
+    { timeout: 90000 },
+  );
+  if (galleryStudy) {
+    await gallery.evaluate(
+      (el, { second, variant }) => {
+        window.perfGalleryUrl = second;
+        const current = el.querySelector('img[src*="' + second + '"]');
+        if (variant === "freeze-text") window.perfFreezeText = true;
+        new window.MutationObserver(() => {
+          const shown = el.querySelector(".image-gallery__item:not([hidden]) img");
+          performance.mark("gallery:visible:" + new URL(shown.src).pathname);
+        }).observe(el, { attributes: true, attributeFilter: ["hidden"], subtree: true });
+        for (const type of [
+          "pointerdown",
+          "touchstart",
+          "touchend",
+          "pointerup",
+          "click",
+          "load",
+        ]) {
+          el.addEventListener(type, () => performance.mark("gallery:event:" + type), true);
+        }
+        if (variant === "decode")
+          return current.decode().then(() => performance.mark("gallery:decoded"));
+      },
+      { second, variant },
+    );
+  }
   assert.equal(
     await page.evaluate(
-      (path) => performance.getEntriesByName(location.origin + path).length,
+      (path) => performance.getEntriesByType("resource").filter(entry => new URL(entry.name).pathname === path).length,
       third,
     ),
     0,
@@ -581,18 +758,24 @@ async function mediaActions(page, target, depth, mobile) {
     ["cold", third, "next"],
     ["return", second, "previous"],
     ["cached", third, "next"],
+    ...(galleryStudy && !delivery
+      ? Array.from({ length: 6 }, (_, i) =>
+          i % 2 ? ["warm-" + i, third, "next"] : ["warm-" + i, second, "previous"],
+        )
+      : []),
   ]) {
+    if (audioPair && label !== "prepared") break;
     if (label === "cached") {
       await gallery.locator(".image-gallery__zone--previous").click();
       await page.waitForFunction(
-        (path) => ![...document.images].some((img) => img.src.endsWith(path)),
+        (path) => ![...document.images].some((img) => img.src && new URL(img.src).pathname === path),
         third,
       );
       await gallery.locator(".image-gallery__zone--next").click();
       await page.waitForFunction(
         (path) =>
           [...document.images].some(
-            (img) => img.src.endsWith(path) && img.complete && img.naturalWidth,
+            (img) => img.src && new URL(img.src).pathname === path && img.complete && img.naturalWidth,
           ),
         third,
       );
@@ -607,7 +790,7 @@ async function mediaActions(page, target, depth, mobile) {
         button.addEventListener(
           "click",
           (event) => {
-            const image = [...document.images].find((img) => img.src.endsWith(path));
+            const image = [...document.images].find((img) => img.src && new URL(img.src).pathname === path);
             window.perfMediaClick = {
               time: event.timeStamp,
               loaded: Boolean(image?.complete && image.naturalWidth),
@@ -622,7 +805,7 @@ async function mediaActions(page, target, depth, mobile) {
         (path) =>
           [...document.images].some(
             (img) =>
-              img.src.endsWith(path) &&
+              img.src && new URL(img.src).pathname === path &&
               img.naturalWidth &&
               img.closest("button")?.hidden === false &&
               !img.closest(".gallery-image--waiting"),
@@ -630,19 +813,20 @@ async function mediaActions(page, target, depth, mobile) {
         path,
       );
       await page.evaluate(
-        ({ label, path, imageBox }) => {
+        ({ label, path, imageBox, fixturePath }) => {
           window.perfProbe.media.push({
             label,
-            path,
+            path: fixturePath,
+            requestPath: path,
             imageBox,
             click: window.perfMediaClick,
             ready: performance.now(),
             resources: performance
-              .getEntriesByName(location.origin + path)
+              .getEntriesByType("resource").filter(entry => new URL(entry.name).pathname === path)
               .map((entry) => entry.toJSON()),
           });
         },
-        { label, path, imageBox },
+        { label, path, imageBox, fixturePath: `/perf-media/photo/${depth - 7}-${path === second ? 1 : 2}.jpg` },
       );
       await delay(140);
     });
@@ -677,6 +861,8 @@ async function trace(cdp, file, action) {
 async function sessionMemory(page, cdp, name, cap, viewport, depths) {
   const start = Date.now();
   const samples = [];
+  const mediaSeen = new Set();
+  let requestIndex = 0;
   await advance(page, page.locator('article[data-post-id="perf-13"]'), 20, viewport);
   await snapshot("start");
   await advance(page, page.locator(`article[data-post-id="perf-${cap - 7}"]`), cap, viewport);
@@ -691,13 +877,23 @@ async function sessionMemory(page, cdp, name, cap, viewport, depths) {
     direction *= -1;
     samples.push({
       elapsed: Date.now() - start,
+      network: networkSincePreviousSample(),
+      window: await windowCounters(),
       heap: await cdp.send("Runtime.getHeapUsage"),
       dom: await cdp.send("Memory.getDOMCounters"),
     });
     await save(`${name}-session.json`, samples);
   }
+  // Return via the document's start before aligning post 13. A fixed number of
+  // small traversal steps can run out on a tall feed from its deepest point.
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.locator('article[data-post-id="perf-0"]').waitFor({ state: "attached" });
   await advance(page, page.locator('article[data-post-id="perf-13"]'), 20, viewport);
   await snapshot("return");
+  if (windowed) {
+    await cdp.send("HeapProfiler.collectGarbage");
+    await snapshot("return-gc");
+  }
   const timeOrigin = await page.evaluate(() => performance.timeOrigin);
   await page
     .locator('a[href="/about"]')
@@ -715,9 +911,42 @@ async function sessionMemory(page, cdp, name, cap, viewport, depths) {
   await snapshot("away-gc");
   depths.push({ sessionElapsedMs: Date.now() - start, samples });
 
+  function networkSincePreviousSample() {
+    const requests = server.requests.slice(requestIndex);
+    requestIndex += requests.length;
+    const mediaRequests = requests.filter((r) => r.path.startsWith("/perf-media/"));
+    let repeats = 0;
+    let repeatedBodies = 0;
+    let repeatedBytes = 0;
+    let revalidations = 0;
+    for (const { path, width, status, bytes } of mediaRequests) {
+      const key = `${path}:${width ?? ""}`;
+      if (mediaSeen.has(key)) {
+        repeats++;
+        if (status === 304) revalidations++;
+        if (bytes > 0) {
+          repeatedBodies++;
+          repeatedBytes += bytes;
+        }
+      }
+      mediaSeen.add(key);
+    }
+    return { requests: requests.length, media: mediaRequests.length, repeats, revalidations, repeatedBodies, repeatedBytes };
+  }
+
+  function windowCounters() {
+    return page.evaluate(() => ({
+      mounted: document.querySelectorAll(".feed-window-row").length,
+      liveNodes: document.getElementsByTagName("*").length,
+      measured: window.perfWindowCounters,
+    }));
+  }
+
   async function snapshot(label) {
     const sample = {
       label,
+      network: networkSincePreviousSample(),
+      window: await windowCounters(),
       elapsed: Date.now() - start,
       heap: await cdp.send("Runtime.getHeapUsage"),
       dom: await cdp.send("Memory.getDOMCounters"),

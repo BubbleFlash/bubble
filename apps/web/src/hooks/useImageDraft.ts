@@ -44,7 +44,7 @@ export function useImageDraft(privateMessage = false, maxImages = 10, retained?:
       const file = await prepareImage(image.file, POST_PHOTO);
       progress(0);
       if (!store.read().some(item => item.id === image.id)) throw new Error("Черновик закрыт");
-      if (!privateMessage) return uploadImage(file, progress);
+      if (!privateMessage) return uploadImage(file, progress, "post");
       const body = new FormData();
       body.append("file", file);
       return api<{ url: string }>("/messages/images", { method: "POST", body, onUploadProgress: progress });
