@@ -9,6 +9,7 @@ import type {
 } from "@commune/shared";
 import {
   completeMusicUpload,
+  listMusicUploads,
   musicUploadStatus,
   createMusicUpload,
 } from "../services/musicUploadService.js";
@@ -65,6 +66,11 @@ export async function completeUpload(req: Request, res: Response) {
 export async function uploadStatus(req: Request, res: Response) {
   res.set("Cache-Control", "no-store");
   res.json(await musicUploadStatus(req.userId!, req.params.id!));
+}
+
+export async function uploads(req: Request, res: Response) {
+  res.set("Cache-Control", "private, no-store");
+  res.json(await listMusicUploads(req.userId!));
 }
 
 export async function rename(req: Request, res: Response) {

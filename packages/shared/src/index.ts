@@ -773,6 +773,17 @@ export const musicLibraryStatusSchema = z.object({
 export type MusicUploadSignInput = z.infer<typeof musicUploadSignSchema>;
 export type MusicUploadCompleteInput = z.infer<typeof musicUploadCompleteSchema>;
 export type MusicUploadResult = { trackId: string } | { processing: true };
+export const musicUploadStages = ["queued", "downloading", "inspecting", "converting", "validating", "saving", "retrying", "delayed", "failed"] as const;
+export type MusicUploadStage = (typeof musicUploadStages)[number];
+export interface MusicUploadJob {
+  retryReason?: "tools_unavailable" | "processing_error";
+  id: string;
+  title: string;
+  artist: string;
+  stage: MusicUploadStage;
+  processedSeconds?: number;
+  progressPercent?: number;
+}
 export type MusicListQuery = z.infer<typeof musicListQuerySchema>;
 
 export interface MusicUploadTicket {

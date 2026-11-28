@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { MusicUploadSignInput } from "@commune/shared";
+import { EventEmitter } from "node:events";
+import type { MusicUploadJob, MusicUploadSignInput } from "@commune/shared";
 import { MAX_MUSIC_BYTES } from "@commune/shared";
 import { MusicTrack } from "../models/MusicTrack.js";
 import { MusicUpload } from "../models/MusicUpload.js";
@@ -11,6 +12,7 @@ import {
 } from "./storageService.js";
 
 const UPLOAD_RECORD_TTL_MINUTES = 15;
+export const musicUploadQueue = new EventEmitter();
 
 export async function createMusicUpload(
   userId: string,
@@ -106,12 +108,38 @@ export async function completeMusicUpload(
 
   if (upload.normalizeToMp3) {
     if (!metadata.ETag) throw new Error("Missing uploaded object ETag");
-    await MusicUpload.updateOne({ _id: upload.id, nextAttemptAt: null, completedTrackId: null, failed: { $ne: true } },
-      { $set: { sourceETag: metadata.ETag, nextAttemptAt: new Date(), attempts: 0 } });
+    const queued = await MusicUpload.updateOne({ _id: upload.id, nextAttemptAt: null, completedTrackId: null, failed: { $ne: true } },
+      { $set: { sourceETag: metadata.ETag, nextAttemptAt: new Date(), attempts: 0, stage: "queued" } });
+    if (queued.modifiedCount) musicUploadQueue.emit("queued");
     return { processing: true as const };
   }
   // Tickets issued before the MP3 worker was deployed retain the original completion path.
   return publishMusicTrack(upload, upload.storageKey, upload.mimeType, upload.size, duration);
+}
+
+/** Only acknowledged uploads owned by the current account appear in its library. */
+export async function listMusicUploads(userId: string): Promise<MusicUploadJob[]> {
+  const owned = { userId, completedTrackId: null, sourceETag: { $exists: true } };
+  const projection = "title artist failed stage processedSeconds progressPercent retryReason updatedAt";
+  const [active, failed] = await Promise.all([
+    MusicUpload.find({ ...owned, failed: { $ne: true } }).sort({ createdAt: -1 }).select(projection).lean(),
+    MusicUpload.find({ ...owned, failed: true }).sort({ createdAt: -1 }).limit(20).select(projection).lean(),
+  ]);
+  const now = Date.now();
+  return [...active, ...failed].map(upload => {
+    let stage = upload.failed ? "failed" : upload.stage ?? "queued";
+    if (stage !== "failed" && stage !== "retrying") {
+      // An idle queue should move quickly. An active FFmpeg stage can run for up to five minutes.
+      const staleAfter = stage === "queued" ? 60_000 : 6 * 60_000;
+      if (now - (upload.updatedAt?.getTime() ?? 0) >= staleAfter) stage = "delayed";
+    }
+    return {
+      id: upload._id.toString(), title: upload.title, artist: upload.artist, stage,
+      ...(typeof upload.processedSeconds === "number" && stage !== "delayed" && { processedSeconds: upload.processedSeconds }),
+      ...((stage === "converting" || stage === "validating") && typeof upload.progressPercent === "number" && { progressPercent: upload.progressPercent }),
+      ...(stage === "retrying" && upload.retryReason && { retryReason: upload.retryReason }),
+    };
+  });
 }
 
 export async function musicUploadStatus(userId: string, uploadId: string) {

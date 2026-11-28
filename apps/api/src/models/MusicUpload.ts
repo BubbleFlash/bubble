@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import { musicUploadStages } from "@commune/shared";
 
 const musicUploadSchema = new Schema(
   {
@@ -49,6 +50,10 @@ const musicUploadSchema = new Schema(
     nextAttemptAt: Date,
     attempts: Number,
     failed: Boolean,
+    stage: { type: String, enum: musicUploadStages },
+    processedSeconds: Number,
+    progressPercent: Number,
+    retryReason: { type: String, enum: ["tools_unavailable", "processing_error"] },
   },
   { timestamps: true },
 );

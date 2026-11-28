@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_COMMUNITY_PERMISSIONS, rateLimitDefaults, type RateLimitSettingsDTO } from "@commune/shared";
-import type { AccountUser, ClientNetworkEvent, CommentDTO, CreateCommentInput, MetricsReport, NetworkReport, PostDTO } from "@commune/shared";
+import type { AccountUser, ClientNetworkEvent, CommentDTO, CreateCommentInput, MetricsReport, MusicUploadJob, NetworkReport, PostDTO } from "@commune/shared";
 
 const createdAt = "2026-11-17T00:00:00Z";
 const viewer: AccountUser = {
@@ -1476,50 +1476,154 @@ function fixtureWav() {
   return wav;
 }
 
-test("music upload shows background MP3 processing until the library is refreshed", async ({ page }) => {
+test("music upload preserves multiple jobs through reload and updates each card", async ({ page }) => {
   const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
   await installFixtures(page, origin);
-  const id = "0123456789abcdef01234567";
-  await page.route("**/api/music/uploads/sign", route => route.fulfill({ json: { uploadId: id, url: origin + "/fixture-upload" } }));
-  await page.route("**/fixture-upload", route => route.fulfill({ status: 200, body: "" }));
-  await page.route("**/api/music/uploads/complete", route => {
-    expect(route.request().postDataJSON().background).toBe(true);
+  await page.route("**/api/server-fundraiser", route => route.fulfill({
+    json: { title: "Оплата серверов на месяц", current: 4364, target: 2700, updatedAt: createdAt },
+  }));
+  const jobs = new Map<string, MusicUploadJob>();
+  const tickets = new Map<string, MusicUploadJob>();
+  const put = Promise.withResolvers<void>();
+  const confirm = Promise.withResolvers<void>();
+  await page.addInitScript(() => {
+    const send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (body) {
+      send.call(this, body);
+      if (body instanceof File) this.upload.dispatchEvent(new ProgressEvent("progress", { lengthComputable: true, loaded: 37, total: 100 }));
+    };
+  });
+  await page.route("**/api/music/uploads/sign", route => {
+    const id = "0123456789abcdef0123456" + tickets.size;
+    const { title, artist } = route.request().postDataJSON();
+    tickets.set(id, { id, title, artist, stage: "queued" });
+    return route.fulfill({ json: { uploadId: id, url: origin + "/fixture-upload" } });
+  });
+  await page.route("**/fixture-upload", async route => {
+    await put.promise;
+    return route.fulfill({ status: 200, body: "" });
+  });
+  await page.route("**/api/music/uploads/complete", async route => {
+    const { background, uploadId } = route.request().postDataJSON();
+    expect(background).toBe(true);
+    await confirm.promise;
+    jobs.set(uploadId, tickets.get(uploadId)!);
     return route.fulfill({ status: 202, json: { processing: true } });
   });
+  await page.route("**/api/music/uploads", route => route.fulfill({ json: [...jobs.values()] }));
+  const track = { ...posts[0]!.musicAttachments[0], title: "Song", artist: "Artist" };
   let published = false;
-  await page.route("**/api/music/uploads/" + id, route => route.fulfill({ json: published ? { trackId: id } : { processing: true } }));
+  await page.route(url => url.pathname === "/api/music/picker", route => route.fulfill({
+    json: { tracks: published ? [track] : [], nextCursor: null },
+  }));
   await page.goto(origin + "/music");
-  await page.getByRole("button", { name: "Загрузить музыку", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Аудиофайл").setInputFiles({ name: "Artist - Song.wav", mimeType: "audio/wav", buffer: fixtureWav() });
-  await dialog.getByRole("button", { name: "Загрузить", exact: true }).click();
-  await expect(page.getByText("Song — подготовка MP3…")).toBeVisible();
+  const start = async (title: string) => {
+    await page.getByRole("button", { name: "Загрузить музыку", exact: true }).click();
+    await dialog.getByLabel("Аудиофайл").setInputFiles({ name: `Artist - ${title}.wav`, mimeType: "audio/wav", buffer: fixtureWav() });
+    await dialog.getByRole("button", { name: "Загрузить", exact: true }).click();
+  };
+  await start("Song");
+  await expect(dialog.getByText("37%", { exact: true })).toBeVisible();
+  const transferBar = dialog.getByRole("progressbar", { name: "Передача файла" });
+  await expect(transferBar).toHaveAttribute("aria-valuenow", "37");
+  await expect(transferBar.locator("span")).toHaveAttribute("style", "width: 37%;");
+  const fundraiserBar = page.locator(".right-rail .server-fundraiser [role=progressbar]");
+  await expect(fundraiserBar).toHaveAttribute("aria-valuenow", "2700");
+  const barStyle = (element: Element) => [getComputedStyle(element).background, getComputedStyle(element).borderRadius,
+    getComputedStyle(element.firstElementChild!).background];
+  expect(await transferBar.evaluate(barStyle)).toEqual(await fundraiserBar.evaluate(barStyle));
+  put.resolve();
+  await expect(dialog.getByText("Сервер проверяет приём файла…")).toBeVisible();
+  confirm.resolve();
   await expect(dialog).toBeHidden();
-  const refreshed = page.waitForRequest(request => published && new URL(request.url()).pathname === "/api/music/picker");
+  const first = page.getByRole("article", { name: "Artist — Song", exact: true });
+  await expect(first.getByRole("status")).toHaveText("Ожидает обработки");
+  await expect(first.getByRole("progressbar")).toHaveCount(0);
+  await expect(first.getByRole("button")).toHaveCount(0);
+  await start("Second");
+  await expect(dialog).toBeHidden();
+  const second = page.getByRole("article", { name: "Artist — Second" });
+  await expect(second.getByRole("status")).toHaveText("Ожидает обработки");
+  const [firstJob, secondJob] = [...jobs.values()];
+  jobs.set(firstJob!.id, { ...firstJob!, stage: "converting", processedSeconds: 17 });
+  await page.reload();
+  await expect(first.getByText("Обработано 0:17 аудио")).toBeVisible();
+  await expect(second.getByRole("status")).toHaveText("Ожидает обработки");
+  jobs.set(firstJob!.id, { ...firstJob!, stage: "converting", progressPercent: 42, processedSeconds: 17 });
+  await expect(first.getByText("42%", { exact: true })).toBeVisible();
+  await expect(first.getByRole("progressbar", { name: "Конвертация в MP3" })).toHaveAttribute("aria-valuenow", "42");
+  jobs.set(firstJob!.id, { ...firstJob!, stage: "validating", progressPercent: 28 });
+  await expect(first.getByRole("progressbar", { name: "Проверка готового MP3" })).toHaveAttribute("aria-valuenow", "28");
+  jobs.set(firstJob!.id, { ...firstJob!, stage: "retrying", retryReason: "tools_unavailable" });
+  jobs.set(secondJob!.id, { ...secondJob!, stage: "delayed" });
+  await expect(first.getByRole("status")).toContainText("Обработка аудио на сервере временно недоступна");
+  await expect(first.getByRole("progressbar")).toHaveCount(0);
+  await expect(second.getByRole("status")).toContainText("Обработка задерживается");
   published = true;
-  await refreshed;
-  await expect(page.getByText("Song — подготовка MP3…")).toHaveCount(0);
+  jobs.delete(firstJob!.id);
+  jobs.set(secondJob!.id, { ...secondJob!, stage: "failed" });
+  await expect(first).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Скачать Song" })).toBeVisible();
+  await expect(second.getByRole("status")).toContainText("Не удалось подготовить MP3");
+  await second.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(dialog.locator('input[value="Second"]')).toBeVisible();
 });
 
-async function installMusicFixture(page: Page, origin: string) {
-  const wav = fixtureWav();
-  await page.route(/\/api\/music\/track-[012]\/play$/, (route) => route.fulfill({ json: { url: `${origin}/fixture.wav` } }));
+async function installMusicFixture(page: Page, origin: string, mp3?: Buffer) {
+  const bytes = mp3 ?? fixtureWav();
+  const name = mp3 ? "fixture.mp3" : "fixture.wav";
+  const contentType = mp3 ? "audio/mpeg" : "audio/wav";
+  await page.route(/\/api\/music\/track-[012]\/play$/, (route) => route.fulfill({ json: { url: `${origin}/${name}` } }));
   await page.route(/\/api\/music\/track-[012]\/library$/, (route) => route.fulfill({ json: { added: false } }));
-  await page.route("**/fixture.wav", (route) => {
+  await page.route(url => url.pathname === `/${name}`, (route) => {
+    if (new URL(route.request().url()).searchParams.has("download")) {
+      return route.fulfill({ contentType, body: bytes, headers: { "Content-Disposition": 'attachment; filename="Artist - Song.mp3"' } });
+    }
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
     const headers = { "Accept-Ranges": "bytes" };
-    if (!range) return route.fulfill({ contentType: "audio/wav", headers, body: wav });
+    if (!range) return route.fulfill({ contentType, headers, body: bytes });
     const start = Number(range[1]);
-    const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
-    if (start > end) return route.fulfill({ status: 416, headers: { ...headers, "Content-Range": `bytes */${wav.length}` } });
+    const end = range[2] ? Math.min(Number(range[2]), bytes.length - 1) : bytes.length - 1;
+    if (start > end) return route.fulfill({ status: 416, headers: { ...headers, "Content-Range": `bytes */${bytes.length}` } });
     return route.fulfill({
       status: 206,
-      contentType: "audio/wav",
-      headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${wav.length}` },
-      body: wav.subarray(start, end + 1),
+      contentType,
+      headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${bytes.length}` },
+      body: bytes.subarray(start, end + 1),
     });
   });
 }
+
+test("music library plays, seeks and downloads MP3 bytes", async ({ page }) => {
+  const fixture = process.env.BUBBLE_CHECK_MP3_FIXTURE;
+  test.skip(!fixture, "Set BUBBLE_CHECK_MP3_FIXTURE to a local MP3 longer than 30 seconds");
+  const bytes = await readFile(fixture!);
+  const origin = process.env.BUBBLE_CHECK_PREVIEW_URL!;
+  await installFixtures(page, origin);
+  await installMusicFixture(page, origin, bytes);
+  await page.route("**/api/music/uploads", route => route.fulfill({ json: [] }));
+  const track = { ...posts[0]!.musicAttachments[0], title: "Song", artist: "Artist", duration: 90 };
+  await page.route(url => url.pathname === "/api/music/picker", route => route.fulfill({ json: { tracks: [track], nextCursor: null } }));
+  await page.route("**/api/music/track-0/download", route => route.fulfill({ json: { url: `${origin}/fixture.mp3?download=1` } }));
+  await page.goto(origin + "/music");
+  await page.getByRole("button", { name: "Воспроизвести Song", exact: true }).click();
+  const player = page.getByRole("region", { name: "Музыкальный плеер" });
+  await expect(player.getByRole("button", { name: "Пауза", exact: true })).toBeVisible();
+  const expand = player.getByRole("button", { name: "Развернуть плеер" });
+  if (await expand.isVisible()) await expand.click();
+  const position = player.getByRole("slider", { name: "Позиция воспроизведения" });
+  await expect.poll(() => position.inputValue().then(Number)).toBeGreaterThan(0);
+  const slider = (await position.boundingBox())!;
+  await position.click({ position: { x: slider.width / 3, y: slider.height / 2 } });
+  await expect.poll(() => position.inputValue().then(Number)).toBeGreaterThan(20);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать Song", exact: true }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("Artist - Song.mp3");
+  const downloaded = await readFile(await file.path());
+  expect(downloaded.equals(bytes)).toBe(true);
+});
 
 test("keep the accented mini-player attached to the mobile navigation", async ({ page }) => {
   const viewport = page.viewportSize()!;

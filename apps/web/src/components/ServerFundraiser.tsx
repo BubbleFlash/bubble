@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ServerFundraiserDTO } from "@commune/shared";
 import { api } from "../lib/api";
+import AeroProgress from "./AeroProgress";
 
 const formatAmount = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 const FRESH_MS = 15 * 60 * 1000;
@@ -13,16 +14,12 @@ export default function ServerFundraiser() {
     refetchOnWindowFocus: true,
     staleTime: FRESH_MS,
   });
-  const percentage = goal.data ? Math.min(100, Math.max(0, goal.data.current / goal.data.target * 100)) : 0;
-
   return <section className="aero-widget server-fundraiser">
     <strong>{goal.data?.title ?? "Сбор на сервер"}</strong>
     <div className="server-fundraiser__body">
       {goal.data ? <>
         <p className="server-fundraiser__amount"><b>{formatAmount.format(goal.data.current)} ₽ из {formatAmount.format(goal.data.target)} ₽</b> собрано</p>
-        <div className="server-fundraiser__track" role="progressbar" aria-label={goal.data.title} aria-valuemin={0} aria-valuemax={goal.data.target} aria-valuenow={Math.min(goal.data.current, goal.data.target)} aria-valuetext={`${formatAmount.format(goal.data.current)} ₽ из ${formatAmount.format(goal.data.target)} ₽`}>
-          <span className="server-fundraiser__fill" style={{ width: `${percentage}%` }} />
-        </div>
+        <AeroProgress label={goal.data.title} value={goal.data.current} max={goal.data.target} valueText={`${formatAmount.format(goal.data.current)} ₽ из ${formatAmount.format(goal.data.target)} ₽`} />
         {goal.isError && <p className="server-fundraiser__status" role="status">Не удалось обновить данные.</p>}
       </> : goal.isPending ? <p role="status">Загрузка сбора…</p> : <p className="server-fundraiser__status" role="status">Не удалось загрузить данные сбора.</p>}
       <a className="server-fundraiser__support" href="https://boosty.to/bubblesocial" target="_blank" rel="noopener noreferrer">

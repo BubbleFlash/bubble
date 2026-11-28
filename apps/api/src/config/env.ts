@@ -35,6 +35,7 @@ const schema = z.object({
   S3_BUCKET: z.string().min(1).default("bubble"),
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
+  MUSIC_FFMPEG_DIR: z.string().trim().transform(v => v || undefined).optional(),
   S3_FORCE_PATH_STYLE: z
     .enum(["true", "false"])
     .default("true")

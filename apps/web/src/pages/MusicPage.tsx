@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ALLOWED_MUSIC_TYPES, MAX_MUSIC_BYTES } from "@commune/shared";
-import type { MusicTrackDTO, MusicUploadResult, MusicUploadTicket } from "@commune/shared";
+import type { MusicTrackDTO, MusicUploadJob, MusicUploadResult, MusicUploadStage, MusicUploadTicket } from "@commune/shared";
 import { api, ApiError, withQuery } from "../lib/api";
 import MusicTrackList from "../components/MusicTrackList";
+import AeroProgress from "../components/AeroProgress";
 import { useAuth } from "../store/auth";
 import { useDialogBackdrop } from "../hooks/useDialogBackdrop";
 import { useLoadMoreOnVisible } from "../hooks/useInfiniteScroll";
+import { putSignedUpload } from "../lib/upload";
 type MusicScope = "all" | "mine";
 
 const MUSIC_TABS = [
@@ -28,53 +30,51 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-function readAudioDuration(file: File): Promise<number | undefined> {
-  return new Promise((resolve) => {
-    const audio = document.createElement("audio");
-    const url = URL.createObjectURL(file);
-    const timer = window.setTimeout(() => finish(), 10000);
-    function finish(duration?: number) {
-      window.clearTimeout(timer);
-      audio.onloadedmetadata = null;
-      audio.onerror = null;
-      audio.removeAttribute("src");
-      audio.load();
-      URL.revokeObjectURL(url);
-      resolve(duration);
-    }
-    audio.preload = "metadata";
-    audio.onloadedmetadata = () => {
-      const value = audio.duration;
-      finish(Number.isFinite(value) && value > 0 && value <= 604800 ? value : undefined);
-    };
-    audio.onerror = () => finish();
-    audio.src = url;
-  });
+const uploadStages: Record<MusicUploadStage, string> = {
+  queued: "Ожидает обработки",
+  downloading: "Получение исходного файла",
+  inspecting: "Проверка исходного формата",
+  converting: "Конвертация в MP3",
+  validating: "Проверка готового MP3",
+  saving: "Сохранение в библиотеку",
+  retrying: "Не удалось обработать файл. Повторим автоматически, исходник сохранён.",
+  delayed: "Обработка задерживается. Файл принят, повторная загрузка не нужна.",
+  failed: "Не удалось подготовить MP3. Проверьте, что файл открывается, или выберите другую копию.",
+};
+
+function MusicProgress({ label, percent }: { label: string; percent: number }) {
+  return <div className="music-page__progress">
+    <div className="music-page__progress-caption">
+      <span role="status">{label}</span>
+      <strong aria-hidden="true">{percent}%</strong>
+    </div>
+    <AeroProgress label={label} value={percent} />
+  </div>;
 }
 
-type PendingUpload = { id: string; title: string; userId: string };
-
-function MusicProcessingStatus({ upload, onPublished }: { upload: PendingUpload; onPublished: (id: string) => void }) {
-  const status = useQuery({
-    queryKey: ["music-upload", upload.userId, upload.id],
-    queryFn: ({ signal }) => api<MusicUploadResult>(`/music/uploads/${upload.id}`, { signal }),
-    refetchInterval: ({ state }) => (state.data && "trackId" in state.data) ||
-      (state.error instanceof ApiError && [400, 403, 404].includes(state.error.status)) ? false : 5000,
-  });
-  useEffect(() => {
-    if (status.data && "trackId" in status.data) onPublished(upload.id);
-  }, [status.data, upload.id, onPublished]);
-  return <p role="status">{upload.title} — {status.error ? status.error.message : "подготовка MP3…"}</p>;
+function MusicProcessingCard({ job, retry }: { job: MusicUploadJob; retry: (job: MusicUploadJob) => void }) {
+  const seconds = job.processedSeconds;
+  const message = job.stage === "retrying" && job.retryReason === "tools_unavailable"
+    ? "Обработка аудио на сервере временно недоступна. Повторим автоматически, исходник сохранён."
+    : uploadStages[job.stage];
+  return <article className="card music-page__track music-page__processing" aria-label={`${job.artist} — ${job.title}`}>
+    <div>
+      <strong>{job.artist} — {job.title}</strong>
+      {job.progressPercent === undefined ? (
+        <p className={job.stage === "failed" ? "aero-error" : "muted"} role="status">{message}</p>
+      ) : <MusicProgress label={message} percent={job.progressPercent} />}
+      {job.progressPercent === undefined && seconds !== undefined && <small className="muted">Обработано {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")} аудио</small>}
+    </div>
+    {job.stage === "failed" && <button type="button" className="aero-button" onClick={() => retry(job)}>Повторить загрузку</button>}
+  </article>;
 }
 
 export default function MusicPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [pending, setPending] = useState<PendingUpload[]>([]);
-  const onPublished = useCallback((id?: string) => {
-    if (id) setPending(items => items.filter(item => item.id !== id));
-    for (const key of ["music", "profile-music", "music-picker"]) void queryClient.invalidateQueries({ queryKey: [key] });
-  }, [queryClient]);
+  const refreshLibraries = useCallback(() => Promise.all(
+    ["music", "profile-music", "music-picker"].map(key => queryClient.invalidateQueries({ queryKey: [key] })),
+  ), [queryClient]);
 
   const [scope, setScope] = useState<MusicScope>("mine");
   const [search, setSearch] = useState("");
@@ -87,6 +87,13 @@ export default function MusicPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const tabRefs = useRef<Partial<Record<MusicScope, HTMLButtonElement>>>({});
+  const [transfer, setTransfer] = useState<{ stage: "signing" | "uploading" | "confirming"; percent?: number }>();
+  const uploadRequest = useRef<AbortController>();
+  const sentFile = useRef<{ file: File; title: string; artist: string; userId: string; uploadId: string }>();
+  useEffect(() => () => {
+    uploadRequest.current?.abort();
+    sentFile.current = undefined;
+  }, [user?.id]);
 
   const tracksQuery = useInfiniteQuery({
     queryKey: ["music", scope, search, user?.id],
@@ -100,7 +107,31 @@ export default function MusicPage() {
         }), { signal },
       ),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
+    refetchOnMount: "always",
   });
+  const uploadsKey = ["music-uploads", user?.id] as const;
+  const uploadsQuery = useQuery({
+    queryKey: uploadsKey,
+    enabled: Boolean(user) && scope === "mine",
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    queryFn: async ({ signal, queryKey }) => {
+      const jobs = await api<MusicUploadJob[]>("/music/uploads", { signal });
+      const previous = queryClient.getQueryData<MusicUploadJob[]>(queryKey);
+      if (previous?.some(job => job.stage !== "failed" && !jobs.some(next => next.id === job.id))) {
+        await refreshLibraries();
+      }
+      return jobs;
+    },
+    refetchInterval: ({ state }) => {
+      const jobs = state.data ?? [];
+      if (jobs.some(job => job.stage === "downloading" || job.stage === "inspecting" || job.stage === "converting" || job.stage === "validating" || job.stage === "saving")) return 1000;
+      if (jobs.some(job => job.stage === "queued")) return 2000;
+      return jobs.some(job => job.stage === "retrying" || job.stage === "delayed") ? 5000 : false;
+    },
+  });
+  const uploads = (uploadsQuery.data ?? []).filter(job =>
+    !search.trim() || `${job.title} ${job.artist}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   const sentinel = useLoadMoreOnVisible(() => void tracksQuery.fetchNextPage({ cancelRefetch: false }), Boolean(tracksQuery.hasNextPage && !tracksQuery.isFetching && !tracksQuery.isError));
 
   const uploadMutation = useMutation({
@@ -124,46 +155,61 @@ export default function MusicPage() {
         throw new Error("Максимальный размер файла — 100 МБ.");
       }
 
-      const durationPromise = readAudioDuration(selectedFile);
-      const ticket = await api<MusicUploadTicket>("/music/uploads/sign", {
-        method: "POST",
-        body: {
-          title: trackTitle,
-          artist: trackArtist,
-          mimeType,
-          size: selectedFile.size,
-        },
-      });
-
-      const uploadResponse = await fetch(ticket.url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": mimeType,
-        },
-        body: selectedFile,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error("Не удалось загрузить файл в хранилище.");
+      if (!user) throw new Error("Войдите, чтобы загрузить музыку.");
+      const controller = new AbortController();
+      uploadRequest.current = controller;
+      try {
+        let previous = sentFile.current;
+        if (previous?.file !== selectedFile || previous.title !== trackTitle || previous.artist !== trackArtist || previous.userId !== user.id) {
+          setTransfer({ stage: "signing" });
+          const ticket = await api<MusicUploadTicket>("/music/uploads/sign", {
+            method: "POST",
+            body: {
+              title: trackTitle,
+              artist: trackArtist,
+              mimeType,
+              size: selectedFile.size,
+            },
+            signal: controller.signal,
+          });
+          setTransfer({ stage: "uploading" });
+          await putSignedUpload(ticket.url, selectedFile, mimeType, percent => setTransfer({ stage: "uploading", percent }), controller.signal);
+          previous = { file: selectedFile, title: trackTitle, artist: trackArtist, userId: user.id, uploadId: ticket.uploadId };
+          sentFile.current = previous;
+        }
+        setTransfer({ stage: "confirming" });
+        const result = await api<MusicUploadResult>("/music/uploads/complete", {
+          method: "POST", body: { uploadId: previous.uploadId, background: true }, signal: controller.signal,
+        });
+        sentFile.current = undefined;
+        return { result, job: { id: previous.uploadId, title: trackTitle, artist: trackArtist, stage: "queued" } as const, userId: user.id };
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 400 || error.status === 404)) sentFile.current = undefined;
+        throw error;
+      } finally {
+        if (uploadRequest.current === controller) uploadRequest.current = undefined;
+        setTransfer(undefined);
       }
-
-      const result = await api<MusicUploadResult>("/music/uploads/complete", {
-        method: "POST",
-        body: { uploadId: ticket.uploadId, duration: await durationPromise, background: true },
-      });
-      if ("processing" in result && user) return { id: ticket.uploadId, title: trackTitle, userId: user.id };
     },
-    onSuccess: (upload) => {
-      if (upload) setPending(items => [...items, upload]);
-      else onPublished();
+    onSuccess: async ({ result, job, userId }) => {
+      const key = ["music-uploads", userId];
+      await queryClient.cancelQueries({ queryKey: key });
+      if ("processing" in result) {
+        queryClient.setQueryData<MusicUploadJob[]>(key, jobs => [job, ...(jobs ?? []).filter(item => item.id !== job.id)]);
+      } else void refreshLibraries();
+      if (user?.id !== userId) return;
+      setScope("mine");
+      setSearch("");
       dialogRef.current?.close();
       resetUploadForm();
+      void queryClient.invalidateQueries({ queryKey: key });
     },
   });
 
   const tracks = [...new Map((tracksQuery.data?.pages ?? []).flatMap((page) => page.tracks).map((track) => [track.id, track])).values()];
 
   function selectFile(selectedFile: File | undefined) {
+    sentFile.current = undefined;
     const selection = ++fileSelection.current;
     if (!selectedFile) {
       setFile(null);
@@ -200,6 +246,7 @@ export default function MusicPage() {
   }
 
   function resetUploadForm() {
+    sentFile.current = undefined;
     fileSelection.current++;
     setReadingMetadata(false);
     setFile(null);
@@ -228,6 +275,17 @@ export default function MusicPage() {
     });
   }
 
+  function startUpload(job?: MusicUploadJob) {
+    uploadMutation.reset();
+    if (job) {
+      setTitle(job.title);
+      setArtist(job.artist);
+      editedFields.current = { title: true, artist: true };
+    }
+    dialogRef.current?.showModal();
+    fileInputRef.current?.focus();
+  }
+
   function handleTabKey(event: KeyboardEvent<HTMLButtonElement>, currentScope: MusicScope) {
     let nextScope: MusicScope;
     switch (event.key) {
@@ -254,8 +312,6 @@ export default function MusicPage() {
   return (
     <section className="music-page">
       <h1 className="search-title">Музыка</h1>
-      {pending.filter(item => item.userId === user?.id).map(upload =>
-        <MusicProcessingStatus key={upload.id} upload={upload} onPublished={onPublished} />)}
 
       <div className="music-page__toolbar">
         <input
@@ -271,11 +327,7 @@ export default function MusicPage() {
           type="button"
           className="aero-button"
           aria-haspopup="dialog"
-          onClick={() => {
-            uploadMutation.reset();
-            dialogRef.current?.showModal();
-            fileInputRef.current?.focus();
-          }}
+          onClick={() => startUpload()}
         >
           Загрузить музыку
         </button>
@@ -398,9 +450,16 @@ export default function MusicPage() {
               Отмена
             </button>
           </div>
-          <span className="music-page__upload-status" role="status">
-            {uploadMutation.isPending ? "Загрузка музыки..." : readingMetadata ? "Чтение данных трека..." : ""}
-          </span>
+          {transfer?.stage === "uploading" && transfer.percent !== undefined ? (
+            <MusicProgress label="Передача файла" percent={transfer.percent} />
+          ) : (
+            <span className="music-page__upload-status" role="status">
+              {transfer?.stage === "signing" ? "Подготовка загрузки…" :
+                transfer?.stage === "uploading" ? "Передача файла…" :
+                transfer?.stage === "confirming" ? "Сервер проверяет приём файла…" :
+                readingMetadata ? "Чтение данных трека…" : ""}
+            </span>
+          )}
         </form>
       </dialog>
 
@@ -425,7 +484,11 @@ export default function MusicPage() {
                 </p>
               )}
 
-              {tracksQuery.isSuccess && tracks.length === 0 && (
+              {scope === "mine" && uploads.map(job => <MusicProcessingCard key={job.id} job={job} retry={startUpload} />)}
+              {scope === "mine" && uploadsQuery.isError && (
+                <p role="alert" className="aero-error">Не удалось получить статус загрузок. <button type="button" className="link-btn" onClick={() => void uploadsQuery.refetch()}>Проверить снова</button></p>
+              )}
+              {tracksQuery.isSuccess && tracks.length === 0 && (scope !== "mine" || uploads.length === 0) && (
                 <p className="muted center">
                   {scope === "mine" ? "В библиотеке пока нет музыки." : "Ничего не найдено."}
                 </p>
